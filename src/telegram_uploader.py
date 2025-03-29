@@ -56,8 +56,25 @@ class TelegramUploaderApp:
         """
         self.root = root
         self.root.title("Telegram Video Uploader")
-        self.root.geometry("950x650")
-        self.root.minsize(800, 600)
+        
+        # Lấy kích thước màn hình
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        
+        # Thiết lập kích thước cửa sổ gần như toàn màn hình
+        window_width = int(screen_width * 0.9)
+        window_height = int(screen_height * 0.9)
+        
+        # Đặt vị trí cửa sổ vào giữa màn hình
+        x_position = (screen_width - window_width) // 2
+        y_position = (screen_height - window_height) // 2
+        
+        # Áp dụng kích thước và vị trí
+        self.root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
+        self.root.minsize(1024, 768)  # Tăng kích thước tối thiểu
+        
+        # Mở toàn màn hình khi bắt đầu (chỉ cho Windows)
+        self.root.state('zoomed')
         
         # Thiết lập icon nếu có
         try:
@@ -299,8 +316,8 @@ class TelegramUploaderApp:
         """Hiển thị cửa sổ cấu hình khi chạy lần đầu"""
         config_dialog = tk.Toplevel(self.root)
         config_dialog.title("Cấu hình ban đầu")
-        config_dialog.geometry("500x400")
-        config_dialog.resizable(False, False)
+        config_dialog.geometry("800x600")
+        config_dialog.resizable(True, True)
         config_dialog.transient(self.root)
         config_dialog.grab_set()  # Làm cho cửa sổ này là modal
         
@@ -327,8 +344,8 @@ class TelegramUploaderApp:
         
         # Bot Token
         ttk.Label(telegram_frame, text="Bot Token:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        token_entry = ttk.Entry(telegram_frame, width=40)
-        token_entry.grid(row=0, column=1, padx=5, pady=5)
+        token_entry = ttk.Entry(telegram_frame, width=60)
+        token_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Thêm tooltip cho Bot Token
         ttk.Label(
@@ -340,8 +357,8 @@ class TelegramUploaderApp:
         
         # Chat ID đích
         ttk.Label(telegram_frame, text="Chat ID đích:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        chat_id_entry = ttk.Entry(telegram_frame, width=40)
-        chat_id_entry.grid(row=1, column=1, padx=5, pady=5)
+        chat_id_entry = ttk.Entry(telegram_frame, width=60)
+        chat_id_entry.grid(row=1, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Thêm tooltip cho Chat ID
         ttk.Label(
@@ -353,8 +370,8 @@ class TelegramUploaderApp:
         
         # Chat ID thông báo
         ttk.Label(telegram_frame, text="Chat ID thông báo:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-        notif_id_entry = ttk.Entry(telegram_frame, width=40)
-        notif_id_entry.grid(row=2, column=1, padx=5, pady=5)
+        notif_id_entry = ttk.Entry(telegram_frame, width=60)
+        notif_id_entry.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Thêm tooltip
         ttk.Label(
@@ -364,21 +381,61 @@ class TelegramUploaderApp:
             foreground="gray"
         ).grid(row=2, column=2, padx=5, pady=5)
         
-        # Thêm hướng dẫn
+        # Thêm hướng dẫn với thanh cuộn
         help_frame = ttk.LabelFrame(main_frame, text="Hướng dẫn lấy thông tin", padding=10)
-        help_frame.pack(fill=tk.X, pady=10)
+        help_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
+        # Tạo frame cho nội dung có thể cuộn
+        help_scroll_frame = ttk.Frame(help_frame)
+        help_scroll_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Thêm thanh cuộn
+        help_scrollbar = ttk.Scrollbar(help_scroll_frame)
+        help_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Tạo Text widget thay vì Label để có thể cuộn
+        help_text_widget = tk.Text(help_scroll_frame, wrap=tk.WORD, height=15, width=70, font=("Arial", 10))
+        help_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Kết nối thanh cuộn
+        help_text_widget.config(yscrollcommand=help_scrollbar.set)
+        help_scrollbar.config(command=help_text_widget.yview)
+        
+        # Nội dung hướng dẫn
         help_text = (
             "1. Tạo bot mới: Tìm @BotFather trên Telegram, gửi lệnh /newbot\n"
             "2. Lấy Bot Token từ tin nhắn BotFather gửi sau khi tạo bot\n"
             "3. Thêm bot vào kênh/nhóm, làm cho bot là admin để gửi media\n"
             "4. Lấy Chat ID: Gửi tin nhắn trong kênh/nhóm, sau đó truy cập\n"
             "   https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates\n"
-            "5. Để lấy Chat ID cá nhân: Tìm @userinfobot trên Telegram và nhắn tin"
+            "5. Để lấy Chat ID cá nhân: Tìm @userinfobot trên Telegram và nhắn tin\n\n"
+            "Hướng dẫn chi tiết đối với kênh:\n"
+            "1. Thêm bot vào kênh và đặt làm admin\n"
+            "2. Gửi một tin nhắn trong kênh\n"
+            "3. Truy cập URL: https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates\n"
+            "4. Tìm phần \"chat\" > \"id\" trong kết quả JSON (ID kênh thường có dạng -100xxxxxxxxxx)\n\n"
+            "Hướng dẫn chi tiết đối với nhóm:\n"
+            "1. Thêm bot vào nhóm\n"
+            "2. Gửi tin nhắn trong nhóm (có thể bạn cần 'mở khóa' bot bằng lệnh /start)\n"
+            "3. Truy cập URL: https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates\n"
+            "4. Tìm phần \"chat\" > \"id\" trong kết quả JSON\n\n"
+            "Hướng dẫn chi tiết để lấy Chat ID cá nhân:\n"
+            "1. Tìm @userinfobot hoặc @chatid_echo_bot trên Telegram\n"
+            "2. Gửi bất kỳ tin nhắn nào và bot sẽ phản hồi với ID của bạn\n\n"
+            "Lưu ý quan trọng:\n"
+            "- Bot Token là thông tin nhạy cảm, không nên chia sẻ với người khác\n"
+            "- Đảm bảo bot có đủ quyền trong kênh/nhóm (quyền gửi tin nhắn và media)\n"
+            "- Đối với kênh công khai, bạn có thể lấy ID bằng cách thêm -100 vào trước ID số của kênh\n"
+            "- Telegram giới hạn kích thước file bot có thể gửi là 50MB, ứng dụng sẽ tự động xử lý file lớn hơn"
         )
         
-        help_label = ttk.Label(help_frame, text=help_text, justify=tk.LEFT)
-        help_label.pack(padx=5, pady=5, anchor=tk.W)
+        # Chèn văn bản vào widget
+        help_text_widget.insert(tk.END, help_text)
+        help_text_widget.config(state=tk.DISABLED)  # Đặt thành chỉ đọc
+
+        # Frame chứa các nút
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=10)
         
         # Nút lưu cấu hình
         def save_initial_config():
@@ -422,10 +479,6 @@ class TelegramUploaderApp:
                 messagebox.showinfo("Thành công", message)
             else:
                 messagebox.showerror("Lỗi", message)
-        
-        # Frame chứa các nút
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=10)
         
         # Nút kiểm tra kết nối
         test_btn = ttk.Button(button_frame, text="Kiểm tra kết nối", command=test_connection)
@@ -564,7 +617,7 @@ class TelegramUploaderApp:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Danh sách video với đa lựa chọn
-        self.video_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
+        self.video_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED, font=("Arial", 10))
         self.video_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # Cấu hình scrollbar
@@ -588,7 +641,7 @@ class TelegramUploaderApp:
         info_right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Thông tin chi tiết
-        self.info_text = tk.Text(info_right_frame, height=4, width=40, wrap=tk.WORD)
+        self.info_text = tk.Text(info_right_frame, height=4, width=40, wrap=tk.WORD, font=("Arial", 10))
         self.info_text.pack(fill=tk.BOTH, expand=True)
         self.info_text.config(state=tk.DISABLED)
         
@@ -606,7 +659,7 @@ class TelegramUploaderApp:
         # Nhãn trạng thái
         self.status_var = tk.StringVar()
         self.status_var.set("Sẵn sàng")
-        status_label = ttk.Label(control_frame, textvariable=self.status_var)
+        status_label = ttk.Label(control_frame, textvariable=self.status_var, font=("Arial", 10))
         status_label.pack(pady=5)
         
         # Frame chứa các nút điều khiển
@@ -640,7 +693,7 @@ class TelegramUploaderApp:
         self.auto_folder_path = tk.StringVar()
         self.auto_folder_path.set(self.config['SETTINGS']['video_folder'])
         
-        folder_entry = ttk.Entry(folder_frame, textvariable=self.auto_folder_path, width=50)
+        folder_entry = ttk.Entry(folder_frame, textvariable=self.auto_folder_path, width=50, font=("Arial", 10))
         folder_entry.pack(side=tk.LEFT, padx=5, pady=10, fill=tk.X, expand=True)
         
         browse_btn = ttk.Button(folder_frame, text="Duyệt...", 
@@ -657,7 +710,8 @@ class TelegramUploaderApp:
             mode_frame, 
             text="Theo dõi thư mục (tải lên video mới khi phát hiện)",
             variable=self.auto_mode_var,
-            value="watch"
+            value="watch",
+            font=("Arial", 10)
         )
         watch_radio.pack(anchor=tk.W, padx=5, pady=3)
 
@@ -665,7 +719,8 @@ class TelegramUploaderApp:
             mode_frame, 
             text="Tải lên hàng loạt (quét và tải tất cả video trong thư mục)",
             variable=self.auto_mode_var,
-            value="bulk"
+            value="bulk",
+            font=("Arial", 10)
         )
         bulk_radio.pack(anchor=tk.W, padx=5, pady=3)
         
@@ -674,12 +729,12 @@ class TelegramUploaderApp:
         auto_settings_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Thời gian kiểm tra
-        ttk.Label(auto_settings_frame, text="Kiểm tra thư mục mỗi (giây):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(auto_settings_frame, text="Kiểm tra thư mục mỗi (giây):", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.check_interval_var = tk.StringVar()
         self.check_interval_var.set(self.config['SETTINGS']['auto_check_interval'])
         
-        check_interval_entry = ttk.Entry(auto_settings_frame, textvariable=self.check_interval_var, width=10)
+        check_interval_entry = ttk.Entry(auto_settings_frame, textvariable=self.check_interval_var, width=10, font=("Arial", 10))
         check_interval_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Checkbox kiểm tra trùng lặp
@@ -689,7 +744,8 @@ class TelegramUploaderApp:
         check_duplicates_cb = ttk.Checkbutton(
             auto_settings_frame, 
             text="Tự động loại bỏ video trùng lặp", 
-            variable=self.auto_check_duplicates_var
+            variable=self.auto_check_duplicates_var,
+            font=("Arial", 10)
         )
         check_duplicates_cb.grid(row=1, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
@@ -700,7 +756,8 @@ class TelegramUploaderApp:
         auto_log_cb = ttk.Checkbutton(
             auto_settings_frame, 
             text="Ghi nhật ký hoạt động tự động", 
-            variable=self.auto_log_var
+            variable=self.auto_log_var,
+            font=("Arial", 10)
         )
         auto_log_cb.grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
@@ -709,7 +766,7 @@ class TelegramUploaderApp:
         status_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Tạo Text widget để hiển thị log hoạt động tự động
-        self.auto_log_text = tk.Text(status_frame, wrap=tk.WORD, width=80, height=15)
+        self.auto_log_text = tk.Text(status_frame, wrap=tk.WORD, width=80, height=15, font=("Arial", 10))
         self.auto_log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Thêm thanh cuộn
@@ -776,30 +833,30 @@ class TelegramUploaderApp:
         telegram_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Bot Token
-        ttk.Label(telegram_frame, text="Bot Token:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(telegram_frame, text="Bot Token:", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.bot_token_var = tk.StringVar()
         self.bot_token_var.set(self.config['TELEGRAM']['bot_token'])
         
-        token_entry = ttk.Entry(telegram_frame, textvariable=self.bot_token_var, width=50)
+        token_entry = ttk.Entry(telegram_frame, textvariable=self.bot_token_var, width=60, font=("Arial", 10))
         token_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Chat ID đích
-        ttk.Label(telegram_frame, text="Chat ID đích:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(telegram_frame, text="Chat ID đích:", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.chat_id_var = tk.StringVar()
         self.chat_id_var.set(self.config['TELEGRAM']['chat_id'])
         
-        chat_id_entry = ttk.Entry(telegram_frame, textvariable=self.chat_id_var, width=50)
+        chat_id_entry = ttk.Entry(telegram_frame, textvariable=self.chat_id_var, width=60, font=("Arial", 10))
         chat_id_entry.grid(row=1, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Chat ID thông báo
-        ttk.Label(telegram_frame, text="Chat ID thông báo:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(telegram_frame, text="Chat ID thông báo:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.notification_chat_id_var = tk.StringVar()
         self.notification_chat_id_var.set(self.config['TELEGRAM']['notification_chat_id'])
         
-        notif_id_entry = ttk.Entry(telegram_frame, textvariable=self.notification_chat_id_var, width=50)
+        notif_id_entry = ttk.Entry(telegram_frame, textvariable=self.notification_chat_id_var, width=60, font=("Arial", 10))
         notif_id_entry.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Frame cài đặt chung
@@ -807,21 +864,21 @@ class TelegramUploaderApp:
         settings_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Định dạng video
-        ttk.Label(settings_frame, text="Định dạng video hỗ trợ:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(settings_frame, text="Định dạng video hỗ trợ:", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.video_extensions_var = tk.StringVar()
         self.video_extensions_var.set(self.config['SETTINGS']['video_extensions'])
         
-        extensions_entry = ttk.Entry(settings_frame, textvariable=self.video_extensions_var, width=50)
+        extensions_entry = ttk.Entry(settings_frame, textvariable=self.video_extensions_var, width=60, font=("Arial", 10))
         extensions_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Thời gian chờ
-        ttk.Label(settings_frame, text="Thời gian chờ giữa các lần tải (giây):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(settings_frame, text="Thời gian chờ giữa các lần tải (giây):", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.delay_var = tk.StringVar()
         self.delay_var.set(self.config['SETTINGS']['delay_between_uploads'])
         
-        delay_entry = ttk.Entry(settings_frame, textvariable=self.delay_var, width=10)
+        delay_entry = ttk.Entry(settings_frame, textvariable=self.delay_var, width=10, font=("Arial", 10))
         delay_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Frame điều khiển
@@ -840,17 +897,46 @@ class TelegramUploaderApp:
         info_frame = ttk.LabelFrame(parent, text="Thông tin bổ sung")
         info_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
+        # Tạo frame cho text có thể cuộn
+        info_scroll_frame = ttk.Frame(info_frame)
+        info_scroll_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Thêm thanh cuộn
+        info_scrollbar = ttk.Scrollbar(info_scroll_frame)
+        info_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Tạo Text widget để hiển thị thông tin
+        info_text_widget = tk.Text(info_scroll_frame, wrap=tk.WORD, width=80, height=15, font=("Arial", 10))
+        info_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Kết nối thanh cuộn
+        info_text_widget.config(yscrollcommand=info_scrollbar.set)
+        info_scrollbar.config(command=info_text_widget.yview)
+        
         info_text = (
             "Lưu ý khi sử dụng Telegram Video Uploader:\n\n"
             "1. Bot Telegram cần có quyền gửi tin nhắn và media trong kênh/nhóm đích\n"
             "2. Ứng dụng hỗ trợ tải lên video không giới hạn kích thước\n"
             "3. Chat ID kênh/nhóm thường có dạng -100xxxxxxxxxx\n"
             "4. Chat ID cá nhân có thể lấy bằng cách nhắn tin cho @userinfobot\n"
-            "5. Các định dạng video hỗ trợ được ngăn cách bằng dấu phẩy (không có khoảng trắng)\n"
+            "5. Các định dạng video hỗ trợ được ngăn cách bằng dấu phẩy (không có khoảng trắng)\n\n"
+            "Hướng dẫn chi tiết:\n\n"
+            "- Để tạo bot mới: Tìm @BotFather trên Telegram, gửi lệnh /newbot\n"
+            "- Để lấy Chat ID từ API: Truy cập https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates\n"
+            "- Tìm phần \"chat\" > \"id\" trong kết quả JSON\n\n"
+            "Xử lý video lớn:\n\n"
+            "- Telegram giới hạn kích thước file bot có thể gửi là 50MB\n"
+            "- Ứng dụng sẽ tự động chia nhỏ hoặc nén video lớn hơn 50MB\n"
+            "- Việc này yêu cầu FFmpeg đã được cài đặt hoặc có sẵn trong thư mục ứng dụng\n\n"
+            "Các chế độ tự động:\n\n"
+            "- Chế độ theo dõi: Tự động phát hiện và tải lên video mới xuất hiện trong thư mục\n"
+            "- Chế độ tải lên hàng loạt: Quét và tải lên tất cả video hiện có trong thư mục\n"
+            "- Bạn có thể tùy chỉnh thời gian kiểm tra thư mục trong tab Tự động"
         )
         
-        info_label = ttk.Label(info_frame, text=info_text, justify=tk.LEFT)
-        info_label.pack(padx=5, pady=5, anchor=tk.W)
+        # Chèn văn bản vào widget
+        info_text_widget.insert(tk.END, info_text)
+        info_text_widget.config(state=tk.DISABLED)  # Đặt thành chỉ đọc
     
     def create_log_tab(self, parent):
         """
@@ -871,7 +957,7 @@ class TelegramUploaderApp:
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Tạo Text widget để hiển thị log
-        self.log_text = tk.Text(log_frame, wrap=tk.WORD, width=80, height=25)
+        self.log_text = tk.Text(log_frame, wrap=tk.WORD, width=80, height=25, font=("Arial", 10))
         self.log_text.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
         
         # Thêm thanh cuộn
@@ -1645,7 +1731,21 @@ def config_main():
     """Chạy ứng dụng ở chế độ cấu hình"""
     root = tk.Tk()
     root.title("Telegram Uploader Config")
-    root.geometry("500x400")
+    
+    # Lấy kích thước màn hình
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    
+    # Thiết lập kích thước cửa sổ
+    window_width = 800
+    window_height = 600
+    
+    # Đặt vị trí cửa sổ vào giữa màn hình
+    x_position = (screen_width - window_width) // 2
+    y_position = (screen_height - window_height) // 2
+    
+    root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
+    root.state('zoomed')  # Mở toàn màn hình khi bắt đầu (Windows)
     
     # Hiển thị cửa sổ cấu hình
     app = TelegramUploaderApp(root)

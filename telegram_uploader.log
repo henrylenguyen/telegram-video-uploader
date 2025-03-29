@@ -1,0 +1,9 @@
+2025-03-29 22:04:39,342 - VideoSplitter - INFO - VideoSplitter đã được khởi tạo với kích thước tối đa 49MB mỗi phần
+2025-03-29 22:04:39,343 - VideoSplitter - INFO - Thư mục làm việc: C:\Users\THIL~1\AppData\Local\Temp\telegram_video_splitter_20250329220439
+2025-03-29 22:04:39,347 - VideoSplitter - ERROR - FFmpeg chưa được cài đặt hoặc không tìm thấy trong PATH.
+2025-03-29 22:04:39,347 - VideoSplitter - WARNING - Không tìm thấy FFmpeg. Một số tính năng xử lý video lớn có thể không hoạt động.
+2025-03-29 22:04:40,144 - TelegramAPI - INFO - Đã ngắt kết nối với Telegram API
+2025-03-29 22:17:42,280 - VideoSplitter - INFO - VideoSplitter đã được khởi tạo với kích thước tối đa 49MB mỗi phần
+2025-03-29 22:17:42,281 - VideoSplitter - INFO - Thư mục làm việc: C:\Users\THIL~1\AppData\Local\Temp\telegram_video_splitter_20250329221742
+2025-03-29 22:17:42,286 - VideoSplitter - ERROR - FFmpeg chưa được cài đặt hoặc không tìm thấy trong PATH.
+2025-03-29 22:17:42,286 - VideoSplitter - WARNING - Không tìm thấy FFmpeg. Một số tính năng xử lý video lớn có thể không hoạt động.
