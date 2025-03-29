@@ -11,6 +11,9 @@ imagehash>=4.3.1
 # Đóng gói ứng dụng
 pyinstaller>=5.6.2
 
+# Xử lý video lớn
+ffmpeg-python>=0.2.0
+
 # Các tiện ích
 tqdm>=4.64.0
 configparser>=5.3.0

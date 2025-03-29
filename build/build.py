@@ -8,6 +8,10 @@ import configparser
 import sys
 import zipfile
 import datetime
+import urllib.request
+import subprocess
+import tempfile
+import platform
 
 # Thêm thư mục gốc vào đường dẫn
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,6 +23,12 @@ DIST_DIR = os.path.join(BASE_DIR, 'dist')
 BUILD_DIR = os.path.join(BASE_DIR, 'build')
 OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
 DOCS_DIR = os.path.join(BASE_DIR, 'docs')
+TEMP_DIR = os.path.join(tempfile.gettempdir(), 'telegram_uploader_build')
+
+# URL tải FFmpeg cho Windows
+FFMPEG_WIN_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+# Thư mục FFmpeg bên trong ứng dụng
+FFMPEG_APP_DIR = os.path.join(OUTPUT_DIR, 'ffmpeg')
 
 def clean_build_dirs():
     """Xóa các thư mục build cũ"""
@@ -31,11 +41,62 @@ def clean_build_dirs():
         shutil.rmtree(BUILD_DIR)
     if os.path.exists(OUTPUT_DIR):
         shutil.rmtree(OUTPUT_DIR)
+    if os.path.exists(TEMP_DIR):
+        shutil.rmtree(TEMP_DIR)
         
-    # Tạo thư mục output
+    # Tạo thư mục output và temp
     os.makedirs(OUTPUT_DIR)
     os.makedirs(os.path.join(OUTPUT_DIR, 'config'), exist_ok=True)
     os.makedirs(os.path.join(OUTPUT_DIR, 'docs'), exist_ok=True)
+    os.makedirs(TEMP_DIR, exist_ok=True)
+
+def download_ffmpeg():
+    """Tải và chuẩn bị FFmpeg để tích hợp vào ứng dụng"""
+    print("Đang tải và chuẩn bị FFmpeg...")
+    
+    # Tạo thư mục FFmpeg trong ứng dụng
+    os.makedirs(FFMPEG_APP_DIR, exist_ok=True)
+    
+    # Đường dẫn tải về
+    zip_path = os.path.join(TEMP_DIR, "ffmpeg.zip")
+    
+    try:
+        # Tải FFmpeg
+        print("Đang tải FFmpeg từ GitHub...")
+        urllib.request.urlretrieve(FFMPEG_WIN_URL, zip_path)
+        
+        # Giải nén
+        print("Đang giải nén FFmpeg...")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(TEMP_DIR)
+        
+        # Tìm thư mục ffmpeg (thư mục có tên bắt đầu bằng ffmpeg)
+        for item in os.listdir(TEMP_DIR):
+            if os.path.isdir(os.path.join(TEMP_DIR, item)) and item.startswith('ffmpeg'):
+                ffmpeg_dir = os.path.join(TEMP_DIR, item)
+                
+                # Sao chép các file cần thiết (chỉ bin)
+                bin_dir = os.path.join(ffmpeg_dir, 'bin')
+                for file in os.listdir(bin_dir):
+                    if file in ['ffmpeg.exe', 'ffprobe.exe']:
+                        src = os.path.join(bin_dir, file)
+                        dst = os.path.join(FFMPEG_APP_DIR, file)
+                        shutil.copy2(src, dst)
+                        print(f"Đã sao chép {file} vào thư mục ffmpeg")
+                break
+        
+        # Xóa file tạm
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+            
+        print("Đã chuẩn bị FFmpeg thành công")
+    except Exception as e:
+        print(f"Lỗi khi tải FFmpeg: {e}")
+        # Tạo file readme để hướng dẫn cài đặt thủ công
+        with open(os.path.join(FFMPEG_APP_DIR, 'README.txt'), 'w', encoding='utf-8') as f:
+            f.write("Không thể tải tự động FFmpeg.\n")
+            f.write("Vui lòng tải thủ công từ: https://ffmpeg.org/download.html\n")
+            f.write("Sau đó sao chép ffmpeg.exe và ffprobe.exe vào thư mục này.\n")
 
 def create_config_template():
     """Tạo file config.ini mẫu"""
@@ -76,6 +137,9 @@ def build_main_application():
     # Đường dẫn tới file chính
     main_py = os.path.join(SRC_DIR, 'telegram_uploader.py')
     
+    # Tìm thư viện python
+    python_lib = os.path.dirname(os.__file__)
+    
     # Sử dụng PyInstaller để đóng gói
     PyInstaller.__main__.run([
         main_py,  # Tên file chính của ứng dụng
@@ -87,6 +151,7 @@ def build_main_application():
         '--hidden-import=PIL',  # Import ẩn
         '--hidden-import=cv2',  # Import ẩn
         '--hidden-import=imagehash',  # Import ẩn
+        '--add-data=src/utils/*.py;utils',  # Thêm các modules
         '--clean',  # Xóa các file tạm
     ])
 
@@ -117,6 +182,7 @@ def build_config_tool():
         '--windowed',  # Chế độ cửa sổ (không hiển thị console)
         icon_param,  # Icon cho ứng dụng
         '--hidden-import=telebot',  # Import ẩn
+        '--add-data=src/utils/*.py;utils',  # Thêm các modules
         '--clean',  # Xóa các file tạm
         f'--distpath={config_dist}',  # Thư mục đầu ra khác
         '--add-data=README.md;.',  # Thêm file README
@@ -154,11 +220,12 @@ Tính năng mới:
 - Chế độ tự động tải lên video từ thư mục
 - Hỗ trợ nhiều định dạng video phổ biến
 - Giao diện thân thiện và dễ sử dụng
+- Hỗ trợ tải lên video không giới hạn kích thước
 
 Lưu ý:
 ------
 - Bot Telegram cần có quyền gửi tin nhắn và media trong kênh/nhóm đích
-- Kích thước video không vượt quá 50MB (giới hạn của Telegram Bot API)
+- Ứng dụng đã tích hợp FFmpeg để xử lý video lớn
 - Xem thêm hướng dẫn chi tiết trong thư mục docs
 
 Liên hệ hỗ trợ:
@@ -191,6 +258,36 @@ pause
 
     with open(os.path.join(OUTPUT_DIR, 'SETUP.bat'), 'w', encoding='utf-8') as f:
         f.write(setup_content)
+        
+    # Tạo file FFmpeg-PATH.bat để đặt đường dẫn FFmpeg
+    ffmpeg_path_content = """
+@echo off
+echo ===================================
+echo  THIẾT LẬP FFMPEG PATH
+echo ===================================
+echo.
+echo Đang thiết lập đường dẫn FFmpeg...
+SET "CURRENT_DIR=%~dp0"
+SET "FFMPEG_DIR=%CURRENT_DIR%ffmpeg"
+
+REM Thêm FFmpeg vào PATH cho phiên làm việc hiện tại
+SET "PATH=%FFMPEG_DIR%;%PATH%"
+
+REM Kiểm tra cài đặt
+ffmpeg -version
+if %ERRORLEVEL% NEQ 0 (
+    echo Lỗi: Không thể thiết lập FFmpeg. Vui lòng kiểm tra thư mục ffmpeg.
+) else (
+    echo Thiết lập FFmpeg thành công!
+)
+echo.
+echo Bạn có thể chạy ứng dụng ngay bây giờ.
+echo.
+pause
+"""
+
+    with open(os.path.join(OUTPUT_DIR, 'FFmpeg-PATH.bat'), 'w', encoding='utf-8') as f:
+        f.write(ffmpeg_path_content)
 
 def copy_files_to_output():
     """Sao chép các file vào thư mục output"""
@@ -261,6 +358,9 @@ def main():
     
     # Tạo file config.ini mẫu
     create_config_template()
+    
+    # Tải và chuẩn bị FFmpeg
+    download_ffmpeg()
     
     # Đóng gói ứng dụng chính
     build_main_application()

@@ -14,6 +14,7 @@ Telegram Video Uploader là ứng dụng desktop giúp tải video từ thư m�
 - **Thông báo trạng thái**: Gửi thông báo về trạng thái tải lên qua Telegram
 - **Ghi nhật ký**: Theo dõi các hoạt động và lỗi trong quá trình tải lên
 - **Dễ dàng cấu hình**: Cài đặt token bot và ID chat thông qua giao diện đồ họa
+- **Không giới hạn kích thước**: Tự động xử lý video lớn bằng cách chia nhỏ hoặc nén
 
 ## Cài đặt
 
@@ -22,6 +23,7 @@ Telegram Video Uploader là ứng dụng desktop giúp tải video từ thư m�
 - Windows 7/8/10/11
 - Kết nối internet ổn định
 - Đã tạo Bot Telegram và lấy được Token
+- FFmpeg (để xử lý video lớn) - [Hướng dẫn cài đặt FFmpeg](docs/ffmpeg-installation.md)
 
 ### Phương pháp cài đặt
 
@@ -45,7 +47,12 @@ cd telegram-video-uploader
 pip install -r requirements.txt
 ```
 
-3. Chạy ứng dụng:
+3. Cài đặt FFmpeg (để xử lý video lớn):
+   - Windows: [Hướng dẫn cài đặt FFmpeg trên Windows](docs/ffmpeg-installation.md#cài-đặt-trên-windows)
+   - macOS: `brew install ffmpeg`
+   - Linux: `sudo apt install ffmpeg` (Ubuntu/Debian) hoặc tương đương
+
+4. Chạy ứng dụng:
 ```bash
 python src/telegram_uploader.py
 ```
@@ -64,11 +71,21 @@ python src/telegram_uploader.py
    - Cấu hình các tùy chọn
    - Nhấn "Bắt đầu tự động"
 
+## Tính năng xử lý video lớn
+
+Ứng dụng hỗ trợ tải lên video lớn hơn 50MB (giới hạn của Bot API) bằng các cách:
+
+1. **Chia nhỏ video**: Tự động chia video lớn thành nhiều phần nhỏ hơn 50MB và tải lên tuần tự
+2. **Nén video**: Nếu việc chia nhỏ không khả thi, ứng dụng sẽ thử nén video để giảm kích thước
+
+Lưu ý: Để sử dụng tính năng này, bạn cần cài đặt FFmpeg trên hệ thống. [Xem hướng dẫn cài đặt FFmpeg](docs/ffmpeg-installation.md).
+
 ## Tài liệu
 
 - [Hướng dẫn cài đặt](docs/installation.md)
 - [Hướng dẫn sử dụng](docs/user-manual.md)
 - [Hướng dẫn cho nhà phát triển](docs/developer-guide.md)
+- [Hướng dẫn cài đặt FFmpeg](docs/ffmpeg-installation.md)
 
 ## Đóng góp
 

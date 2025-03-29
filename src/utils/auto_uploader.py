@@ -5,7 +5,7 @@ import os
 import time
 import logging
 import threading
-from queue import Queue
+from queue import Queue, Empty
 from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox
@@ -154,6 +154,244 @@ class FileWatcher:
             except Exception as e:
                 logger.error(f"Lỗi trong thread theo dõi: {str(e)}")
                 time.sleep(5)  # Đợi một chút trước khi thử lại
+
+class BulkUploader:
+    """
+    Quản lý việc tải lên hàng loạt các video có sẵn trong thư mục
+    """
+    def __init__(self, telegram_uploader, video_analyzer=None):
+        """
+        Khởi tạo BulkUploader
+        
+        Args:
+            telegram_uploader: Đối tượng quản lý tải lên Telegram
+            video_analyzer: Đối tượng phân tích video (có thể None)
+        """
+        self.telegram_uploader = telegram_uploader
+        self.video_analyzer = video_analyzer
+        self.upload_queue = Queue()
+        self.upload_thread = None
+        self.running = False
+        self.check_duplicates = True
+        self.processed_files = set()  # Tập hợp các file đã xử lý
+        self.log_callback = None
+        self.progress_callback = None
+        
+    def set_log_callback(self, callback):
+        """
+        Đặt callback để ghi log
+        
+        Args:
+            callback (function): Hàm callback nhận chuỗi log
+        """
+        self.log_callback = callback
+    
+    def set_progress_callback(self, callback):
+        """
+        Đặt callback để cập nhật tiến trình
+        
+        Args:
+            callback (function): Hàm callback nhận giá trị tiến trình (0-100)
+        """
+        self.progress_callback = callback
+    
+    def log(self, message):
+        """
+        Ghi log thông qua callback nếu có
+        
+        Args:
+            message (str): Thông báo cần ghi log
+        """
+        logger.info(message)
+        if self.log_callback:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.log_callback(f"[{timestamp}] {message}")
+    
+    def scan_and_upload(self, folder_path, extensions, check_duplicates=True):
+        """
+        Quét thư mục và tải lên tất cả video phù hợp
+        
+        Args:
+            folder_path (str): Đường dẫn thư mục cần quét
+            extensions (list): Danh sách phần mở rộng file cần quét
+            check_duplicates (bool): Có kiểm tra video trùng lặp không
+        """
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            self.log(f"Thư mục không tồn tại: {folder_path}")
+            return False
+        
+        self.check_duplicates = check_duplicates
+        
+        try:
+            # Quét thư mục
+            self.log(f"Đang quét thư mục: {folder_path}")
+            
+            videos = []
+            for file_name in os.listdir(folder_path):
+                file_path = os.path.join(folder_path, file_name)
+                if os.path.isfile(file_path):
+                    ext = os.path.splitext(file_path)[1].lower()
+                    if ext in extensions:
+                        videos.append(file_path)
+            
+            if not videos:
+                self.log(f"Không tìm thấy video nào trong thư mục: {folder_path}")
+                return False
+            
+            self.log(f"Đã tìm thấy {len(videos)} video")
+            
+            # Xử lý trùng lặp nếu cần
+            if check_duplicates and self.video_analyzer and len(videos) > 1:
+                self.log("Đang kiểm tra video trùng lặp...")
+                duplicate_groups = self.video_analyzer.find_duplicates(videos)
+                
+                if duplicate_groups:
+                    # Tập hợp các video cần giữ lại (một video từ mỗi nhóm trùng lặp)
+                    keep_videos = set()
+                    # Tập hợp các video cần loại bỏ
+                    remove_videos = set()
+                    
+                    for group in duplicate_groups:
+                        if len(group) > 1:
+                            # Chọn video có kích thước lớn nhất trong nhóm để giữ lại
+                            best_video = max(group, key=os.path.getsize)
+                            
+                            # Thêm vào danh sách giữ lại
+                            keep_videos.add(best_video)
+                            
+                            # Thêm các video còn lại vào danh sách loại bỏ
+                            for video in group:
+                                if video != best_video:
+                                    remove_videos.add(video)
+                    
+                    # Cập nhật danh sách video
+                    for video in remove_videos:
+                        if video in videos:
+                            videos.remove(video)
+                    
+                    self.log(f"Đã loại bỏ {len(remove_videos)} video trùng lặp")
+            
+            if not videos:
+                self.log("Không còn video nào để tải lên sau khi lọc trùng lặp")
+                return False
+            
+            # Bắt đầu tải lên
+            self.start()
+            
+            # Thêm các video vào hàng đợi
+            for video in videos:
+                self.upload_queue.put(video)
+            
+            self.log(f"Đã thêm {len(videos)} video vào hàng đợi tải lên")
+            return True
+            
+        except Exception as e:
+            self.log(f"Lỗi khi quét thư mục: {str(e)}")
+            import traceback
+            self.log(traceback.format_exc())
+            return False
+    
+    def start(self):
+        """
+        Bắt đầu quá trình tải lên
+        """
+        if self.running:
+            return
+            
+        self.running = True
+        
+        # Xóa danh sách đã xử lý
+        self.processed_files.clear()
+        
+        # Bắt đầu thread tải lên
+        self.upload_thread = threading.Thread(target=self._upload_worker)
+        self.upload_thread.daemon = True
+        self.upload_thread.start()
+        
+        self.log("Bắt đầu quá trình tải lên hàng loạt")
+    
+    def stop(self):
+        """
+        Dừng quá trình tải lên
+        """
+        if not self.running:
+            return
+            
+        self.running = False
+        
+        # Đợi thread tải lên kết thúc
+        if self.upload_thread and self.upload_thread.is_alive():
+            self.upload_thread.join(timeout=1.0)
+            
+        self.log("Đã dừng quá trình tải lên hàng loạt")
+    
+    def _upload_worker(self):
+        """
+        Thread xử lý hàng đợi tải lên
+        """
+        total_count = self.upload_queue.qsize()
+        processed_count = 0
+        
+        while self.running:
+            try:
+                # Lấy video từ hàng đợi với timeout
+                try:
+                    file_path = self.upload_queue.get(timeout=1.0)
+                except Empty:
+                    # Hàng đợi đã xử lý hết
+                    self.log("Đã hoàn tất tất cả video trong hàng đợi")
+                    self.running = False
+                    break
+                
+                try:
+                    # Kiểm tra trùng lặp nếu được yêu cầu
+                    is_duplicate = False
+                    if self.check_duplicates and self.video_analyzer:
+                        # Kiểm tra trùng lặp với các file đã xử lý
+                        for existing_file in self.processed_files:
+                            if self.video_analyzer.compare_videos(file_path, existing_file):
+                                is_duplicate = True
+                                duplicate_name = os.path.basename(existing_file)
+                                self.log(f"Phát hiện trùng lặp: {os.path.basename(file_path)} với {duplicate_name}")
+                                break
+                    
+                    # Nếu không trùng lặp, tải lên Telegram
+                    if not is_duplicate:
+                        self.log(f"Đang tải lên: {os.path.basename(file_path)}")
+                        
+                        # Gọi hàm tải lên của telegram_uploader
+                        success = self.telegram_uploader.upload_single_video(file_path)
+                        
+                        if success:
+                            self.log(f"Đã tải lên thành công: {os.path.basename(file_path)}")
+                        else:
+                            self.log(f"Tải lên thất bại: {os.path.basename(file_path)}")
+                    
+                    # Đánh dấu file đã được xử lý
+                    self.processed_files.add(file_path)
+                    
+                    # Cập nhật tiến trình
+                    processed_count += 1
+                    if self.progress_callback and total_count > 0:
+                        progress = int(processed_count / total_count * 100)
+                        self.progress_callback(progress)
+                
+                except Exception as e:
+                    self.log(f"Lỗi khi xử lý file {os.path.basename(file_path)}: {str(e)}")
+                
+                # Đánh dấu task hoàn thành
+                self.upload_queue.task_done()
+                
+                # Chờ một chút trước khi xử lý file tiếp theo
+                time.sleep(1)
+                
+            except Exception as e:
+                if not isinstance(e, Empty):  # Bỏ qua lỗi timeout
+                    self.log(f"Lỗi trong thread tải lên: {str(e)}")
+        
+        # Đảm bảo tiến trình đạt 100% khi hoàn tất
+        if self.progress_callback:
+            self.progress_callback(100)
 
 class AutoUploader:
     """
@@ -319,7 +557,7 @@ class AutoUploader:
                 time.sleep(1)
                 
             except Exception as e:
-                if not isinstance(e, Queue.Empty):  # Bỏ qua lỗi timeout
+                if not isinstance(e, Empty):  # Bỏ qua lỗi timeout
                     self.log(f"Lỗi trong thread tải lên: {str(e)}")
 
 if __name__ == "__main__":
