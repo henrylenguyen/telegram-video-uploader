@@ -159,20 +159,23 @@ class BulkUploader:
     """
     Quản lý việc tải lên hàng loạt các video có sẵn trong thư mục
     """
-    def __init__(self, telegram_uploader, video_analyzer=None):
+    def __init__(self, telegram_uploader, video_analyzer=None, upload_history=None):
         """
         Khởi tạo BulkUploader
         
         Args:
             telegram_uploader: Đối tượng quản lý tải lên Telegram
             video_analyzer: Đối tượng phân tích video (có thể None)
+            upload_history: Đối tượng quản lý lịch sử tải lên (có thể None)
         """
         self.telegram_uploader = telegram_uploader
         self.video_analyzer = video_analyzer
+        self.upload_history = upload_history
         self.upload_queue = Queue()
         self.upload_thread = None
         self.running = False
         self.check_duplicates = True
+        self.check_history = True  # Thêm biến kiểm tra lịch sử
         self.processed_files = set()  # Tập hợp các file đã xử lý
         self.log_callback = None
         self.progress_callback = None
@@ -207,7 +210,7 @@ class BulkUploader:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.log_callback(f"[{timestamp}] {message}")
     
-    def scan_and_upload(self, folder_path, extensions, check_duplicates=True):
+    def scan_and_upload(self, folder_path, extensions, check_duplicates=True, check_history=True):
         """
         Quét thư mục và tải lên tất cả video phù hợp
         
@@ -215,12 +218,14 @@ class BulkUploader:
             folder_path (str): Đường dẫn thư mục cần quét
             extensions (list): Danh sách phần mở rộng file cần quét
             check_duplicates (bool): Có kiểm tra video trùng lặp không
+            check_history (bool): Có kiểm tra video trong lịch sử tải lên không
         """
         if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
             self.log(f"Thư mục không tồn tại: {folder_path}")
             return False
         
         self.check_duplicates = check_duplicates
+        self.check_history = check_history
         
         try:
             # Quét thư mục
@@ -241,7 +246,7 @@ class BulkUploader:
             self.log(f"Đã tìm thấy {len(videos)} video")
             
             # Xử lý trùng lặp nếu cần
-            if check_duplicates and self.video_analyzer and len(videos) > 1:
+            if self.check_duplicates and self.video_analyzer and len(videos) > 1:
                 self.log("Đang kiểm tra video trùng lặp...")
                 duplicate_groups = self.video_analyzer.find_duplicates(videos)
                 
@@ -271,8 +276,30 @@ class BulkUploader:
                     
                     self.log(f"Đã loại bỏ {len(remove_videos)} video trùng lặp")
             
+            # Kiểm tra lịch sử tải lên nếu cần
+            if self.check_history and self.upload_history and len(videos) > 0:
+                self.log("Đang kiểm tra với lịch sử tải lên...")
+                
+                # Tập hợp video đã tải lên trước đó
+                already_uploaded = set()
+                
+                for video_path in videos.copy():  # Sử dụng copy để tránh lỗi khi sửa đổi danh sách đang lặp
+                    try:
+                        # Tính hash của video
+                        video_hash = self.video_analyzer.calculate_video_hash(video_path)
+                        
+                        # Kiểm tra xem video đã tồn tại trong lịch sử chưa
+                        if video_hash and self.upload_history.is_uploaded(video_hash):
+                            already_uploaded.add(video_path)
+                            videos.remove(video_path)
+                    except Exception as e:
+                        logger.error(f"Lỗi khi kiểm tra lịch sử video {os.path.basename(video_path)}: {str(e)}")
+                
+                if already_uploaded:
+                    self.log(f"Đã loại bỏ {len(already_uploaded)} video đã tải lên trước đó")
+            
             if not videos:
-                self.log("Không còn video nào để tải lên sau khi lọc trùng lặp")
+                self.log("Không còn video nào để tải lên sau khi lọc")
                 return False
             
             # Bắt đầu tải lên
@@ -355,8 +382,16 @@ class BulkUploader:
                                 self.log(f"Phát hiện trùng lặp: {os.path.basename(file_path)} với {duplicate_name}")
                                 break
                     
-                    # Nếu không trùng lặp, tải lên Telegram
-                    if not is_duplicate:
+                    # Kiểm tra lịch sử tải lên nếu được yêu cầu
+                    already_uploaded = False
+                    if not is_duplicate and self.check_history and self.upload_history:
+                        video_hash = self.video_analyzer.calculate_video_hash(file_path)
+                        if video_hash and self.upload_history.is_uploaded(video_hash):
+                            already_uploaded = True
+                            self.log(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}")
+                    
+                    # Nếu không trùng lặp và chưa tải lên, tải lên Telegram
+                    if not is_duplicate and not already_uploaded:
                         self.log(f"Đang tải lên: {os.path.basename(file_path)}")
                         
                         # Gọi hàm tải lên của telegram_uploader
@@ -397,21 +432,24 @@ class AutoUploader:
     """
     Quản lý việc tự động tải video lên Telegram
     """
-    def __init__(self, telegram_uploader, video_analyzer=None):
+    def __init__(self, telegram_uploader, video_analyzer=None, upload_history=None):
         """
         Khởi tạo AutoUploader
         
         Args:
             telegram_uploader: Đối tượng quản lý tải lên Telegram
             video_analyzer: Đối tượng phân tích video (có thể None)
+            upload_history: Đối tượng quản lý lịch sử tải lên (có thể None)
         """
         self.telegram_uploader = telegram_uploader
         self.video_analyzer = video_analyzer
+        self.upload_history = upload_history
         self.file_watcher = None
         self.upload_queue = Queue()
         self.upload_thread = None
         self.running = False
         self.check_duplicates = True
+        self.check_history = True  # Thêm biến kiểm tra lịch sử
         self.processed_files = set()  # Tập hợp các file đã xử lý
         self.log_callback = None
     
@@ -436,7 +474,7 @@ class AutoUploader:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.log_callback(f"[{timestamp}] {message}")
     
-    def start(self, folder_path, extensions, check_interval=60, check_duplicates=True):
+    def start(self, folder_path, extensions, check_interval=60, check_duplicates=True, check_history=True):
         """
         Bắt đầu tự động tải lên
         
@@ -445,12 +483,14 @@ class AutoUploader:
             extensions (list): Danh sách phần mở rộng file cần theo dõi
             check_interval (int): Thời gian kiểm tra định kỳ (giây)
             check_duplicates (bool): Có kiểm tra video trùng lặp không
+            check_history (bool): Có kiểm tra video trong lịch sử tải lên không
         """
         if self.running:
             return
             
         self.running = True
         self.check_duplicates = check_duplicates
+        self.check_history = check_history
         
         # Tạo đối tượng theo dõi thư mục
         self.file_watcher = FileWatcher(
@@ -472,6 +512,7 @@ class AutoUploader:
         self.log(f"Định dạng được hỗ trợ: {', '.join(extensions)}")
         self.log(f"Thời gian kiểm tra: {check_interval} giây")
         self.log(f"Kiểm tra trùng lặp: {'Bật' if check_duplicates else 'Tắt'}")
+        self.log(f"Kiểm tra lịch sử: {'Bật' if check_history else 'Tắt'}")
     
     def stop(self):
         """
@@ -504,6 +545,21 @@ class AutoUploader:
             return
             
         self.log(f"Đã phát hiện file mới: {os.path.basename(file_path)}")
+        
+        # Kiểm tra lịch sử tải lên nếu cần
+        if self.check_history and self.upload_history and self.video_analyzer:
+            try:
+                # Tính hash của video
+                video_hash = self.video_analyzer.calculate_video_hash(file_path)
+                
+                # Kiểm tra xem video đã tồn tại trong lịch sử chưa
+                if video_hash and self.upload_history.is_uploaded(video_hash):
+                    self.log(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}")
+                    # Đánh dấu là đã xử lý để không xử lý lại
+                    self.processed_files.add(file_path)
+                    return
+            except Exception as e:
+                logger.error(f"Lỗi khi kiểm tra lịch sử video {os.path.basename(file_path)}: {str(e)}")
         
         # Thêm vào hàng đợi tải lên
         self.upload_queue.put(file_path)

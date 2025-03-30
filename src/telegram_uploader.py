@@ -26,6 +26,9 @@ try:
     from utils.video_analyzer import VideoAnalyzer
     from utils.auto_uploader import AutoUploader, FileWatcher, BulkUploader
     from utils.telegram_api import TelegramAPI
+    from utils.upload_history import UploadHistory
+    from utils.history_ui import UploadHistoryDialog
+    from utils.ffmpeg_manager import FFmpegManager
 except ImportError as e:
     # Xử lý trường hợp không tìm thấy module
     print(f"Lỗi khi nhập module: {e}")
@@ -92,6 +95,13 @@ class TelegramUploaderApp:
         self.should_stop = False
         self.config = self.load_config()
         
+        # Khởi tạo quản lý FFmpeg
+        self.ffmpeg_manager = FFmpegManager()
+        
+        # Khởi tạo lịch sử tải lên
+        history_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'upload_history.json')
+        self.upload_history = UploadHistory(history_file)
+        
         # Khởi tạo các thành phần
         self.video_analyzer = VideoAnalyzer()
         self.telegram_api = TelegramAPI()
@@ -101,9 +111,15 @@ class TelegramUploaderApp:
         self.auto_upload_active = False
         self.watcher_thread = None
         
+        # Khởi tạo style cho ttk widgets
+        self.setup_styles()
+        
         # Lưu trữ video và thông tin liên quan
         self.videos = {}  # Dict lưu thông tin video
         self.duplicate_groups = []  # Danh sách các nhóm video trùng lặp
+        
+        # Cài đặt FFmpeg
+        self.setup_ffmpeg()
         
         # Kết nối với Telegram
         self.connect_telegram()
@@ -113,6 +129,113 @@ class TelegramUploaderApp:
         
         # Khi đóng cửa sổ
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+    
+    def setup_styles(self):
+        """Thiết lập style cho các widget ttk"""
+        style = ttk.Style()
+        
+        # Thiết lập font chung
+        default_font = ("Segoe UI", 10)
+        heading_font = ("Segoe UI", 11, "bold")
+        
+        # Thiết lập style cho button để tránh bị thu hẹp
+        style.configure("TButton", padding=(10, 5), font=default_font, width=15)
+        
+        # Style cho label
+        style.configure("TLabel", font=default_font)
+        style.configure("Heading.TLabel", font=heading_font)
+        
+        # Style cho các cửa sổ chính
+        style.configure("TFrame", background="#f0f0f0")
+        style.configure("TLabelframe", background="#f0f0f0", font=default_font)
+        style.configure("TLabelframe.Label", font=heading_font)
+        
+        # Style cho Treeview
+        style.configure("Treeview", font=default_font, rowheight=25)
+        style.configure("Treeview.Heading", font=heading_font)
+        
+        # Style cho thanh trạng thái
+        style.configure("Status.TLabel", font=default_font, foreground="#0066CC")
+        
+        # Style cho nút cảnh báo
+        style.configure("Warning.TButton", foreground="red")
+        
+        # Style cho tab
+        style.configure("TNotebook.Tab", font=default_font, padding=(10, 5))
+    
+    def setup_ffmpeg(self):
+        """Thiết lập FFmpeg"""
+        # Hiển thị thông báo cho người dùng
+        ffmpeg_info_dialog = tk.Toplevel(self.root)
+        ffmpeg_info_dialog.title("Đang thiết lập FFmpeg")
+        ffmpeg_info_dialog.geometry("400x150")
+        ffmpeg_info_dialog.resizable(False, False)
+        ffmpeg_info_dialog.transient(self.root)
+        ffmpeg_info_dialog.grab_set()
+        
+        # Đặt vị trí vào giữa màn hình
+        ffmpeg_info_dialog.update_idletasks()
+        width = ffmpeg_info_dialog.winfo_width()
+        height = ffmpeg_info_dialog.winfo_height()
+        x = (ffmpeg_info_dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (ffmpeg_info_dialog.winfo_screenheight() // 2) - (height // 2)
+        ffmpeg_info_dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Tạo giao diện
+        main_frame = ttk.Frame(ffmpeg_info_dialog, padding=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main_frame, text="Đang kiểm tra và cài đặt FFmpeg...", 
+                  style="Heading.TLabel").pack(pady=(0, 10))
+        
+        # Thanh tiến trình
+        progress = ttk.Progressbar(main_frame, orient=tk.HORIZONTAL, mode='indeterminate')
+        progress.pack(fill=tk.X, pady=10)
+        progress.start(10)
+        
+        # Nhãn trạng thái
+        status_var = tk.StringVar(value="Đang kiểm tra...")
+        status_label = ttk.Label(main_frame, textvariable=status_var, style="Status.TLabel")
+        status_label.pack(pady=5)
+        
+        # Function để kiểm tra và cập nhật định kỳ
+        def check_ffmpeg_status():
+            # Lấy trạng thái từ FFmpegManager
+            progress_value, status_text, is_downloading = self.ffmpeg_manager.get_download_status()
+            status_var.set(status_text)
+            
+            # Nếu đã thiết lập xong hoặc lỗi
+            if self.ffmpeg_manager.is_available or (not is_downloading and "Lỗi" in status_text):
+                progress.stop()
+                
+                if self.ffmpeg_manager.is_available:
+                    status_var.set("Đã cài đặt FFmpeg thành công!")
+                    # Đóng cửa sổ sau 1 giây
+                    ffmpeg_info_dialog.after(1000, ffmpeg_info_dialog.destroy)
+                else:
+                    status_var.set(status_text)
+                    # Thêm nút đóng
+                    ttk.Button(main_frame, text="Đóng", command=ffmpeg_info_dialog.destroy).pack(pady=10)
+            else:
+                # Tiếp tục kiểm tra
+                ffmpeg_info_dialog.after(500, check_ffmpeg_status)
+        
+        # Bắt đầu thiết lập FFmpeg trong thread riêng
+        def start_ffmpeg_setup():
+            result = self.ffmpeg_manager.setup_ffmpeg()
+            if result:
+                # Đã cài đặt thành công
+                status_var.set("Đã cài đặt FFmpeg thành công!")
+                progress.stop()
+                ffmpeg_info_dialog.after(1000, ffmpeg_info_dialog.destroy)
+        
+        # Chạy trong thread riêng để không chặn giao diện
+        setup_thread = threading.Thread(target=start_ffmpeg_setup)
+        setup_thread.daemon = True
+        setup_thread.start()
+        
+        # Bắt đầu kiểm tra trạng thái
+        ffmpeg_info_dialog.after(500, check_ffmpeg_status)
     
     def show_splash_screen(self):
         """Hiển thị splash screen khi khởi động ứng dụng"""
@@ -329,13 +452,12 @@ class TelegramUploaderApp:
         ttk.Label(
             main_frame, 
             text="Chào mừng đến với Telegram Video Uploader!", 
-            font=("Arial", 14, "bold")
+            style="Heading.TLabel"
         ).pack(pady=10)
         
         ttk.Label(
             main_frame, 
-            text="Vui lòng nhập thông tin cấu hình cho ứng dụng", 
-            font=("Arial", 10)
+            text="Vui lòng nhập thông tin cấu hình cho ứng dụng"
         ).pack(pady=5)
         
         # Frame nhập thông tin Telegram
@@ -351,7 +473,6 @@ class TelegramUploaderApp:
         ttk.Label(
             telegram_frame, 
             text="(Lấy từ @BotFather trên Telegram)",
-            font=("Arial", 8),
             foreground="gray"
         ).grid(row=0, column=2, padx=5, pady=5)
         
@@ -364,7 +485,6 @@ class TelegramUploaderApp:
         ttk.Label(
             telegram_frame, 
             text="(ID kênh/nhóm để gửi video)",
-            font=("Arial", 8),
             foreground="gray"
         ).grid(row=1, column=2, padx=5, pady=5)
         
@@ -377,7 +497,6 @@ class TelegramUploaderApp:
         ttk.Label(
             telegram_frame, 
             text="(ID của bạn để nhận thông báo)",
-            font=("Arial", 8),
             foreground="gray"
         ).grid(row=2, column=2, padx=5, pady=5)
         
@@ -394,7 +513,7 @@ class TelegramUploaderApp:
         help_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Tạo Text widget thay vì Label để có thể cuộn
-        help_text_widget = tk.Text(help_scroll_frame, wrap=tk.WORD, height=15, width=70, font=("Arial", 10))
+        help_text_widget = tk.Text(help_scroll_frame, wrap=tk.WORD, height=15, width=70)
         help_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Kết nối thanh cuộn
@@ -547,6 +666,10 @@ class TelegramUploaderApp:
         settings_tab = ttk.Frame(self.notebook)
         self.notebook.add(settings_tab, text="Cài đặt")
         
+        # Tab lịch sử
+        history_tab = ttk.Frame(self.notebook)
+        self.notebook.add(history_tab, text="Lịch sử")
+        
         # Tab log
         log_tab = ttk.Frame(self.notebook)
         self.notebook.add(log_tab, text="Nhật ký")
@@ -559,6 +682,9 @@ class TelegramUploaderApp:
         
         # Tạo UI cho tab cài đặt
         self.create_settings_tab(settings_tab)
+        
+        # Tạo UI cho tab lịch sử
+        self.create_history_tab(history_tab)
         
         # Tạo UI cho tab log
         self.create_log_tab(log_tab)
@@ -581,7 +707,7 @@ class TelegramUploaderApp:
         folder_entry = ttk.Entry(folder_frame, textvariable=self.folder_path, width=50)
         folder_entry.pack(side=tk.LEFT, padx=5, pady=10, fill=tk.X, expand=True)
         
-        browse_btn = ttk.Button(folder_frame, text="Duyệt...", command=self.browse_folder)
+        browse_btn = ttk.Button(folder_frame, text="Duyệt...", command=self.browse_folder, width=10)
         browse_btn.pack(side=tk.RIGHT, padx=5, pady=10)
         
         # Frame kiểm soát
@@ -589,7 +715,8 @@ class TelegramUploaderApp:
         control_top_frame.pack(fill=tk.X, padx=10, pady=5)
         
         # Nút làm mới danh sách
-        refresh_btn = ttk.Button(control_top_frame, text="Làm mới danh sách", command=self.refresh_video_list)
+        refresh_btn = ttk.Button(control_top_frame, text="Làm mới danh sách", 
+                                command=self.refresh_video_list, width=20)
         refresh_btn.pack(side=tk.LEFT, padx=5, pady=5)
         
         # Checkbox kiểm tra trùng lặp
@@ -603,6 +730,18 @@ class TelegramUploaderApp:
             command=self.refresh_video_list
         )
         check_duplicates_cb.pack(side=tk.RIGHT, padx=5, pady=5)
+        
+        # Checkbox kiểm tra với lịch sử
+        self.check_history_var = tk.BooleanVar()
+        self.check_history_var.set(True)
+        
+        check_history_cb = ttk.Checkbutton(
+            control_top_frame, 
+            text="Kiểm tra với lịch sử đã tải lên", 
+            variable=self.check_history_var,
+            command=self.refresh_video_list
+        )
+        check_history_cb.pack(side=tk.RIGHT, padx=15, pady=5)
         
         # Frame hiển thị danh sách video
         videos_frame = ttk.LabelFrame(parent, text="Danh sách video")
@@ -641,7 +780,7 @@ class TelegramUploaderApp:
         info_right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Thông tin chi tiết
-        self.info_text = tk.Text(info_right_frame, height=4, width=40, wrap=tk.WORD, font=("Arial", 10))
+        self.info_text = tk.Text(info_right_frame, height=6, width=40, wrap=tk.WORD, font=("Arial", 10))
         self.info_text.pack(fill=tk.BOTH, expand=True)
         self.info_text.config(state=tk.DISABLED)
         
@@ -659,7 +798,7 @@ class TelegramUploaderApp:
         # Nhãn trạng thái
         self.status_var = tk.StringVar()
         self.status_var.set("Sẵn sàng")
-        status_label = ttk.Label(control_frame, textvariable=self.status_var)
+        status_label = ttk.Label(control_frame, textvariable=self.status_var, style="Status.TLabel")
         status_label.pack(pady=5)
         
         # Frame chứa các nút điều khiển
@@ -675,7 +814,8 @@ class TelegramUploaderApp:
         self.stop_btn.pack(side=tk.LEFT, padx=5)
         
         # Nút xóa video trùng lặp
-        self.remove_duplicates_btn = ttk.Button(btn_frame, text="Loại bỏ trùng lặp", command=self.remove_duplicates)
+        self.remove_duplicates_btn = ttk.Button(btn_frame, text="Loại bỏ trùng lặp", 
+                                               command=self.remove_duplicates)
         self.remove_duplicates_btn.pack(side=tk.RIGHT, padx=5)
     
     def create_auto_tab(self, parent):
@@ -697,7 +837,8 @@ class TelegramUploaderApp:
         folder_entry.pack(side=tk.LEFT, padx=5, pady=10, fill=tk.X, expand=True)
         
         browse_btn = ttk.Button(folder_frame, text="Duyệt...", 
-                                command=lambda: self.browse_folder(auto=True))
+                                command=lambda: self.browse_folder(auto=True),
+                                width=10)
         browse_btn.pack(side=tk.RIGHT, padx=5, pady=10)
         
         # Thêm khung chọn chế độ tự động
@@ -727,7 +868,8 @@ class TelegramUploaderApp:
         auto_settings_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Thời gian kiểm tra
-        ttk.Label(auto_settings_frame, text="Kiểm tra thư mục mỗi (giây):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(auto_settings_frame, text="Kiểm tra thư mục mỗi (giây):").grid(
+            row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.check_interval_var = tk.StringVar()
         self.check_interval_var.set(self.config['SETTINGS']['auto_check_interval'])
@@ -746,6 +888,17 @@ class TelegramUploaderApp:
         )
         check_duplicates_cb.grid(row=1, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
+        # Checkbox kiểm tra với lịch sử
+        self.auto_check_history_var = tk.BooleanVar()
+        self.auto_check_history_var.set(True)
+        
+        check_history_cb = ttk.Checkbutton(
+            auto_settings_frame, 
+            text="Kiểm tra với lịch sử đã tải lên", 
+            variable=self.auto_check_history_var
+        )
+        check_history_cb.grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
         # Checkbox lưu log
         self.auto_log_var = tk.BooleanVar()
         self.auto_log_var.set(True)
@@ -755,7 +908,7 @@ class TelegramUploaderApp:
             text="Ghi nhật ký hoạt động tự động", 
             variable=self.auto_log_var
         )
-        auto_log_cb.grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        auto_log_cb.grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
         # Frame trạng thái
         status_frame = ttk.LabelFrame(parent, text="Trạng thái giám sát")
@@ -783,7 +936,8 @@ class TelegramUploaderApp:
         
         auto_status_label = ttk.Label(
             control_frame, 
-            textvariable=self.auto_status_var
+            textvariable=self.auto_status_var,
+            style="Status.TLabel"
         )
         auto_status_label.pack(pady=5)
         
@@ -868,7 +1022,8 @@ class TelegramUploaderApp:
         extensions_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Thời gian chờ
-        ttk.Label(settings_frame, text="Thời gian chờ giữa các lần tải (giây):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(settings_frame, text="Thời gian chờ giữa các lần tải (giây):").grid(
+            row=1, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.delay_var = tk.StringVar()
         self.delay_var.set(self.config['SETTINGS']['delay_between_uploads'])
@@ -881,7 +1036,8 @@ class TelegramUploaderApp:
         control_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Nút kiểm tra kết nối
-        test_btn = ttk.Button(control_frame, text="Kiểm tra kết nối Telegram", command=self.test_telegram_connection)
+        test_btn = ttk.Button(control_frame, text="Kiểm tra kết nối Telegram", 
+                             command=self.test_telegram_connection)
         test_btn.pack(side=tk.LEFT, padx=5, pady=10)
         
         # Nút lưu cài đặt
@@ -933,6 +1089,164 @@ class TelegramUploaderApp:
         info_text_widget.insert(tk.END, info_text)
         info_text_widget.config(state=tk.DISABLED)  # Đặt thành chỉ đọc
     
+    def create_history_tab(self, parent):
+        """
+        Tạo giao diện cho tab lịch sử
+        
+        Args:
+            parent: Frame cha
+        """
+        # Frame chính
+        main_frame = ttk.Frame(parent, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Tiêu đề
+        ttk.Label(
+            main_frame, 
+            text="Lịch sử tải lên", 
+            style="Heading.TLabel"
+        ).pack(pady=10)
+        
+        # Giới thiệu
+        ttk.Label(
+            main_frame, 
+            text="Quản lý và xem thông tin về các video đã tải lên trước đó"
+        ).pack(pady=5)
+        
+        # Frame điều khiển
+        control_frame = ttk.Frame(main_frame)
+        control_frame.pack(fill=tk.X, pady=10)
+        
+        # Hiển thị số lượng video đã tải lên
+        uploads = self.upload_history.get_all_uploads()
+        upload_count = len(uploads)
+        
+        self.history_stats_label = ttk.Label(
+            control_frame, 
+            text=f"Tổng số video đã tải lên: {upload_count}"
+        )
+        self.history_stats_label.pack(side=tk.LEFT, padx=5)
+        
+        # Các nút điều khiển
+        view_btn = ttk.Button(
+            control_frame, 
+            text="Xem lịch sử chi tiết", 
+            command=self.show_history_dialog
+        )
+        view_btn.pack(side=tk.RIGHT, padx=5)
+        
+        clear_btn = ttk.Button(
+            control_frame, 
+            text="Xóa lịch sử", 
+            command=self.confirm_clear_history,
+            style="Warning.TButton"
+        )
+        clear_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Frame thông tin
+        info_frame = ttk.LabelFrame(main_frame, text="Thông tin về lịch sử tải lên")
+        info_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        # Giải thích cách hoạt động
+        info_text = (
+            "Tính năng lịch sử tải lên giúp bạn theo dõi và quản lý các video đã tải lên trước đó. "
+            "Khi tải lên một video, hệ thống sẽ lưu thông tin về video đó, bao gồm hash, tên file, "
+            "kích thước và ngày tải lên.\n\n"
+            
+            "Ứng dụng sẽ tự động kiểm tra các video mới so với lịch sử đã lưu. Nếu phát hiện video "
+            "trùng lặp, bạn sẽ được thông báo, giúp tránh tải lên cùng một video nhiều lần.\n\n"
+            
+            "Tính năng này đặc biệt hữu ích khi bạn làm việc với thư viện video lớn và qua nhiều phiên "
+            "làm việc khác nhau. Tất cả dữ liệu lịch sử được lưu trong file JSON, giúp dễ dàng sao lưu "
+            "và chuyển đến máy tính khác."
+        )
+        
+        info_text_widget = tk.Text(info_frame, wrap=tk.WORD, height=10, width=80, font=("Arial", 10))
+        info_text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        info_text_widget.insert(tk.END, info_text)
+        info_text_widget.config(state=tk.DISABLED)  # Đặt thành chỉ đọc
+        
+        # Khung thống kê
+        stats_frame = ttk.LabelFrame(main_frame, text="Thống kê nhanh")
+        stats_frame.pack(fill=tk.X, pady=10)
+        
+        # Grid layout cho thống kê
+        stats_frame.columnconfigure(0, weight=1)
+        stats_frame.columnconfigure(1, weight=1)
+        stats_frame.columnconfigure(2, weight=1)
+        
+        # Thống kê tổng số video
+        ttk.Label(stats_frame, text="Tổng số video:").grid(row=0, column=0, sticky=tk.W, padx=20, pady=5)
+        self.total_videos_var = tk.StringVar(value=str(upload_count))
+        ttk.Label(stats_frame, textvariable=self.total_videos_var, style="Status.TLabel").grid(
+            row=0, column=1, sticky=tk.W, padx=5, pady=5)
+        
+        # Thống kê video trong tháng này
+        today = datetime.now()
+        this_month_count = 0
+        for info in uploads.values():
+            try:
+                upload_date = datetime.strptime(info.get('upload_date', ''), "%Y-%m-%d %H:%M:%S")
+                if upload_date.year == today.year and upload_date.month == today.month:
+                    this_month_count += 1
+            except:
+                pass
+        
+        ttk.Label(stats_frame, text="Video tải lên tháng này:").grid(row=1, column=0, sticky=tk.W, padx=20, pady=5)
+        self.month_videos_var = tk.StringVar(value=str(this_month_count))
+        ttk.Label(stats_frame, textvariable=self.month_videos_var, style="Status.TLabel").grid(
+            row=1, column=1, sticky=tk.W, padx=5, pady=5)
+        
+        # Nút làm mới thống kê
+        refresh_stats_btn = ttk.Button(
+            stats_frame, 
+            text="Làm mới thống kê", 
+            command=self.refresh_history_stats,
+            width=15
+        )
+        refresh_stats_btn.grid(row=0, column=2, rowspan=2, padx=20, pady=10)
+    
+    def refresh_history_stats(self):
+        """Làm mới thống kê lịch sử"""
+        uploads = self.upload_history.get_all_uploads()
+        upload_count = len(uploads)
+        
+        # Cập nhật nhãn và biến
+        self.history_stats_label.config(text=f"Tổng số video đã tải lên: {upload_count}")
+        self.total_videos_var.set(str(upload_count))
+        
+        # Tính video trong tháng này
+        today = datetime.now()
+        this_month_count = 0
+        for info in uploads.values():
+            try:
+                upload_date = datetime.strptime(info.get('upload_date', ''), "%Y-%m-%d %H:%M:%S")
+                if upload_date.year == today.year and upload_date.month == today.month:
+                    this_month_count += 1
+            except:
+                pass
+        
+        self.month_videos_var.set(str(this_month_count))
+    
+    def show_history_dialog(self):
+        """Hiển thị dialog xem lịch sử chi tiết"""
+        dialog = UploadHistoryDialog(self.root, self.upload_history, self.video_analyzer)
+        # Sau khi đóng dialog, làm mới thống kê
+        self.root.wait_window(dialog.dialog)
+        self.refresh_history_stats()
+    
+    def confirm_clear_history(self):
+        """Xác nhận và xóa toàn bộ lịch sử"""
+        if messagebox.askyesno("Xác nhận", "Bạn có chắc muốn xóa toàn bộ lịch sử tải lên?"):
+            # Xóa toàn bộ lịch sử
+            self.upload_history.clear_history()
+            
+            # Cập nhật thống kê
+            self.refresh_history_stats()
+            
+            # Thông báo
+            messagebox.showinfo("Thành công", "Đã xóa toàn bộ lịch sử tải lên")
+    
     def create_log_tab(self, parent):
         """
         Tạo giao diện cho tab nhật ký
@@ -944,7 +1258,7 @@ class TelegramUploaderApp:
         ttk.Label(
             parent, 
             text="Nhật ký hoạt động ứng dụng", 
-            font=("Arial", 12, "bold")
+            style="Heading.TLabel"
         ).pack(pady=10)
         
         # Frame chứa log
@@ -1078,6 +1392,23 @@ class TelegramUploaderApp:
         file_count = len(video_files)
         self.status_var.set(f"Đã tìm thấy {file_count} video")
         
+        # Tạo danh sách video đã tải lên để so sánh
+        already_uploaded_videos = set()
+        
+        # Nếu có yêu cầu kiểm tra với lịch sử
+        if self.check_history_var.get():
+            self.status_var.set("Đang kiểm tra với lịch sử tải lên...")
+            self.root.update_idletasks()
+            
+            # Lấy lịch sử đã tải lên
+            upload_history = self.upload_history.get_all_uploads()
+            
+            # Tạo danh sách hash của các video đã tải lên
+            for video_path in [os.path.join(folder_path, video) for video in video_files]:
+                video_hash = self.video_analyzer.calculate_video_hash(video_path)
+                if video_hash and self.upload_history.is_uploaded(video_hash):
+                    already_uploaded_videos.add(os.path.basename(video_path))
+        
         # Nếu có yêu cầu kiểm tra trùng lặp
         if self.check_duplicates_var.get() and file_count > 1:
             self.status_var.set("Đang phân tích video để tìm trùng lặp...")
@@ -1106,6 +1437,16 @@ class TelegramUploaderApp:
                 self.status_var.set(f"Đã tìm thấy {file_count} video ({len(marked_videos)} video trùng lặp)")
             else:
                 self.status_var.set(f"Đã tìm thấy {file_count} video (không có trùng lặp)")
+        
+        # Đánh dấu các video đã tải lên trước đó
+        if already_uploaded_videos:
+            for i in range(self.video_listbox.size()):
+                video_name = self.video_listbox.get(i)
+                if video_name in already_uploaded_videos:
+                    # Đánh dấu video đã tải lên với màu nền xanh nhạt
+                    self.video_listbox.itemconfig(i, {'bg': '#D2F0FF'})  # Màu xanh nhạt
+            
+            self.status_var.set(f"Đã tìm thấy {file_count} video ({len(already_uploaded_videos)} đã tải lên trước đó)")
     
     def on_video_select(self, event):
         """
@@ -1161,6 +1502,9 @@ class TelegramUploaderApp:
         else:
             self.thumbnail_label.config(text="Không thể tạo hình thu nhỏ", image="")
         
+        # Tính hash video để kiểm tra với lịch sử
+        video_hash = info.get('hash', None)
+        
         # Hiển thị thông tin
         file_name = info.get('file_name', os.path.basename(video_path))
         duration = info.get('duration', 0)
@@ -1169,14 +1513,23 @@ class TelegramUploaderApp:
         
         # Kiểm tra trùng lặp
         duplicate_info = ""
+        history_info = ""
         
+        # Kiểm tra với lịch sử tải lên
+        if video_hash and self.check_history_var.get():
+            if self.upload_history.is_uploaded(video_hash):
+                upload_info = self.upload_history.get_upload_info(video_hash)
+                if upload_info:
+                    history_info = f"\n\nĐã tải lên trước đó vào: {upload_info.get('upload_date', 'Không rõ')}"
+        
+        # Kiểm tra trùng lặp trong thư mục hiện tại
         if self.check_duplicates_var.get() and self.duplicate_groups:
             for group in self.duplicate_groups:
                 if video_path in group:
                     # Video này nằm trong một nhóm trùng lặp
                     if len(group) > 1:
                         other_videos = [os.path.basename(v) for v in group if v != video_path]
-                        duplicate_info = f"\nTrùng lặp với: {', '.join(other_videos)}"
+                        duplicate_info = f"\n\nTrùng lặp với: {', '.join(other_videos)}"
                     break
         
         # Định dạng thông tin
@@ -1184,7 +1537,7 @@ class TelegramUploaderApp:
             f"Tên file: {file_name}\n"
             f"Thời lượng: {duration:.2f} giây\n"
             f"Độ phân giải: {resolution}\n"
-            f"Kích thước: {file_size}{duplicate_info}"
+            f"Kích thước: {file_size}{duplicate_info}{history_info}"
         )
         
         # Hiển thị thông tin
@@ -1289,6 +1642,13 @@ class TelegramUploaderApp:
                     if success:
                         log_message = f"✅ Đã tải lên thành công: {video_file}"
                         logger.info(log_message)
+                        
+                        # Thêm vào lịch sử
+                        video_hash = self.video_analyzer.calculate_video_hash(video_path)
+                        if video_hash:
+                            file_size = os.path.getsize(video_path)
+                            self.upload_history.add_upload(video_hash, video_file, video_path, file_size)
+                            
                     else:
                         log_message = f"❌ Tải lên thất bại: {video_file}"
                         logger.error(log_message)
@@ -1321,6 +1681,9 @@ class TelegramUploaderApp:
                         notification_chat_id, 
                         f"✅ Đã hoàn tất tải lên {total_videos} video"
                     )
+                
+                # Làm mới thống kê lịch sử
+                self.refresh_history_stats()
         
         except Exception as e:
             logger.error(f"Lỗi trong quá trình tải lên: {str(e)}")
@@ -1344,7 +1707,7 @@ class TelegramUploaderApp:
     
     def remove_duplicates(self):
         """Loại bỏ video trùng lặp khỏi danh sách"""
-        if not self.duplicate_groups:
+        if not self.duplicate_groups and not self.check_history_var.get():
             messagebox.showinfo("Thông báo", "Không có video trùng lặp nào để loại bỏ!")
             return
         
@@ -1353,6 +1716,7 @@ class TelegramUploaderApp:
         # Tập hợp các video cần loại bỏ
         remove_videos = set()
         
+        # Xử lý trùng lặp trong thư mục hiện tại
         for group in self.duplicate_groups:
             if len(group) > 1:
                 # Chọn video có kích thước lớn nhất trong nhóm để giữ lại
@@ -1365,6 +1729,19 @@ class TelegramUploaderApp:
                 for video in group:
                     if video != best_video:
                         remove_videos.add(video)
+        
+        # Xử lý trùng lặp với lịch sử nếu có yêu cầu
+        if self.check_history_var.get():
+            # Lấy video trong thư mục
+            for video_name, video_path in self.videos.items():
+                # Tính hash của video
+                video_hash = self.video_analyzer.calculate_video_hash(video_path)
+                
+                # Kiểm tra nếu đã tồn tại trong lịch sử
+                if video_hash and self.upload_history.is_uploaded(video_hash):
+                    # Thêm vào danh sách loại bỏ nếu không phải là video tốt nhất
+                    if video_path not in keep_videos:
+                        remove_videos.add(video_path)
         
         if not remove_videos:
             messagebox.showinfo("Thông báo", "Không có video trùng lặp nào để loại bỏ!")
@@ -1448,6 +1825,7 @@ class TelegramUploaderApp:
         self.add_auto_log(f"Thư mục giám sát: {folder_path}")
         self.add_auto_log(f"Thời gian kiểm tra: {check_interval} giây")
         self.add_auto_log(f"Kiểm tra trùng lặp: {'Bật' if self.auto_check_duplicates_var.get() else 'Tắt'}")
+        self.add_auto_log(f"Kiểm tra với lịch sử: {'Bật' if self.auto_check_history_var.get() else 'Tắt'}")
         
         # Khởi tạo AutoUploader nếu chưa có
         if not self.auto_uploader:
@@ -1459,7 +1837,8 @@ class TelegramUploaderApp:
             folder_path=folder_path,
             extensions=extensions,
             check_interval=check_interval,
-            check_duplicates=self.auto_check_duplicates_var.get()
+            check_duplicates=self.auto_check_duplicates_var.get(),
+            check_history=self.auto_check_history_var.get()  # Thêm tham số check_history
         )
         
         # Lưu cài đặt
@@ -1527,7 +1906,8 @@ class TelegramUploaderApp:
         success = self.bulk_uploader.scan_and_upload(
             folder_path=folder_path,
             extensions=extensions,
-            check_duplicates=self.auto_check_duplicates_var.get()
+            check_duplicates=self.auto_check_duplicates_var.get(),
+            check_history=self.auto_check_history_var.get()  # Thêm tham số check_history
         )
         
         if not success:
@@ -1547,6 +1927,9 @@ class TelegramUploaderApp:
             self.start_auto_btn.config(state=tk.NORMAL)
             self.bulk_upload_btn.config(state=tk.NORMAL)
             self.stop_auto_btn.config(state=tk.DISABLED)
+            
+            # Cập nhật thống kê lịch sử
+            self.refresh_history_stats()
         else:
             self.auto_status_var.set(f"Đang tải lên hàng loạt: {progress}%")
     
@@ -1615,8 +1998,24 @@ class TelegramUploaderApp:
         chat_id = self.config['TELEGRAM']['chat_id']
         
         try:
+            # Kiểm tra với lịch sử nếu có yêu cầu
+            if hasattr(self, 'auto_check_history_var') and self.auto_check_history_var.get():
+                video_hash = self.video_analyzer.calculate_video_hash(video_path)
+                if video_hash and self.upload_history.is_uploaded(video_hash):
+                    logger.info(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(video_path)}")
+                    return True  # Coi như đã tải lên thành công vì đã tồn tại
+            
             # Tải lên video
             success = self.telegram_api.send_video(chat_id, video_path)
+            
+            # Nếu tải lên thành công, thêm vào lịch sử
+            if success:
+                video_hash = self.video_analyzer.calculate_video_hash(video_path)
+                if video_hash:
+                    file_size = os.path.getsize(video_path)
+                    file_name = os.path.basename(video_path)
+                    self.upload_history.add_upload(video_hash, file_name, video_path, file_size)
+            
             return success
         except Exception as e:
             logger.error(f"Lỗi khi tải lên video {os.path.basename(video_path)}: {str(e)}")
@@ -1749,6 +2148,7 @@ def config_main():
     # Ẩn các tab khác
     app.notebook.tab(0, state="hidden")  # Ẩn tab Tải lên
     app.notebook.tab(1, state="hidden")  # Ẩn tab Tự động
+    app.notebook.tab(3, state="hidden")  # Ẩn tab Lịch sử
     
     root.mainloop()
 

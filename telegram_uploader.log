@@ -1,0 +1,20 @@
+2025-03-30 10:40:43,586 - VideoSplitter - INFO - VideoSplitter đã được khởi tạo với kích thước tối đa 49MB mỗi phần
+2025-03-30 10:40:43,587 - VideoSplitter - INFO - Thư mục làm việc: C:\Users\THIL~1\AppData\Local\Temp\telegram_video_splitter_20250330104043
+2025-03-30 10:40:43,592 - VideoSplitter - ERROR - FFmpeg chưa được cài đặt hoặc không tìm thấy trong PATH.
+2025-03-30 10:40:43,593 - VideoSplitter - WARNING - Không tìm thấy FFmpeg. Một số tính năng xử lý video lớn có thể không hoạt động.
+2025-03-30 10:40:44,310 - TelegramAPI - INFO - Đã ngắt kết nối với Telegram API
+2025-03-30 10:43:20,477 - UploadHistory - INFO - Không tìm thấy file lịch sử, tạo mới: D:\telegram-video-uploader\src\upload_history.json
+2025-03-30 10:43:20,479 - VideoSplitter - INFO - VideoSplitter đã được khởi tạo với kích thước tối đa 49MB mỗi phần
+2025-03-30 10:43:20,480 - VideoSplitter - INFO - Thư mục làm việc: C:\Users\THIL~1\AppData\Local\Temp\telegram_video_splitter_20250330104320
+2025-03-30 10:43:20,484 - VideoSplitter - ERROR - FFmpeg chưa được cài đặt hoặc không tìm thấy trong PATH.
+2025-03-30 10:43:20,485 - VideoSplitter - INFO - Tìm thấy thư mục FFmpeg trong ứng dụng: D:\telegram-video-uploader\ffmpeg
+2025-03-30 10:43:20,485 - VideoSplitter - INFO - Đã thêm FFmpeg vào PATH
+2025-03-30 10:43:20,489 - VideoSplitter - ERROR - FFmpeg chưa được cài đặt hoặc không tìm thấy trong PATH.
+2025-03-30 10:43:20,490 - VideoSplitter - WARNING - Không tìm thấy FFmpeg. Một số tính năng xử lý video lớn có thể không hoạt động.
+2025-03-30 10:43:20,582 - FFmpegManager - INFO - Không tìm thấy FFmpeg, tiến hành tải về...
+2025-03-30 10:43:20,583 - FFmpegManager - INFO - Bắt đầu tải FFmpeg từ https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+2025-03-30 10:56:11,031 - FFmpegManager - INFO - Đã sao chép ffmpeg.exe vào D:\telegram-video-uploader\ffmpeg\ffmpeg.exe
+2025-03-30 10:56:11,164 - FFmpegManager - INFO - Đã sao chép ffprobe.exe vào D:\telegram-video-uploader\ffmpeg\ffprobe.exe
+2025-03-30 10:56:11,487 - FFmpegManager - INFO - Đã tìm thấy FFmpeg trong thư mục ứng dụng: D:\telegram-video-uploader\ffmpeg
+2025-03-30 10:56:11,487 - FFmpegManager - INFO - Đã thêm D:\telegram-video-uploader\ffmpeg vào PATH
+2025-03-30 10:56:11,488 - FFmpegManager - INFO - Đã cài đặt FFmpeg thành công
