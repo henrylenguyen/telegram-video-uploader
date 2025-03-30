@@ -659,7 +659,7 @@ class TelegramUploaderApp:
         # Nhãn trạng thái
         self.status_var = tk.StringVar()
         self.status_var.set("Sẵn sàng")
-        status_label = ttk.Label(control_frame, textvariable=self.status_var, font=("Arial", 10))
+        status_label = ttk.Label(control_frame, textvariable=self.status_var)
         status_label.pack(pady=5)
         
         # Frame chứa các nút điều khiển
@@ -693,7 +693,7 @@ class TelegramUploaderApp:
         self.auto_folder_path = tk.StringVar()
         self.auto_folder_path.set(self.config['SETTINGS']['video_folder'])
         
-        folder_entry = ttk.Entry(folder_frame, textvariable=self.auto_folder_path, width=50, font=("Arial", 10))
+        folder_entry = ttk.Entry(folder_frame, textvariable=self.auto_folder_path, width=50)
         folder_entry.pack(side=tk.LEFT, padx=5, pady=10, fill=tk.X, expand=True)
         
         browse_btn = ttk.Button(folder_frame, text="Duyệt...", 
@@ -710,8 +710,7 @@ class TelegramUploaderApp:
             mode_frame, 
             text="Theo dõi thư mục (tải lên video mới khi phát hiện)",
             variable=self.auto_mode_var,
-            value="watch",
-            font=("Arial", 10)
+            value="watch"
         )
         watch_radio.pack(anchor=tk.W, padx=5, pady=3)
 
@@ -719,8 +718,7 @@ class TelegramUploaderApp:
             mode_frame, 
             text="Tải lên hàng loạt (quét và tải tất cả video trong thư mục)",
             variable=self.auto_mode_var,
-            value="bulk",
-            font=("Arial", 10)
+            value="bulk"
         )
         bulk_radio.pack(anchor=tk.W, padx=5, pady=3)
         
@@ -729,12 +727,12 @@ class TelegramUploaderApp:
         auto_settings_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Thời gian kiểm tra
-        ttk.Label(auto_settings_frame, text="Kiểm tra thư mục mỗi (giây):", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(auto_settings_frame, text="Kiểm tra thư mục mỗi (giây):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.check_interval_var = tk.StringVar()
         self.check_interval_var.set(self.config['SETTINGS']['auto_check_interval'])
         
-        check_interval_entry = ttk.Entry(auto_settings_frame, textvariable=self.check_interval_var, width=10, font=("Arial", 10))
+        check_interval_entry = ttk.Entry(auto_settings_frame, textvariable=self.check_interval_var, width=10)
         check_interval_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Checkbox kiểm tra trùng lặp
@@ -744,8 +742,7 @@ class TelegramUploaderApp:
         check_duplicates_cb = ttk.Checkbutton(
             auto_settings_frame, 
             text="Tự động loại bỏ video trùng lặp", 
-            variable=self.auto_check_duplicates_var,
-            font=("Arial", 10)
+            variable=self.auto_check_duplicates_var
         )
         check_duplicates_cb.grid(row=1, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
@@ -756,8 +753,7 @@ class TelegramUploaderApp:
         auto_log_cb = ttk.Checkbutton(
             auto_settings_frame, 
             text="Ghi nhật ký hoạt động tự động", 
-            variable=self.auto_log_var,
-            font=("Arial", 10)
+            variable=self.auto_log_var
         )
         auto_log_cb.grid(row=2, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
@@ -787,8 +783,7 @@ class TelegramUploaderApp:
         
         auto_status_label = ttk.Label(
             control_frame, 
-            textvariable=self.auto_status_var,
-            font=("Arial", 10, "bold")
+            textvariable=self.auto_status_var
         )
         auto_status_label.pack(pady=5)
         
@@ -833,30 +828,30 @@ class TelegramUploaderApp:
         telegram_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Bot Token
-        ttk.Label(telegram_frame, text="Bot Token:", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(telegram_frame, text="Bot Token:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.bot_token_var = tk.StringVar()
         self.bot_token_var.set(self.config['TELEGRAM']['bot_token'])
         
-        token_entry = ttk.Entry(telegram_frame, textvariable=self.bot_token_var, width=60, font=("Arial", 10))
+        token_entry = ttk.Entry(telegram_frame, textvariable=self.bot_token_var, width=60)
         token_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Chat ID đích
-        ttk.Label(telegram_frame, text="Chat ID đích:", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(telegram_frame, text="Chat ID đích:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.chat_id_var = tk.StringVar()
         self.chat_id_var.set(self.config['TELEGRAM']['chat_id'])
         
-        chat_id_entry = ttk.Entry(telegram_frame, textvariable=self.chat_id_var, width=60, font=("Arial", 10))
+        chat_id_entry = ttk.Entry(telegram_frame, textvariable=self.chat_id_var, width=60)
         chat_id_entry.grid(row=1, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Chat ID thông báo
-        ttk.Label(telegram_frame, text="Chat ID thông báo:", font=("Arial", 10)).grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(telegram_frame, text="Chat ID thông báo:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.notification_chat_id_var = tk.StringVar()
         self.notification_chat_id_var.set(self.config['TELEGRAM']['notification_chat_id'])
         
-        notif_id_entry = ttk.Entry(telegram_frame, textvariable=self.notification_chat_id_var, width=60, font=("Arial", 10))
+        notif_id_entry = ttk.Entry(telegram_frame, textvariable=self.notification_chat_id_var, width=60)
         notif_id_entry.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Frame cài đặt chung
@@ -864,21 +859,21 @@ class TelegramUploaderApp:
         settings_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Định dạng video
-        ttk.Label(settings_frame, text="Định dạng video hỗ trợ:", font=("Arial", 10)).grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(settings_frame, text="Định dạng video hỗ trợ:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.video_extensions_var = tk.StringVar()
         self.video_extensions_var.set(self.config['SETTINGS']['video_extensions'])
         
-        extensions_entry = ttk.Entry(settings_frame, textvariable=self.video_extensions_var, width=60, font=("Arial", 10))
+        extensions_entry = ttk.Entry(settings_frame, textvariable=self.video_extensions_var, width=60)
         extensions_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
         
         # Thời gian chờ
-        ttk.Label(settings_frame, text="Thời gian chờ giữa các lần tải (giây):", font=("Arial", 10)).grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(settings_frame, text="Thời gian chờ giữa các lần tải (giây):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         
         self.delay_var = tk.StringVar()
         self.delay_var.set(self.config['SETTINGS']['delay_between_uploads'])
         
-        delay_entry = ttk.Entry(settings_frame, textvariable=self.delay_var, width=10, font=("Arial", 10))
+        delay_entry = ttk.Entry(settings_frame, textvariable=self.delay_var, width=10)
         delay_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Frame điều khiển
