@@ -15,8 +15,11 @@ from datetime import datetime
 import configparser
 import threading
 import re
+import socket
 from queue import Queue, Empty
 import traceback
+import cv2
+from PIL import Image, ImageTk
 
 # Thêm thư mục nguồn vào đường dẫn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -29,6 +32,7 @@ try:
     from utils.upload_history import UploadHistory
     from utils.history_ui import UploadHistoryDialog
     from utils.ffmpeg_manager import FFmpegManager
+    from utils.telethon_uploader import TelethonUploader
 except ImportError as e:
     # Xử lý trường hợp không tìm thấy module
     print(f"Lỗi khi nhập module: {e}")
@@ -94,6 +98,7 @@ class TelegramUploaderApp:
         self.is_uploading = False
         self.should_stop = False
         self.config = self.load_config()
+        self.current_frames = []  # Lưu trữ các frame hiện tại
         
         # Khởi tạo quản lý FFmpeg
         self.ffmpeg_manager = FFmpegManager()
@@ -105,6 +110,7 @@ class TelegramUploaderApp:
         # Khởi tạo các thành phần
         self.video_analyzer = VideoAnalyzer()
         self.telegram_api = TelegramAPI()
+        self.telethon_uploader = TelethonUploader()
         self.upload_queue = Queue()
         self.auto_uploader = None
         self.bulk_uploader = None
@@ -129,7 +135,6 @@ class TelegramUploaderApp:
         
         # Khi đóng cửa sổ
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-    
     def setup_styles(self):
         """Thiết lập style cho các widget ttk"""
         style = ttk.Style()
@@ -139,7 +144,8 @@ class TelegramUploaderApp:
         heading_font = ("Segoe UI", 11, "bold")
         
         # Thiết lập style cho button để tránh bị thu hẹp
-        style.configure("TButton", padding=(10, 5), font=default_font, width=15)
+        style.configure("TButton", padding=(10, 5), font=default_font)
+        # Bỏ thuộc tính width để nút có thể mở rộng theo nội dung
         
         # Style cho label
         style.configure("TLabel", font=default_font)
@@ -425,6 +431,12 @@ class TelegramUploaderApp:
                 'check_duplicates': 'true',
                 'auto_check_interval': '60'  # Thời gian kiểm tra tự động (giây)
             }
+            config['TELETHON'] = {
+                'api_id': '',
+                'api_hash': '',
+                'phone': '',
+                'use_telethon': 'false'
+            }
             
             with open('config.ini', 'w', encoding='utf-8') as configfile:
                 config.write(configfile)
@@ -433,8 +445,19 @@ class TelegramUploaderApp:
             self.show_first_run_config_dialog()
         
         config.read('config.ini', encoding='utf-8')
+        
+        # Đảm bảo section TELETHON tồn tại
+        if 'TELETHON' not in config:
+            config['TELETHON'] = {
+                'api_id': '',
+                'api_hash': '',
+                'phone': '',
+                'use_telethon': 'false'
+            }
+            with open('config.ini', 'w', encoding='utf-8') as configfile:
+                config.write(configfile)
+        
         return config
-    
     def show_first_run_config_dialog(self):
         """Hiển thị cửa sổ cấu hình khi chạy lần đầu"""
         config_dialog = tk.Toplevel(self.root)
@@ -579,25 +602,43 @@ class TelegramUploaderApp:
             )
         
         # Nút kiểm tra kết nối
-        def test_connection():
-            bot_token = token_entry.get()
-            notification_chat_id = notif_id_entry.get()
+        def test_connection(self):
+            """Kiểm tra kết nối Telegram"""
+            bot_token = self.bot_token_var.get()
+            notification_chat_id = self.notification_chat_id_var.get()
             
             if not bot_token:
                 messagebox.showerror("Lỗi", "Vui lòng nhập Bot Token!")
                 return
                 
             if not notification_chat_id:
-                messagebox.showerror("Lỗi", "Vui lòng nhập Chat ID thông báo!")
-                return
-                
-            # Sử dụng TelegramAPI để kiểm tra kết nối
-            success, message = self.telegram_api.test_connection(bot_token, notification_chat_id)
+                # Nếu không có chat ID thông báo, thử dùng chat ID đích
+                notification_chat_id = self.chat_id_var.get()
+                if not notification_chat_id:
+                    messagebox.showerror("Lỗi", "Vui lòng nhập Chat ID thông báo hoặc Chat ID đích!")
+                    return
             
-            if success:
-                messagebox.showinfo("Thành công", message)
-            else:
-                messagebox.showerror("Lỗi", message)
+            # Hiển thị thông báo đang kiểm tra
+            self.status_var.set("Đang kiểm tra kết nối Telegram...")
+            self.root.update_idletasks()
+            
+            try:
+                # Tạo một instance tạm thời để kiểm tra kết nối
+                from utils.telegram_api import TelegramAPI
+                temp_api = TelegramAPI()
+                success, message = temp_api.test_connection(bot_token, notification_chat_id)
+                
+                if success:
+                    # Nếu thành công, lưu lại instance
+                    self.telegram_api = temp_api
+                    messagebox.showinfo("Thành công", message)
+                else:
+                    messagebox.showerror("Lỗi", message)
+            except Exception as e:
+                messagebox.showerror("Lỗi kết nối", f"Không thể kiểm tra kết nối: {str(e)}")
+            
+            # Khôi phục trạng thái
+            self.status_var.set("Sẵn sàng")
         
         # Nút kiểm tra kết nối
         test_btn = ttk.Button(button_frame, text="Kiểm tra kết nối", command=test_connection)
@@ -647,6 +688,21 @@ class TelegramUploaderApp:
                         "Cấu hình chưa hoàn tất", 
                         "Bạn cần cấu hình thông tin Telegram. Vui lòng nhập thông tin trong tab Cài đặt."
                     )
+        
+        # Kết nối Telethon nếu có thông tin cấu hình
+        use_telethon = self.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+        if use_telethon:
+            api_id = self.config.get('TELETHON', 'api_id', fallback='')
+            api_hash = self.config.get('TELETHON', 'api_hash', fallback='')
+            phone = self.config.get('TELETHON', 'phone', fallback='')
+            
+            if api_id and api_hash and phone:
+                try:
+                    api_id = int(api_id)
+                    if self.telethon_uploader.login(api_id, api_hash, phone, interactive=False):
+                        logger.info("Đã kết nối với Telegram API (Telethon) thành công")
+                except Exception as e:
+                    logger.error(f"Lỗi khi kết nối Telethon: {str(e)}")
     
     def create_ui(self):
         """Tạo giao diện người dùng"""
@@ -751,17 +807,52 @@ class TelegramUploaderApp:
         list_frame = ttk.Frame(videos_frame)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
+        # Thay đổi lớn: Sử dụng Treeview thay vì Listbox
+        # Cấu hình cột
+        self.video_tree = ttk.Treeview(list_frame, columns=("select", "filename", "status", "info"), show="headings")
+        self.video_tree.heading("select", text="")
+        self.video_tree.heading("filename", text="Tên file")
+        self.video_tree.heading("status", text="Trạng thái")
+        self.video_tree.heading("info", text="Thông tin thêm")
+        
+        # Thiết lập độ rộng cột
+        self.video_tree.column("select", width=30, anchor=tk.CENTER)
+        self.video_tree.column("filename", width=400, anchor=tk.W)
+        self.video_tree.column("status", width=150, anchor=tk.CENTER)
+        self.video_tree.column("info", width=200, anchor=tk.W)
+        
         # Tạo scrollbar
-        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.video_tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Danh sách video với đa lựa chọn
-        self.video_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED, font=("Arial", 10))
-        self.video_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Liên kết scrollbar với treeview
+        self.video_tree.config(yscrollcommand=scrollbar.set)
+        self.video_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        # Cấu hình scrollbar
-        self.video_listbox.config(yscrollcommand=scrollbar.set)
-        scrollbar.config(command=self.video_listbox.yview)
+        # Biến lưu trữ checkbox
+        self.video_checkboxes = {}  # {item_id: BooleanVar}
+        
+        # Xử lý sự kiện khi click vào cột checkbox
+        self.video_tree.bind("<ButtonRelease-1>", self.on_video_tree_click)
+        
+        # Xử lý sự kiện khi chọn video
+        self.video_tree.bind("<<TreeviewSelect>>", self.on_video_select)
+        
+        # Tạo 3 nút dưới danh sách
+        tree_buttons_frame = ttk.Frame(videos_frame)
+        tree_buttons_frame.pack(fill=tk.X, pady=5)
+        
+        select_all_btn = ttk.Button(tree_buttons_frame, text="Chọn tất cả", 
+                               command=self.select_all_videos)
+        select_all_btn.pack(side=tk.LEFT, padx=5)
+        
+        deselect_all_btn = ttk.Button(tree_buttons_frame, text="Bỏ chọn tất cả", 
+                                 command=self.deselect_all_videos)
+        deselect_all_btn.pack(side=tk.LEFT, padx=5)
+        
+        invert_selection_btn = ttk.Button(tree_buttons_frame, text="Đảo chọn", 
+                                     command=self.invert_video_selection)
+        invert_selection_btn.pack(side=tk.LEFT, padx=5)
         
         # Frame thông tin video
         info_frame = ttk.LabelFrame(parent, text="Thông tin video đã chọn")
@@ -775,6 +866,12 @@ class TelegramUploaderApp:
         self.thumbnail_label = ttk.Label(info_left_frame, text="Không có video nào được chọn")
         self.thumbnail_label.pack(padx=5, pady=5)
         
+        # Thêm nút để xem video
+        self.play_video_btn = ttk.Button(info_left_frame, text="Xem video", 
+                                   command=self.play_selected_video,
+                                   state=tk.DISABLED)
+        self.play_video_btn.pack(padx=5, pady=5)
+        
         # Frame thông tin bên phải
         info_right_frame = ttk.Frame(info_frame)
         info_right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -784,8 +881,24 @@ class TelegramUploaderApp:
         self.info_text.pack(fill=tk.BOTH, expand=True)
         self.info_text.config(state=tk.DISABLED)
         
-        # Xử lý sự kiện chọn video
-        self.video_listbox.bind('<<ListboxSelect>>', self.on_video_select)
+        # Frame hiển thị các frame từ video
+        frames_frame = ttk.LabelFrame(parent, text="Các khung hình từ video")
+        frames_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Frame chứa các hình thu nhỏ
+        self.frames_container = ttk.Frame(frames_frame)
+        self.frames_container.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Tạo 5 label cho các frame
+        self.frame_labels = []
+        for i in range(5):
+            frame = ttk.Frame(self.frames_container)
+            frame.pack(side=tk.LEFT, padx=5, expand=True)
+            
+            label = ttk.Label(frame, text=f"Frame {i+1}")
+            label.pack(pady=2)
+            
+            self.frame_labels.append(label)
         
         # Frame trạng thái và điều khiển
         control_frame = ttk.Frame(parent)
@@ -815,9 +928,8 @@ class TelegramUploaderApp:
         
         # Nút xóa video trùng lặp
         self.remove_duplicates_btn = ttk.Button(btn_frame, text="Loại bỏ trùng lặp", 
-                                               command=self.remove_duplicates)
+                                           command=self.remove_duplicates)
         self.remove_duplicates_btn.pack(side=tk.RIGHT, padx=5)
-    
     def create_auto_tab(self, parent):
         """
         Tạo giao diện cho tab tự động
@@ -977,6 +1089,29 @@ class TelegramUploaderApp:
         Args:
             parent: Frame cha
         """
+        # Tạo notebook cho các tab cài đặt con
+        settings_notebook = ttk.Notebook(parent)
+        settings_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Tab cài đặt Bot
+        bot_tab = ttk.Frame(settings_notebook)
+        settings_notebook.add(bot_tab, text="Telegram Bot")
+        
+        # Tab cài đặt Telethon (cho file lớn)
+        telethon_tab = ttk.Frame(settings_notebook)
+        settings_notebook.add(telethon_tab, text="Telethon API (Video lớn)")
+        
+        # Tab cài đặt chung
+        general_tab = ttk.Frame(settings_notebook)
+        settings_notebook.add(general_tab, text="Cài đặt chung")
+        
+        # Tạo giao diện cho từng tab con
+        self.create_bot_settings_tab(bot_tab)
+        self.create_telethon_settings_tab(telethon_tab)
+        self.create_general_settings_tab(general_tab)
+    
+    def create_bot_settings_tab(self, parent):
+        """Tạo giao diện cài đặt Telegram Bot"""
         # Frame thông tin Telegram
         telegram_frame = ttk.LabelFrame(parent, text="Thông tin Telegram Bot")
         telegram_frame.pack(fill=tk.X, padx=10, pady=10)
@@ -1007,29 +1142,6 @@ class TelegramUploaderApp:
         
         notif_id_entry = ttk.Entry(telegram_frame, textvariable=self.notification_chat_id_var, width=60)
         notif_id_entry.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
-        
-        # Frame cài đặt chung
-        settings_frame = ttk.LabelFrame(parent, text="Cài đặt chung")
-        settings_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        # Định dạng video
-        ttk.Label(settings_frame, text="Định dạng video hỗ trợ:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        
-        self.video_extensions_var = tk.StringVar()
-        self.video_extensions_var.set(self.config['SETTINGS']['video_extensions'])
-        
-        extensions_entry = ttk.Entry(settings_frame, textvariable=self.video_extensions_var, width=60)
-        extensions_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
-        
-        # Thời gian chờ
-        ttk.Label(settings_frame, text="Thời gian chờ giữa các lần tải (giây):").grid(
-            row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        
-        self.delay_var = tk.StringVar()
-        self.delay_var.set(self.config['SETTINGS']['delay_between_uploads'])
-        
-        delay_entry = ttk.Entry(settings_frame, textvariable=self.delay_var, width=10)
-        delay_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Frame điều khiển
         control_frame = ttk.Frame(parent)
@@ -1067,10 +1179,9 @@ class TelegramUploaderApp:
         info_text = (
             "Lưu ý khi sử dụng Telegram Video Uploader:\n\n"
             "1. Bot Telegram cần có quyền gửi tin nhắn và media trong kênh/nhóm đích\n"
-            "2. Ứng dụng hỗ trợ tải lên video không giới hạn kích thước\n"
+            "2. Giới hạn kích thước file của Telegram Bot API là 50MB\n"
             "3. Chat ID kênh/nhóm thường có dạng -100xxxxxxxxxx\n"
-            "4. Chat ID cá nhân có thể lấy bằng cách nhắn tin cho @userinfobot\n"
-            "5. Các định dạng video hỗ trợ được ngăn cách bằng dấu phẩy (không có khoảng trắng)\n\n"
+            "4. Chat ID cá nhân có thể lấy bằng cách nhắn tin cho @userinfobot\n\n"
             "Hướng dẫn chi tiết:\n\n"
             "- Để tạo bot mới: Tìm @BotFather trên Telegram, gửi lệnh /newbot\n"
             "- Để lấy Chat ID từ API: Truy cập https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates\n"
@@ -1078,11 +1189,157 @@ class TelegramUploaderApp:
             "Xử lý video lớn:\n\n"
             "- Telegram giới hạn kích thước file bot có thể gửi là 50MB\n"
             "- Ứng dụng sẽ tự động chia nhỏ hoặc nén video lớn hơn 50MB\n"
-            "- Việc này yêu cầu FFmpeg đã được cài đặt hoặc có sẵn trong thư mục ứng dụng\n\n"
-            "Các chế độ tự động:\n\n"
-            "- Chế độ theo dõi: Tự động phát hiện và tải lên video mới xuất hiện trong thư mục\n"
-            "- Chế độ tải lên hàng loạt: Quét và tải lên tất cả video hiện có trong thư mục\n"
-            "- Bạn có thể tùy chỉnh thời gian kiểm tra thư mục trong tab Tự động"
+            "- Hoặc bạn có thể sử dụng Telethon API (tab cài đặt bên cạnh) để tải lên file lớn không giới hạn kích thước"
+        )
+        
+        # Chèn văn bản vào widget
+        info_text_widget.insert(tk.END, info_text)
+        info_text_widget.config(state=tk.DISABLED)  # Đặt thành chỉ đọc
+    
+    def create_telethon_settings_tab(self, parent):
+        """Tạo giao diện cài đặt Telethon API (cho video lớn)"""
+        # Frame thông tin Telethon API
+        telethon_frame = ttk.LabelFrame(parent, text="Thông tin Telethon API (cho video lớn)")
+        telethon_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Checkbox bật/tắt Telethon
+        self.use_telethon_var = tk.BooleanVar()
+        self.use_telethon_var.set(self.config.getboolean('TELETHON', 'use_telethon', fallback=False))
+        
+        use_telethon_cb = ttk.Checkbutton(
+            telethon_frame, 
+            text="Sử dụng Telethon API cho video lớn hơn 50MB", 
+            variable=self.use_telethon_var
+        )
+        use_telethon_cb.grid(row=0, column=0, columnspan=2, sticky=tk.W, padx=5, pady=10)
+        
+        # API ID
+        ttk.Label(telethon_frame, text="API ID:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.api_id_var = tk.StringVar()
+        self.api_id_var.set(self.config.get('TELETHON', 'api_id', fallback=''))
+        
+        api_id_entry = ttk.Entry(telethon_frame, textvariable=self.api_id_var, width=30)
+        api_id_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
+        
+        # API Hash
+        ttk.Label(telethon_frame, text="API Hash:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.api_hash_var = tk.StringVar()
+        self.api_hash_var.set(self.config.get('TELETHON', 'api_hash', fallback=''))
+        
+        api_hash_entry = ttk.Entry(telethon_frame, textvariable=self.api_hash_var, width=60)
+        api_hash_entry.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
+        
+        # Số điện thoại
+        ttk.Label(telethon_frame, text="Số điện thoại:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.phone_var = tk.StringVar()
+        self.phone_var.set(self.config.get('TELETHON', 'phone', fallback=''))
+        
+        phone_entry = ttk.Entry(telethon_frame, textvariable=self.phone_var, width=30)
+        phone_entry.grid(row=3, column=1, sticky=tk.W, padx=5, pady=5)
+        
+        # Ghi chú số điện thoại
+        ttk.Label(
+            telethon_frame, 
+            text="(Định dạng: +84123456789)",
+            foreground="gray"
+        ).grid(row=4, column=1, sticky=tk.W, padx=5)
+        
+        # Frame điều khiển
+        control_frame = ttk.Frame(parent)
+        control_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Nút đăng nhập Telethon
+        login_btn = ttk.Button(control_frame, text="Đăng nhập Telethon", 
+                             command=self.login_telethon)
+        login_btn.pack(side=tk.LEFT, padx=5, pady=10)
+        
+        # Nút lưu cài đặt
+        save_btn = ttk.Button(control_frame, text="Lưu cài đặt", command=self.save_telethon_settings)
+        save_btn.pack(side=tk.RIGHT, padx=5, pady=10)
+        
+        # Thêm thông tin hướng dẫn
+        info_frame = ttk.LabelFrame(parent, text="Thông tin về Telethon API")
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Tạo Text widget để hiển thị thông tin
+        info_text_widget = tk.Text(info_frame, wrap=tk.WORD, width=80, height=15, font=("Arial", 10))
+        info_text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        info_text = (
+            "Telethon API cho phép tải lên video có kích thước lớn không giới hạn\n\n"
+            "Để sử dụng Telethon API, bạn cần:\n"
+            "1. Tạo ứng dụng API trên my.telegram.org/apps\n"
+            "2. Nhập API ID và API Hash từ trang web trên\n"
+            "3. Nhập số điện thoại Telegram của bạn (định dạng +84123456789)\n"
+            "4. Nhấn nút 'Đăng nhập Telethon' và nhập mã xác thực được gửi đến điện thoại/Telegram của bạn\n\n"
+            "Lưu ý:\n"
+            "- Khi bật tính năng này, video lớn hơn 50MB sẽ được tải lên qua tài khoản người dùng của bạn thay vì bot\n"
+            "- Telethon sẽ tạo một phiên đăng nhập lưu trên máy tính, bạn không cần đăng nhập lại sau mỗi lần khởi động ứng dụng\n"
+            "- Khuyên dùng cho các video có kích thước rất lớn, vì tốc độ tải lên qua Telethon thường nhanh hơn\n"
+            "- Khi sử dụng Telethon, video sẽ không bị chia nhỏ, giúp dễ dàng xem và quản lý hơn"
+        )
+        
+        # Chèn văn bản vào widget
+        info_text_widget.insert(tk.END, info_text)
+        info_text_widget.config(state=tk.DISABLED)  # Đặt thành chỉ đọc
+    
+    def create_general_settings_tab(self, parent):
+        """Tạo giao diện cài đặt chung"""
+        # Frame cài đặt chung
+        settings_frame = ttk.LabelFrame(parent, text="Cài đặt chung")
+        settings_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Định dạng video
+        ttk.Label(settings_frame, text="Định dạng video hỗ trợ:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.video_extensions_var = tk.StringVar()
+        self.video_extensions_var.set(self.config['SETTINGS']['video_extensions'])
+        
+        extensions_entry = ttk.Entry(settings_frame, textvariable=self.video_extensions_var, width=60)
+        extensions_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
+        
+        # Thời gian chờ
+        ttk.Label(settings_frame, text="Thời gian chờ giữa các lần tải (giây):").grid(
+            row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        
+        self.delay_var = tk.StringVar()
+        self.delay_var.set(self.config['SETTINGS']['delay_between_uploads'])
+        
+        delay_entry = ttk.Entry(settings_frame, textvariable=self.delay_var, width=10)
+        delay_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
+        
+        # Frame điều khiển
+        control_frame = ttk.Frame(parent)
+        control_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Nút lưu cài đặt
+        save_btn = ttk.Button(control_frame, text="Lưu cài đặt", command=self.save_general_settings)
+        save_btn.pack(side=tk.RIGHT, padx=5, pady=10)
+        
+        # Thêm thông tin về các cài đặt
+        info_frame = ttk.LabelFrame(parent, text="Mô tả các cài đặt")
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Tạo Text widget để hiển thị thông tin
+        info_text_widget = tk.Text(info_frame, wrap=tk.WORD, width=80, height=15, font=("Arial", 10))
+        info_text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        info_text = (
+            "Định dạng video hỗ trợ:\n"
+            "Danh sách các phần mở rộng file video được hỗ trợ, ngăn cách bằng dấu phẩy (không có khoảng trắng).\n"
+            "Ví dụ: .mp4,.avi,.mkv,.mov,.wmv\n\n"
+            
+            "Thời gian chờ giữa các lần tải:\n"
+            "Khoảng thời gian chờ giữa mỗi lần tải video lên Telegram, tính bằng giây.\n"
+            "Giá trị khuyến nghị: 5-10 giây để tránh bị giới hạn tốc độ từ Telegram.\n\n"
+            
+            "Lưu ý:\n"
+            "- Việc đặt thời gian chờ quá ngắn có thể dẫn đến lỗi 'Too Many Requests' từ Telegram\n"
+            "- Ứng dụng sẽ tự động thử lại khi gặp lỗi giới hạn tốc độ, nhưng điều này có thể làm chậm quá trình tải lên\n"
+            "- Nếu bạn thường xuyên tải lên nhiều video cùng lúc, hãy tăng thời gian chờ để tránh bị giới hạn"
         )
         
         # Chèn văn bản vào widget
@@ -1206,47 +1463,6 @@ class TelegramUploaderApp:
         )
         refresh_stats_btn.grid(row=0, column=2, rowspan=2, padx=20, pady=10)
     
-    def refresh_history_stats(self):
-        """Làm mới thống kê lịch sử"""
-        uploads = self.upload_history.get_all_uploads()
-        upload_count = len(uploads)
-        
-        # Cập nhật nhãn và biến
-        self.history_stats_label.config(text=f"Tổng số video đã tải lên: {upload_count}")
-        self.total_videos_var.set(str(upload_count))
-        
-        # Tính video trong tháng này
-        today = datetime.now()
-        this_month_count = 0
-        for info in uploads.values():
-            try:
-                upload_date = datetime.strptime(info.get('upload_date', ''), "%Y-%m-%d %H:%M:%S")
-                if upload_date.year == today.year and upload_date.month == today.month:
-                    this_month_count += 1
-            except:
-                pass
-        
-        self.month_videos_var.set(str(this_month_count))
-    
-    def show_history_dialog(self):
-        """Hiển thị dialog xem lịch sử chi tiết"""
-        dialog = UploadHistoryDialog(self.root, self.upload_history, self.video_analyzer)
-        # Sau khi đóng dialog, làm mới thống kê
-        self.root.wait_window(dialog.dialog)
-        self.refresh_history_stats()
-    
-    def confirm_clear_history(self):
-        """Xác nhận và xóa toàn bộ lịch sử"""
-        if messagebox.askyesno("Xác nhận", "Bạn có chắc muốn xóa toàn bộ lịch sử tải lên?"):
-            # Xóa toàn bộ lịch sử
-            self.upload_history.clear_history()
-            
-            # Cập nhật thống kê
-            self.refresh_history_stats()
-            
-            # Thông báo
-            messagebox.showinfo("Thành công", "Đã xóa toàn bộ lịch sử tải lên")
-    
     def create_log_tab(self, parent):
         """
         Tạo giao diện cho tab nhật ký
@@ -1290,41 +1506,6 @@ class TelegramUploaderApp:
         
         # Khởi tạo hook cho logger
         self.setup_logger_hook()
-    
-    def setup_logger_hook(self):
-        """Thiết lập hook để ghi log vào Text widget"""
-        # Tạo handler tùy chỉnh
-        class TextHandler(logging.Handler):
-            def __init__(self, text_widget):
-                logging.Handler.__init__(self)
-                self.text_widget = text_widget
-            
-            def emit(self, record):
-                msg = self.format(record)
-                
-                def append():
-                    self.text_widget.config(state=tk.NORMAL)
-                    self.text_widget.insert(tk.END, msg + '\n')
-                    self.text_widget.see(tk.END)  # Cuộn xuống dòng cuối
-                    self.text_widget.config(state=tk.DISABLED)
-                
-                # Thực hiện từ thread giao diện
-                self.text_widget.after(0, append)
-        
-        # Tạo handler và định dạng
-        text_handler = TextHandler(self.log_text)
-        text_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-        
-        # Thêm handler vào logger
-        logger.addHandler(text_handler)
-    
-    def clear_log(self):
-        """Xóa nội dung log"""
-        self.log_text.config(state=tk.NORMAL)
-        self.log_text.delete(1.0, tk.END)
-        self.log_text.config(state=tk.DISABLED)
-        logger.info("Đã xóa nhật ký")
-    
     def browse_folder(self, auto=False):
         """
         Mở hộp thoại chọn thư mục
@@ -1359,9 +1540,11 @@ class TelegramUploaderApp:
             return
         
         # Xóa danh sách hiện tại
-        self.video_listbox.delete(0, tk.END)
+        for item in self.video_tree.get_children():
+            self.video_tree.delete(item)
         self.videos = {}
         self.duplicate_groups = []
+        self.video_checkboxes = {}
         
         # Lấy danh sách phần mở rộng video hợp lệ
         extensions = self.config['SETTINGS']['video_extensions'].split(',')
@@ -1382,18 +1565,23 @@ class TelegramUploaderApp:
             self.status_var.set(f"Không tìm thấy video trong thư mục (định dạng hỗ trợ: {', '.join(extensions)})")
             return
         
-        # Thêm video vào danh sách
-        for video in video_files:
-            self.video_listbox.insert(tk.END, video)
-            # Lưu đường dẫn đầy đủ
-            self.videos[video] = os.path.join(folder_path, video)
-        
-        # Cập nhật trạng thái
-        file_count = len(video_files)
-        self.status_var.set(f"Đã tìm thấy {file_count} video")
-        
         # Tạo danh sách video đã tải lên để so sánh
         already_uploaded_videos = set()
+        
+        # Thêm video vào treeview
+        for video in video_files:
+            # Đường dẫn đầy đủ
+            video_path = os.path.join(folder_path, video)
+            self.videos[video] = video_path
+            
+            # Tạo checkbox var
+            check_var = tk.BooleanVar(value=False)
+            
+            # Thêm vào treeview với checkbox
+            item_id = self.video_tree.insert("", tk.END, values=("☐", video, "", ""))
+            
+            # Lưu biến checkbox
+            self.video_checkboxes[item_id] = check_var
         
         # Nếu có yêu cầu kiểm tra với lịch sử
         if self.check_history_var.get():
@@ -1403,14 +1591,23 @@ class TelegramUploaderApp:
             # Lấy lịch sử đã tải lên
             upload_history = self.upload_history.get_all_uploads()
             
-            # Tạo danh sách hash của các video đã tải lên
-            for video_path in [os.path.join(folder_path, video) for video in video_files]:
-                video_hash = self.video_analyzer.calculate_video_hash(video_path)
-                if video_hash and self.upload_history.is_uploaded(video_hash):
-                    already_uploaded_videos.add(os.path.basename(video_path))
+            # Kiểm tra từng video
+            for item in self.video_tree.get_children():
+                video_name = self.video_tree.item(item, "values")[1]
+                video_path = self.videos.get(video_name)
+                
+                if video_path:
+                    video_hash = self.video_analyzer.calculate_video_hash(video_path)
+                    if video_hash and self.upload_history.is_uploaded(video_hash):
+                        # Đánh dấu đã tải lên
+                        self.video_tree.item(item, values=(self.video_tree.item(item, "values")[0], 
+                                                        video_name, 
+                                                        "Đã tải lên", 
+                                                        ""))
+                        already_uploaded_videos.add(video_name)
         
         # Nếu có yêu cầu kiểm tra trùng lặp
-        if self.check_duplicates_var.get() and file_count > 1:
+        if self.check_duplicates_var.get() and len(video_files) > 1:
             self.status_var.set("Đang phân tích video để tìm trùng lặp...")
             self.root.update_idletasks()
             
@@ -1428,56 +1625,241 @@ class TelegramUploaderApp:
                     if len(group) > 1:
                         for video_path in group:
                             video_name = os.path.basename(video_path)
-                            # Tìm vị trí trong listbox
-                            for i in range(self.video_listbox.size()):
-                                if self.video_listbox.get(i) == video_name:
-                                    self.video_listbox.itemconfig(i, {'bg': '#FFD2D2'})  # Màu đỏ nhạt
+                            
+                            # Tìm video trong treeview
+                            for item in self.video_tree.get_children():
+                                tree_video_name = self.video_tree.item(item, "values")[1]
+                                
+                                if tree_video_name == video_name:
+                                    current_values = self.video_tree.item(item, "values")
+                                    status = current_values[2] or "Trùng lặp"
+                                    
+                                    # Tìm tên video trùng lặp khác trong nhóm
+                                    dup_names = [os.path.basename(v) for v in group if v != video_path]
+                                    info = f"Trùng với: {', '.join(dup_names[:2])}"
+                                    if len(dup_names) > 2:
+                                        info += f" và {len(dup_names)-2} video khác"
+                                    
+                                    # Cập nhật trạng thái
+                                    self.video_tree.item(item, values=(current_values[0], 
+                                                                     tree_video_name, 
+                                                                     status, 
+                                                                     info))
+                                    self.video_tree.item(item, tags=("duplicate",))
                                     marked_videos.add(video_name)
+                                    break
                 
-                self.status_var.set(f"Đã tìm thấy {file_count} video ({len(marked_videos)} video trùng lặp)")
+                # Đặt style cho video trùng lặp
+                self.video_tree.tag_configure("duplicate", background="#FFD2D2")  # Màu đỏ nhạt
+                
+                self.status_var.set(f"Đã tìm thấy {len(video_files)} video ({len(marked_videos)} video trùng lặp)")
             else:
-                self.status_var.set(f"Đã tìm thấy {file_count} video (không có trùng lặp)")
+                self.status_var.set(f"Đã tìm thấy {len(video_files)} video (không có trùng lặp)")
         
         # Đánh dấu các video đã tải lên trước đó
         if already_uploaded_videos:
-            for i in range(self.video_listbox.size()):
-                video_name = self.video_listbox.get(i)
-                if video_name in already_uploaded_videos:
-                    # Đánh dấu video đã tải lên với màu nền xanh nhạt
-                    self.video_listbox.itemconfig(i, {'bg': '#D2F0FF'})  # Màu xanh nhạt
+            # Đặt style cho video đã tải lên
+            self.video_tree.tag_configure("uploaded", background="#D2F0FF")  # Màu xanh nhạt
             
-            self.status_var.set(f"Đã tìm thấy {file_count} video ({len(already_uploaded_videos)} đã tải lên trước đó)")
-    
+            for item in self.video_tree.get_children():
+                video_name = self.video_tree.item(item, "values")[1]
+                if video_name in already_uploaded_videos:
+                    # Đánh dấu video đã tải lên
+                    current_values = self.video_tree.item(item, "values")
+                    self.video_tree.item(item, values=(current_values[0], 
+                                                    video_name, 
+                                                    "Đã tải lên", 
+                                                    current_values[3]))
+                    self.video_tree.item(item, tags=("uploaded",))
+            
+            self.status_var.set(f"Đã tìm thấy {len(video_files)} video ({len(already_uploaded_videos)} đã tải lên trước đó)")
+
+    def on_video_tree_click(self, event):
+        """Xử lý khi click vào cột checkbox"""
+        region = self.video_tree.identify("region", event.x, event.y)
+        if region == "heading":
+            return  # Bỏ qua nếu click vào tiêu đề
+        
+        item = self.video_tree.identify("item", event.x, event.y)
+        if not item:
+            return  # Bỏ qua nếu không click vào item nào
+        
+        column = self.video_tree.identify("column", event.x, event.y)
+        if column == "#1":  # Cột checkbox
+            # Lấy biến checkbox
+            check_var = self.video_checkboxes.get(item)
+            if check_var:
+                # Đảo trạng thái checkbox
+                check_var.set(not check_var.get())
+                
+                # Cập nhật hiển thị
+                current_values = self.video_tree.item(item, "values")
+                checkbox_text = "☑" if check_var.get() else "☐"
+                
+                self.video_tree.item(item, values=(checkbox_text, 
+                                                current_values[1], 
+                                                current_values[2], 
+                                                current_values[3]))
+
+    def select_all_videos(self):
+        """Chọn tất cả video trong danh sách"""
+        for item in self.video_tree.get_children():
+            check_var = self.video_checkboxes.get(item)
+            if check_var:
+                check_var.set(True)
+                
+                # Cập nhật hiển thị
+                current_values = self.video_tree.item(item, "values")
+                self.video_tree.item(item, values=("☑", 
+                                                current_values[1], 
+                                                current_values[2], 
+                                                current_values[3]))
+
+    def deselect_all_videos(self):
+        """Bỏ chọn tất cả video trong danh sách"""
+        for item in self.video_tree.get_children():
+            check_var = self.video_checkboxes.get(item)
+            if check_var:
+                check_var.set(False)
+                
+                # Cập nhật hiển thị
+                current_values = self.video_tree.item(item, "values")
+                self.video_tree.item(item, values=("☐", 
+                                                current_values[1], 
+                                                current_values[2], 
+                                                current_values[3]))
+
+    def invert_video_selection(self):
+        """Đảo trạng thái chọn tất cả video"""
+        for item in self.video_tree.get_children():
+            check_var = self.video_checkboxes.get(item)
+            if check_var:
+                # Đảo trạng thái
+                check_var.set(not check_var.get())
+                
+                # Cập nhật hiển thị
+                current_values = self.video_tree.item(item, "values")
+                checkbox_text = "☑" if check_var.get() else "☐"
+                
+                self.video_tree.item(item, values=(checkbox_text, 
+                                                current_values[1], 
+                                                current_values[2], 
+                                                current_values[3]))
+
+    def play_selected_video(self):
+        """Phát video đã chọn bằng trình phát mặc định của hệ thống"""
+        # Lấy video đã chọn
+        selected_items = self.video_tree.selection()
+        if not selected_items:
+            return
+        
+        # Lấy tên video
+        video_name = self.video_tree.item(selected_items[0], "values")[1]
+        video_path = self.videos.get(video_name)
+        
+        if not video_path or not os.path.exists(video_path):
+            messagebox.showerror("Lỗi", "Không tìm thấy file video!")
+            return
+        
+        try:
+            # Mở video bằng ứng dụng mặc định
+            if os.name == 'nt':  # Windows
+                os.startfile(video_path)
+            elif os.name == 'posix':  # Linux, macOS
+                import subprocess
+                subprocess.call(('xdg-open' if os.uname().sysname == 'Linux' else 'open', video_path))
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể mở video: {str(e)}")
+
     def on_video_select(self, event):
-        """
-        Xử lý sự kiện khi chọn video từ danh sách
+        """Xử lý khi chọn video từ treeview"""
+        # Lấy video đã chọn
+        selected_items = self.video_tree.selection()
         
-        Args:
-            event: Sự kiện Tkinter
-        """
-        # Lấy chỉ số được chọn
-        selected_indices = self.video_listbox.curselection()
-        
-        if not selected_indices:
+        if not selected_items:
             # Không có video nào được chọn
             self.thumbnail_label.config(text="Không có video nào được chọn")
             self.info_text.config(state=tk.NORMAL)
             self.info_text.delete(1.0, tk.END)
             self.info_text.config(state=tk.DISABLED)
+            self.play_video_btn.config(state=tk.DISABLED)
+            
+            # Xóa các frame
+            for label in self.frame_labels:
+                label.config(text="", image="")
+            
             return
         
-        # Lấy tên video đầu tiên được chọn
-        selected_index = selected_indices[0]
-        selected_video = self.video_listbox.get(selected_index)
-        
-        # Lấy đường dẫn
-        video_path = self.videos.get(selected_video)
+        # Lấy tên video
+        video_name = self.video_tree.item(selected_items[0], "values")[1]
+        video_path = self.videos.get(video_name)
         
         if not video_path or not os.path.exists(video_path):
             return
         
+        # Bật nút phát video
+        self.play_video_btn.config(state=tk.NORMAL)
+        
         # Hiển thị thông tin video
         self.display_video_info(video_path)
+        
+        # Hiển thị các frame từ video
+        self.display_video_frames(video_path)
+
+    def display_video_frames(self, video_path):
+        """
+        Hiển thị các frame từ video
+        
+        Args:
+            video_path (str): Đường dẫn đến file video
+        """
+        try:
+            # Sử dụng OpenCV để lấy các frame
+            cap = cv2.VideoCapture(video_path)
+            
+            if not cap.isOpened():
+                return
+            
+            # Lấy tổng số frame
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            
+            # Chọn 5 vị trí ngẫu nhiên
+            import random
+            positions = sorted([random.uniform(0.1, 0.9) for _ in range(5)])
+            
+            # Lưu các frame
+            frames = []
+            
+            for pos in positions:
+                frame_pos = int(frame_count * pos)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+                ret, frame = cap.read()
+                
+                if ret:
+                    # Chuyển frame sang định dạng PIL
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame_pil = Image.fromarray(frame)
+                    
+                    # Thay đổi kích thước
+                    frame_pil = frame_pil.resize((120, 90), Image.LANCZOS)
+                    
+                    # Chuyển sang định dạng Tkinter
+                    frame_tk = ImageTk.PhotoImage(frame_pil)
+                    frames.append(frame_tk)
+            
+            cap.release()
+            
+            # Lưu tham chiếu để tránh bị thu hồi bởi garbage collector
+            self.current_frames = frames
+            
+            # Hiển thị các frame
+            for i, frame in enumerate(frames):
+                if i < len(self.frame_labels):
+                    pos_percent = int(positions[i] * 100)
+                    self.frame_labels[i].config(text=f"Frame {pos_percent}%", image=frame)
+        
+        except Exception as e:
+            logger.error(f"Lỗi khi lấy frame từ video: {str(e)}")
     
     def display_video_info(self, video_path):
         """
@@ -1545,17 +1927,22 @@ class TelegramUploaderApp:
         self.info_text.delete(1.0, tk.END)
         self.info_text.insert(tk.END, info_text)
         self.info_text.config(state=tk.DISABLED)
-    
     def start_upload(self):
         """Bắt đầu quá trình tải lên video"""
         # Kiểm tra điều kiện
         if self.is_uploading:
             return
         
-        # Lấy danh sách video đã chọn
-        selected_indices = self.video_listbox.curselection()
+        # Lấy danh sách video đã chọn qua checkboxes
+        selected_videos = []
+        for item in self.video_tree.get_children():
+            check_var = self.video_checkboxes.get(item)
+            if check_var and check_var.get():
+                # Video đã được chọn qua checkbox
+                video_name = self.video_tree.item(item, "values")[1]
+                selected_videos.append(video_name)
         
-        if not selected_indices:
+        if not selected_videos:
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn ít nhất một video để tải lên!")
             return
         
@@ -1575,10 +1962,6 @@ class TelegramUploaderApp:
                 messagebox.showerror("Lỗi", "Không thể kết nối với Telegram API. Vui lòng kiểm tra Bot Token và kết nối internet!")
                 return
         
-        # Lấy video đã chọn
-        selected_videos = [self.video_listbox.get(i) for i in selected_indices]
-        folder_path = self.folder_path.get()
-        
         # Bắt đầu quá trình tải lên
         self.is_uploading = True
         self.should_stop = False
@@ -1588,6 +1971,7 @@ class TelegramUploaderApp:
         self.stop_btn.config(state=tk.NORMAL)
         
         # Tạo và bắt đầu thread tải lên
+        folder_path = self.folder_path.get()
         upload_thread = threading.Thread(
             target=self.upload_videos,
             args=(folder_path, selected_videos, chat_id, notification_chat_id)
@@ -1605,6 +1989,8 @@ class TelegramUploaderApp:
             chat_id (str): ID chat Telegram đích
             notification_chat_id (str): ID chat để gửi thông báo
         """
+        start_time = time.time()
+        
         try:
             # Chuẩn bị thanh tiến trình
             total_videos = len(video_files)
@@ -1621,6 +2007,14 @@ class TelegramUploaderApp:
             # Thời gian chờ giữa các lần tải
             delay = int(self.config['SETTINGS'].get('delay_between_uploads', 5))
             
+            # Biến để theo dõi kết quả tải lên
+            successful_uploads = 0
+            failed_uploads = 0
+            skipped_uploads = 0
+            
+            # Kiểm tra cài đặt Telethon
+            use_telethon = self.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+            
             # Tải lên từng video
             for index, video_file in enumerate(video_files):
                 if self.should_stop:
@@ -1631,27 +2025,56 @@ class TelegramUploaderApp:
                     # Đường dẫn đầy đủ đến file video
                     video_path = os.path.join(folder_path, video_file)
                     
+                    # Kiểm tra kết nối internet
+                    if not self.telegram_api.check_internet_connection():
+                        error_msg = "Mất kết nối internet. Đang chờ kết nối lại..."
+                        self.status_var.set(error_msg)
+                        self.root.update_idletasks()
+                        
+                        # Chờ kết nối internet
+                        while not self.telegram_api.check_internet_connection() and not self.should_stop:
+                            time.sleep(5)
+                            self.status_var.set(f"{error_msg} (đã chờ {(time.time() - start_time):.0f}s)")
+                            self.root.update_idletasks()
+                        
+                        if self.should_stop:
+                            break
+                    
                     # Cập nhật trạng thái
                     status_text = f"Đang tải lên {index + 1}/{total_videos}: {video_file}"
                     self.status_var.set(status_text)
                     self.root.update_idletasks()
                     
-                    # Tải lên video
-                    success = self.telegram_api.send_video(chat_id, video_path)
+                    # Kiểm tra kích thước file
+                    file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
+                    
+                    # Quyết định sử dụng Bot API hay Telethon
+                    success = False
+                    if use_telethon and file_size > 49 and self.telethon_uploader.connected:
+                        # Sử dụng Telethon cho file lớn
+                        logger.info(f"Sử dụng Telethon API để tải lên file lớn: {video_file} ({file_size:.2f} MB)")
+                        self.status_var.set(f"Đang tải lên qua Telethon: {video_file}")
+                        self.root.update_idletasks()
+                        
+                        success = self.telethon_uploader.upload_video(chat_id, video_path)
+                    else:
+                        # Sử dụng Bot API
+                        success = self.telegram_api.send_video(chat_id, video_path)
                     
                     if success:
                         log_message = f"✅ Đã tải lên thành công: {video_file}"
                         logger.info(log_message)
+                        successful_uploads += 1
                         
                         # Thêm vào lịch sử
                         video_hash = self.video_analyzer.calculate_video_hash(video_path)
                         if video_hash:
                             file_size = os.path.getsize(video_path)
                             self.upload_history.add_upload(video_hash, video_file, video_path, file_size)
-                            
                     else:
                         log_message = f"❌ Tải lên thất bại: {video_file}"
                         logger.error(log_message)
+                        failed_uploads += 1
                     
                     # Cập nhật tiến trình
                     self.progress['value'] = index + 1
@@ -1663,23 +2086,29 @@ class TelegramUploaderApp:
                 
                 except Exception as e:
                     logger.error(f"Lỗi khi tải lên video {video_file}: {str(e)}")
+                    failed_uploads += 1
+                    
+                    # Cập nhật trạng thái lỗi
+                    self.status_var.set(f"Lỗi khi tải lên {video_file}: {str(e)}")
+                    self.root.update_idletasks()
+                    time.sleep(2)  # Hiển thị thông báo lỗi trong 2 giây
             
             # Hoàn tất
             if self.should_stop:
-                self.status_var.set(f"Đã dừng tải lên ({self.progress['value']}/{total_videos})")
+                self.status_var.set(f"Đã dừng tải lên ({successful_uploads} thành công, {failed_uploads} thất bại)")
                 
                 if notification_chat_id:
                     self.telegram_api.send_notification(
                         notification_chat_id, 
-                        f"🛑 Đã dừng tải lên ({self.progress['value']}/{total_videos})"
+                        f"🛑 Đã dừng tải lên ({successful_uploads} thành công, {failed_uploads} thất bại)"
                     )
             else:
-                self.status_var.set(f"Đã hoàn tất tải lên {total_videos} video")
+                self.status_var.set(f"Đã hoàn tất: {successful_uploads} thành công, {failed_uploads} thất bại")
                 
                 if notification_chat_id:
                     self.telegram_api.send_notification(
                         notification_chat_id, 
-                        f"✅ Đã hoàn tất tải lên {total_videos} video"
+                        f"✅ Đã hoàn tất tải lên: {successful_uploads} thành công, {failed_uploads} thất bại"
                     )
                 
                 # Làm mới thống kê lịch sử
@@ -1747,25 +2176,25 @@ class TelegramUploaderApp:
             messagebox.showinfo("Thông báo", "Không có video trùng lặp nào để loại bỏ!")
             return
         
-        # Loại bỏ các video trùng lặp khỏi listbox
+        # Loại bỏ các video trùng lặp khỏi treeview
         video_names_to_remove = [os.path.basename(video) for video in remove_videos]
         
-        # Duyệt từ cuối danh sách để tránh lỗi chỉ số
-        for i in range(self.video_listbox.size() - 1, -1, -1):
-            video_name = self.video_listbox.get(i)
+        # Xóa từ treeview
+        for item in list(self.video_tree.get_children()):
+            video_name = self.video_tree.item(item, "values")[1]
             if video_name in video_names_to_remove:
-                self.video_listbox.delete(i)
+                self.video_tree.delete(item)
                 # Xóa khỏi dict videos
                 if video_name in self.videos:
                     del self.videos[video_name]
+                # Xóa khỏi video_checkboxes
+                if item in self.video_checkboxes:
+                    del self.video_checkboxes[item]
         
         # Cập nhật trạng thái
         removed_count = len(video_names_to_remove)
         logger.info(f"Đã loại bỏ {removed_count} video trùng lặp")
         self.status_var.set(f"Đã loại bỏ {removed_count} video trùng lặp")
-        
-        # Xóa thông tin trùng lặp đã xử lý
-        self.duplicate_groups = []
     
     def start_auto_upload(self):
         """Bắt đầu chế độ tự động tải lên"""
@@ -1838,7 +2267,7 @@ class TelegramUploaderApp:
             extensions=extensions,
             check_interval=check_interval,
             check_duplicates=self.auto_check_duplicates_var.get(),
-            check_history=self.auto_check_history_var.get()  # Thêm tham số check_history
+            check_history=self.auto_check_history_var.get()
         )
         
         # Lưu cài đặt
@@ -1907,7 +2336,7 @@ class TelegramUploaderApp:
             folder_path=folder_path,
             extensions=extensions,
             check_duplicates=self.auto_check_duplicates_var.get(),
-            check_history=self.auto_check_history_var.get()  # Thêm tham số check_history
+            check_history=self.auto_check_history_var.get()
         )
         
         if not success:
@@ -2005,8 +2434,20 @@ class TelegramUploaderApp:
                     logger.info(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(video_path)}")
                     return True  # Coi như đã tải lên thành công vì đã tồn tại
             
-            # Tải lên video
-            success = self.telegram_api.send_video(chat_id, video_path)
+            # Kiểm tra kích thước file
+            file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
+            
+            # Quyết định sử dụng Bot API hay Telethon
+            use_telethon = self.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+            success = False
+            
+            if use_telethon and file_size > 49 and self.telethon_uploader.connected:
+                # Sử dụng Telethon cho file lớn
+                logger.info(f"Sử dụng Telethon API để tải lên file lớn: {os.path.basename(video_path)} ({file_size:.2f} MB)")
+                success = self.telethon_uploader.upload_video(chat_id, video_path)
+            else:
+                # Sử dụng Bot API
+                success = self.telegram_api.send_video(chat_id, video_path)
             
             # Nếu tải lên thành công, thêm vào lịch sử
             if success:
@@ -2041,31 +2482,123 @@ class TelegramUploaderApp:
         self.status_var.set("Đang kiểm tra kết nối Telegram...")
         self.root.update_idletasks()
         
-        # Kiểm tra kết nối
-        success, message = self.telegram_api.test_connection(bot_token, notification_chat_id)
-        
-        if success:
-            messagebox.showinfo("Thành công", message)
-        else:
-            messagebox.showerror("Lỗi", message)
+        try:
+            # Vì phần telegram_api có thể chưa được khởi tạo đúng,
+            # tạo một instance mới để kiểm tra kết nối
+            from utils.telegram_api import TelegramAPI
+            temp_api = TelegramAPI()
+            success, message = temp_api.test_connection(bot_token, notification_chat_id)
+            
+            if success:
+                # Nếu thành công, lưu lại instance
+                self.telegram_api = temp_api
+                messagebox.showinfo("Thành công", message)
+            else:
+                messagebox.showerror("Lỗi", message)
+        except Exception as e:
+            messagebox.showerror("Lỗi kết nối", f"Không thể kiểm tra kết nối: {str(e)}")
         
         # Khôi phục trạng thái
         self.status_var.set("Sẵn sàng")
     
+    def login_telethon(self):
+        """Đăng nhập vào Telethon API để tải lên file lớn"""
+        # Lấy thông tin từ giao diện
+        api_id = self.api_id_var.get()
+        api_hash = self.api_hash_var.get()
+        phone = self.phone_var.get()
+        
+        # Kiểm tra các trường
+        if not api_id or not api_hash or not phone:
+            messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ API ID, API Hash và số điện thoại!")
+            return
+        
+        try:
+            # Chuyển đổi API ID sang số
+            api_id = int(api_id)
+            
+            # Hiển thị dialog đăng nhập
+            if self.telethon_uploader.show_login_dialog(self.root):
+                # Đăng nhập thành công
+                messagebox.showinfo(
+                    "Thành công", 
+                    "Đăng nhập Telethon thành công! Bạn có thể tải lên video lớn hơn 50MB."
+                )
+                
+                # Lưu cài đặt
+                self.config['TELETHON']['api_id'] = str(api_id)
+                self.config['TELETHON']['api_hash'] = api_hash
+                self.config['TELETHON']['phone'] = phone
+                with open('config.ini', 'w', encoding='utf-8') as configfile:
+                    self.config.write(configfile)
+            else:
+                messagebox.showerror("Lỗi", "Đăng nhập Telethon thất bại. Vui lòng kiểm tra thông tin và thử lại.")
+        except ValueError:
+            messagebox.showerror("Lỗi", "API ID phải là một số nguyên!")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Lỗi khi đăng nhập Telethon: {str(e)}")
+    
     def save_settings(self):
-        """Lưu cài đặt từ giao diện vào file cấu hình"""
+        """Lưu cài đặt Telegram Bot từ giao diện vào file cấu hình"""
         # Lấy giá trị từ giao diện
         bot_token = self.bot_token_var.get()
         chat_id = self.chat_id_var.get()
         notification_chat_id = self.notification_chat_id_var.get()
-        video_extensions = self.video_extensions_var.get()
-        delay = self.delay_var.get()
         
         # Lưu vào cấu hình
         self.config['TELEGRAM']['bot_token'] = bot_token
         self.config['TELEGRAM']['chat_id'] = chat_id
         self.config['TELEGRAM']['notification_chat_id'] = notification_chat_id
         
+        # Ghi file
+        with open('config.ini', 'w', encoding='utf-8') as configfile:
+            self.config.write(configfile)
+        
+        # Thông báo
+        messagebox.showinfo("Thông báo", "Đã lưu cài đặt Bot Telegram thành công!")
+        
+        # Kết nối lại với Telegram nếu Bot Token thay đổi
+        if bot_token != self.telegram_api.bot_token:
+            self.telegram_api.disconnect()
+            self.connect_telegram()
+    
+    def save_telethon_settings(self):
+        """Lưu cài đặt Telethon từ giao diện vào file cấu hình"""
+        # Lấy giá trị từ giao diện
+        use_telethon = self.use_telethon_var.get()
+        api_id = self.api_id_var.get()
+        api_hash = self.api_hash_var.get()
+        phone = self.phone_var.get()
+        
+        # Lưu vào cấu hình
+        self.config['TELETHON']['use_telethon'] = str(use_telethon).lower()
+        self.config['TELETHON']['api_id'] = api_id
+        self.config['TELETHON']['api_hash'] = api_hash
+        self.config['TELETHON']['phone'] = phone
+        
+        # Ghi file
+        with open('config.ini', 'w', encoding='utf-8') as configfile:
+            self.config.write(configfile)
+        
+        # Thông báo
+        messagebox.showinfo("Thông báo", "Đã lưu cài đặt Telethon thành công!")
+    
+    def save_general_settings(self):
+        """Lưu cài đặt chung từ giao diện vào file cấu hình"""
+        # Lấy giá trị từ giao diện
+        video_extensions = self.video_extensions_var.get()
+        delay = self.delay_var.get()
+        
+        try:
+            # Kiểm tra giá trị
+            delay_value = int(delay)
+            if delay_value < 0:
+                raise ValueError("Thời gian chờ không được âm")
+        except ValueError:
+            messagebox.showerror("Lỗi", "Thời gian chờ phải là một số nguyên không âm!")
+            return
+        
+        # Lưu vào cấu hình
         self.config['SETTINGS']['video_extensions'] = video_extensions
         self.config['SETTINGS']['delay_between_uploads'] = delay
         
@@ -2074,95 +2607,188 @@ class TelegramUploaderApp:
             self.config.write(configfile)
         
         # Thông báo
-        messagebox.showinfo("Thông báo", "Đã lưu cài đặt thành công!")
+        messagebox.showinfo("Thông báo", "Đã lưu cài đặt chung thành công!")
+    
+    def refresh_history_stats(self):
+        """Làm mới thống kê lịch sử"""
+        uploads = self.upload_history.get_all_uploads()
+        upload_count = len(uploads)
         
-        # Kết nối lại với Telegram nếu Bot Token thay đổi
-        if bot_token != self.telegram_api.bot_token:
-            self.telegram_api.disconnect()
-            self.connect_telegram()
+        # Cập nhật nhãn và biến
+        self.history_stats_label.config(text=f"Tổng số video đã tải lên: {upload_count}")
+        self.total_videos_var.set(str(upload_count))
+        
+        # Tính video trong tháng này
+        today = datetime.now()
+        this_month_count = 0
+        for info in uploads.values():
+            try:
+                upload_date = datetime.strptime(info.get('upload_date', ''), "%Y-%m-%d %H:%M:%S")
+                if upload_date.year == today.year and upload_date.month == today.month:
+                    this_month_count += 1
+            except:
+                pass
+        
+        self.month_videos_var.set(str(this_month_count))
+    
+    def show_history_dialog(self):
+        """Hiển thị dialog xem lịch sử chi tiết"""
+        dialog = UploadHistoryDialog(self.root, self.upload_history, self.video_analyzer)
+        # Sau khi đóng dialog, làm mới thống kê
+        self.root.wait_window(dialog.dialog)
+        self.refresh_history_stats()
+    
+    def confirm_clear_history(self):
+        """Xác nhận và xóa toàn bộ lịch sử"""
+        if messagebox.askyesno("Xác nhận", "Bạn có chắc muốn xóa toàn bộ lịch sử tải lên?"):
+            # Xóa toàn bộ lịch sử
+            self.upload_history.clear_history()
+            
+            # Cập nhật thống kê
+            self.refresh_history_stats()
+            
+            # Thông báo
+            messagebox.showinfo("Thành công", "Đã xóa toàn bộ lịch sử tải lên")
+    def setup_logger_hook(self):
+        """Thiết lập hook để bắt các thông báo log và hiển thị trên UI"""
+        class LogHandler(logging.Handler):
+            def __init__(self, text_widget):
+                logging.Handler.__init__(self)
+                self.text_widget = text_widget
+                # Giới hạn số dòng để tránh tràn bộ nhớ
+                self.max_lines = 1000
+                
+            def emit(self, record):
+                msg = self.format(record)
+                
+                # Thêm vào Text widget
+                def append():
+                    self.text_widget.config(state=tk.NORMAL)
+                    
+                    # Thêm tin nhắn mới
+                    self.text_widget.insert(tk.END, msg + '\n')
+                    
+                    # Kiểm tra số dòng
+                    lines = self.text_widget.get('1.0', tk.END).split('\n')
+                    if len(lines) > self.max_lines:
+                        # Xóa các dòng cũ nếu quá giới hạn
+                        excess_lines = len(lines) - self.max_lines
+                        self.text_widget.delete('1.0', f'{excess_lines + 1}.0')
+                    
+                    self.text_widget.see(tk.END)  # Cuộn xuống cuối
+                    self.text_widget.config(state=tk.DISABLED)
+                
+                # Phải chạy trong luồng chính của Tkinter
+                self.text_widget.after(0, append)
+        
+        # Tạo handler với định dạng riêng
+        log_handler = LogHandler(self.log_text)
+        log_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        log_handler.setLevel(logging.INFO)
+        
+        # Thêm handler vào root logger
+        logging.getLogger().addHandler(log_handler)
+    
+    def clear_log(self):
+        """Xóa nội dung nhật ký"""
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.delete(1.0, tk.END)
+        self.log_text.config(state=tk.DISABLED)
+        
+        # Thông báo
+        logger.info("Đã xóa nhật ký")
+    
+    def check_internet_connection(self):
+        """
+        Kiểm tra kết nối internet
+        
+        Returns:
+            bool: True nếu có kết nối internet
+        """
+        try:
+            # Thử kết nối đến Google DNS
+            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            return True
+        except OSError:
+            pass
+        
+        try:
+            # Thử kết nối đến Telegram API
+            socket.create_connection(("api.telegram.org", 443), timeout=3)
+            return True
+        except OSError:
+            pass
+        
+        return False
     
     def on_closing(self):
-        """Xử lý khi đóng cửa sổ"""
-        # Kiểm tra xem có đang tải lên không
+        """Xử lý khi đóng ứng dụng"""
+        # Dừng tất cả hoạt động
         if self.is_uploading:
-            if messagebox.askyesno("Xác nhận thoát", "Đang tải lên video. Bạn có chắc muốn thoát không?"):
-                self.cleanup_and_exit()
-            else:
+            # Nếu đang tải lên, yêu cầu xác nhận
+            if not messagebox.askyesno("Xác nhận", "Đang có video đang tải lên. Bạn có chắc muốn thoát?"):
                 return
-        elif self.auto_upload_active:
-            if messagebox.askyesno("Xác nhận thoát", "Chế độ tự động đang hoạt động. Bạn có chắc muốn thoát không?"):
-                self.cleanup_and_exit()
-            else:
-                return
-        else:
-            self.cleanup_and_exit()
-    
-    def cleanup_and_exit(self):
-        """Dọn dẹp tài nguyên và thoát"""
-        # Dừng tự động tải lên
+            
+            # Dừng quá trình tải lên
+            self.should_stop = True
+        
         if self.auto_upload_active:
-            if self.auto_uploader:
-                self.auto_uploader.stop()
-            if self.bulk_uploader:
-                self.bulk_uploader.stop()
+            # Dừng chế độ tự động
+            self.stop_auto_upload()
         
-        # Dừng phân tích video
-        if self.video_analyzer:
-            self.video_analyzer.stop_async_analysis()
-        
-        # Ngắt kết nối Telegram
-        if self.telegram_api:
-            self.telegram_api.disconnect()
-        
-        # Lưu cấu hình cuối cùng
+        # Lưu cấu hình
         with open('config.ini', 'w', encoding='utf-8') as configfile:
             self.config.write(configfile)
         
-        # Đóng cửa sổ
+        # Ngắt kết nối các API
+        if self.telegram_api:
+            self.telegram_api.disconnect()
+        
+        if self.telethon_uploader:
+            self.telethon_uploader.disconnect()
+        
+        # Đóng ứng dụng
         self.root.destroy()
+        logger.info("Đã đóng ứng dụng")
 
-def config_main():
-    """Chạy ứng dụng ở chế độ cấu hình"""
-    root = tk.Tk()
-    root.title("Telegram Uploader Config")
-    
-    # Lấy kích thước màn hình
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    
-    # Thiết lập kích thước cửa sổ
-    window_width = 800
-    window_height = 600
-    
-    # Đặt vị trí cửa sổ vào giữa màn hình
-    x_position = (screen_width - window_width) // 2
-    y_position = (screen_height - window_height) // 2
-    
-    root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
-    root.state('zoomed')  # Mở toàn màn hình khi bắt đầu (Windows)
-    
-    # Hiển thị cửa sổ cấu hình
-    app = TelegramUploaderApp(root)
-    app.notebook.select(2)  # Chuyển đến tab Cài đặt
-    
-    # Ẩn các tab khác
-    app.notebook.tab(0, state="hidden")  # Ẩn tab Tải lên
-    app.notebook.tab(1, state="hidden")  # Ẩn tab Tự động
-    app.notebook.tab(3, state="hidden")  # Ẩn tab Lịch sử
-    
-    root.mainloop()
 
 def main():
-    """Hàm chính để chạy ứng dụng"""
-    # Kiểm tra tham số dòng lệnh
-    if len(sys.argv) > 1 and sys.argv[1] == "--config":
-        config_main()
-        return
+    """Hàm main để khởi chạy ứng dụng"""
+    # Cấu hình logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler("telegram_uploader.log", encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
     
-    # Chạy ứng dụng chính
+    logger.info("Khởi động ứng dụng Telegram Video Uploader")
+    
+    # Tạo cửa sổ gốc
     root = tk.Tk()
-    app = TelegramUploaderApp(root)
-    root.mainloop()
+    
+    try:
+        # Khởi tạo ứng dụng
+        app = TelegramUploaderApp(root)
+        
+        # Chạy main loop
+        root.mainloop()
+    except Exception as e:
+        # Log lỗi
+        logger.error(f"Lỗi không thể khôi phục: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Hiển thị thông báo lỗi
+        messagebox.showerror(
+            "Lỗi nghiêm trọng",
+            f"Đã xảy ra lỗi không thể khôi phục:\n\n{str(e)}\n\nVui lòng khởi động lại ứng dụng."
+        )
+        
+        # Đóng ứng dụng
+        root.destroy()
+
 
 if __name__ == "__main__":
     main()

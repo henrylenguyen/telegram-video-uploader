@@ -5,6 +5,8 @@ import os
 import time
 import logging
 import threading
+import socket
+import requests
 from datetime import datetime
 import telebot
 from telebot.types import InputFile
@@ -80,9 +82,95 @@ class TelegramAPI:
         self.bot_token = None
         logger.info("Đã ngắt kết nối với Telegram API")
     
+    def send_with_retry(self, send_func, max_retries=3, retry_delay=5):
+        """
+        Thực thi một hàm gửi với cơ chế tự động thử lại
+        
+        Args:
+            send_func: Hàm gửi dữ liệu cần thực thi
+            max_retries (int): Số lần thử lại tối đa
+            retry_delay (int): Thời gian chờ giữa các lần thử lại (giây)
+            
+        Returns:
+            Kết quả từ hàm gửi hoặc False nếu tất cả các lần thử đều thất bại
+        """
+        retries = 0
+        last_error = None
+        
+        while retries <= max_retries:
+            try:
+                # Kiểm tra kết nối trước khi gửi
+                if not self.connected or not self.bot:
+                    # Thử kết nối lại
+                    if not self.connect(self.bot_token):
+                        logger.error("Mất kết nối và không thể kết nối lại")
+                        time.sleep(retry_delay)
+                        retries += 1
+                        continue
+                
+                # Thực thi hàm gửi
+                result = send_func()
+                if result:
+                    # Thành công
+                    return result
+                
+                # Nếu gửi thất bại nhưng không có ngoại lệ
+                retries += 1
+                time.sleep(retry_delay)
+                
+            except telebot.apihelper.ApiTelegramException as e:
+                # Xử lý lỗi API Telegram
+                last_error = e
+                logger.error(f"Lỗi API Telegram (lần {retries+1}/{max_retries+1}): {e}")
+                
+                # Xử lý các lỗi cụ thể
+                if "Too Many Requests" in str(e) or "retry after" in str(e).lower():
+                    # Lỗi rate limit, lấy thời gian chờ từ lỗi
+                    wait_time = 5  # Mặc định 5 giây
+                    try:
+                        # Thử lấy thời gian chờ từ thông báo lỗi
+                        import re
+                        match = re.search(r'retry after (\d+)', str(e).lower())
+                        if match:
+                            wait_time = int(match.group(1)) + 1
+                    except:
+                        pass
+                    
+                    logger.info(f"Rate limit vượt quá, đợi {wait_time} giây")
+                    time.sleep(wait_time)
+                elif "Bad Request" in str(e) and "file is too big" in str(e).lower():
+                    # Lỗi file quá lớn, không thử lại
+                    logger.error("File quá lớn cho Telegram Bot API (giới hạn 50MB)")
+                    return False
+                else:
+                    # Lỗi khác, đợi trước khi thử lại
+                    time.sleep(retry_delay)
+                
+                retries += 1
+            
+            except (requests.exceptions.RequestException, requests.exceptions.Timeout) as e:
+                # Lỗi kết nối hoặc timeout
+                last_error = e
+                logger.error(f"Lỗi kết nối (lần {retries+1}/{max_retries+1}): {e}")
+                
+                # Đợi lâu hơn cho lỗi kết nối
+                time.sleep(retry_delay * 2)
+                retries += 1
+            
+            except Exception as e:
+                # Lỗi khác
+                last_error = e
+                logger.error(f"Lỗi không xác định (lần {retries+1}/{max_retries+1}): {e}")
+                time.sleep(retry_delay)
+                retries += 1
+        
+        # Nếu đã thử hết số lần
+        logger.error(f"Đã thử {max_retries+1} lần nhưng vẫn thất bại: {last_error}")
+        return False
+    
     def send_message(self, chat_id, text, disable_notification=False):
         """
-        Gửi tin nhắn văn bản
+        Gửi tin nhắn văn bản với cơ chế tự động thử lại
         
         Args:
             chat_id (str/int): ID của cuộc trò chuyện/kênh
@@ -96,7 +184,7 @@ class TelegramAPI:
             logger.error("Chưa kết nối với Telegram API")
             return False
             
-        try:
+        def _send():
             with self.send_lock:  # Sử dụng lock để tránh lỗi flood control
                 self.bot.send_message(
                     chat_id=chat_id,
@@ -105,10 +193,8 @@ class TelegramAPI:
                     disable_notification=disable_notification
                 )
             return True
-            
-        except Exception as e:
-            logger.error(f"Lỗi khi gửi tin nhắn: {str(e)}")
-            return False
+        
+        return self.send_with_retry(_send)
     
     def _check_file_size(self, file_path):
         """
@@ -186,7 +272,7 @@ class TelegramAPI:
     
     def _send_video_direct(self, chat_id, video_path, caption, width=None, height=None, duration=None, disable_notification=False):
         """
-        Gửi video trực tiếp không qua xử lý
+        Gửi video trực tiếp không qua xử lý, với cơ chế tự động thử lại
         
         Args:
             chat_id (str/int): ID chat
@@ -200,7 +286,7 @@ class TelegramAPI:
         Returns:
             bool: True nếu thành công
         """
-        try:
+        def _send():
             with self.send_lock:  # Sử dụng lock để tránh lỗi flood control
                 # Mở file video
                 with open(video_path, 'rb') as video_file:
@@ -215,13 +301,11 @@ class TelegramAPI:
                         disable_notification=disable_notification,
                         supports_streaming=True  # Hỗ trợ phát trực tuyến
                     )
-                    
+            
             logger.info(f"Đã gửi video thành công: {os.path.basename(video_path)}")
             return True
-            
-        except Exception as e:
-            logger.error(f"Lỗi khi gửi video trực tiếp {os.path.basename(video_path)}: {str(e)}")
-            return False
+        
+        return self.send_with_retry(_send)
     
     def _send_video_split(self, chat_id, video_path, caption, disable_notification=False):
         """
@@ -383,6 +467,29 @@ class TelegramAPI:
                 return False, f"Lỗi API Telegram: {str(e)}"
         except Exception as e:
             return False, f"Lỗi khi kiểm tra kết nối: {str(e)}"
+    
+    def check_internet_connection(self):
+        """
+        Kiểm tra kết nối internet
+        
+        Returns:
+            bool: True nếu có kết nối internet
+        """
+        try:
+            # Thử kết nối đến Google DNS
+            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            return True
+        except OSError:
+            pass
+        
+        try:
+            # Thử kết nối đến Telegram API
+            socket.create_connection(("api.telegram.org", 443), timeout=3)
+            return True
+        except OSError:
+            pass
+        
+        return False
 
 if __name__ == "__main__":
     # Mã kiểm thử
