@@ -23,6 +23,7 @@ class Uploader:
             app: Đối tượng TelegramUploaderApp
         """
         self.app = app
+        self.progress_dialog = None
     
     def start_upload(self, app):
         """Bắt đầu quá trình tải lên video"""
@@ -63,9 +64,13 @@ class Uploader:
         app.is_uploading = True
         app.should_stop = False
         
-        # Cập nhật trạng thái giao diện
-        app.upload_btn.config(state=tk.DISABLED)
-        app.stop_btn.config(state=tk.NORMAL)
+        # Khởi tạo dialog tiến trình
+        from utils.upload_progress_dialog import UploadProgressDialog
+        self.progress_dialog = UploadProgressDialog(app.root, "Đang tải lên video", len(selected_videos))
+        
+        # Cập nhật tên video trong dialog
+        for i, video_name in enumerate(selected_videos):
+            self.progress_dialog.update_video_name(i, video_name)
         
         # Tạo và bắt đầu thread tải lên
         folder_path = app.folder_path.get()
@@ -87,63 +92,59 @@ class Uploader:
             chat_id (str): ID chat Telegram đích
             notification_chat_id (str): ID chat để gửi thông báo
         """
-        start_time = time.time()
-        
         try:
-            # Chuẩn bị thanh tiến trình
             total_videos = len(video_files)
-            app.progress['maximum'] = total_videos
-            app.progress['value'] = 0
-            
-            # Gửi thông báo bắt đầu
-            start_message = f"🚀 Bắt đầu tải lên {total_videos} video"
-            logger.info(start_message)
-            
-            if notification_chat_id:
-                app.telegram_api.send_notification(notification_chat_id, start_message)
-            
-            # Thời gian chờ giữa các lần tải
-            delay = int(app.config['SETTINGS'].get('delay_between_uploads', 5))
-            
-            # Biến để theo dõi kết quả tải lên
             successful_uploads = 0
             failed_uploads = 0
-            skipped_uploads = 0
             
-            # Kiểm tra cài đặt Telethon
+            # Cập nhật giao diện
+            app.status_var.set(f"Đang tải lên {total_videos} video...")
+            
+            # Lấy thời gian chờ giữa các lần tải lên
+            try:
+                delay = int(app.config['SETTINGS']['delay_between_uploads'])
+            except:
+                delay = 5  # Mặc định 5 giây
+            
+            # Kiểm tra nên dùng Telethon hay không
             use_telethon = app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+            
+            # Gửi thông báo bắt đầu tải lên
+            if notification_chat_id:
+                app.telegram_api.send_notification(
+                    notification_chat_id, 
+                    f"📤 Bắt đầu tải lên {total_videos} video"
+                )
             
             # Tải lên từng video
             for index, video_file in enumerate(video_files):
-                if app.should_stop:
-                    logger.info("Đã dừng quá trình tải lên theo yêu cầu")
+                # Kiểm tra xem có yêu cầu dừng không
+                if app.should_stop or (self.progress_dialog and self.progress_dialog.is_cancelled):
                     break
                 
+                # Đường dẫn đầy đủ
+                video_path = os.path.join(folder_path, video_file)
+                
+                # Kiểm tra tệp có tồn tại không
+                if not os.path.exists(video_path) or not os.path.isfile(video_path):
+                    logger.error(f"Không tìm thấy video: {video_file}")
+                    
+                    # Cập nhật trạng thái thất bại
+                    if self.progress_dialog:
+                        self.progress_dialog.complete_video(index, success=False)
+                    
+                    failed_uploads += 1
+                    continue
+                
+                # Cập nhật dialog tiến trình
+                if self.progress_dialog:
+                    self.progress_dialog.set_current_video(index, video_file)
+                
                 try:
-                    # Đường dẫn đầy đủ đến file video
-                    video_path = os.path.join(folder_path, video_file)
-                    
-                    # Kiểm tra kết nối internet
-                    if not app.telegram_api.check_internet_connection():
-                        error_msg = "Mất kết nối internet. Đang chờ kết nối lại..."
-                        app.status_var.set(error_msg)
-                        app.root.update_idletasks()
-                        
-                        # Chờ kết nối internet
-                        while not app.telegram_api.check_internet_connection() and not app.should_stop:
-                            time.sleep(5)
-                            app.status_var.set(f"{error_msg} (đã chờ {(time.time() - start_time):.0f}s)")
-                            app.root.update_idletasks()
-                        
-                        if app.should_stop:
-                            break
-                    
                     # Cập nhật trạng thái
-                    status_text = f"Đang tải lên {index + 1}/{total_videos}: {video_file}"
-                    app.status_var.set(status_text)
-                    app.root.update_idletasks()
+                    app.status_var.set(f"Đang tải lên video {index + 1}/{total_videos}: {video_file}")
                     
-                    # Kiểm tra kích thước file
+                    # Lấy kích thước file để xác định phương thức tải lên
                     file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
                     
                     # Quyết định sử dụng Bot API hay Telethon
@@ -152,17 +153,43 @@ class Uploader:
                         # Sử dụng Telethon cho file lớn
                         logger.info(f"Sử dụng Telethon API để tải lên file lớn: {video_file} ({file_size:.2f} MB)")
                         app.status_var.set(f"Đang tải lên qua Telethon: {video_file}")
-                        app.root.update_idletasks()
                         
-                        success = app.telethon_uploader.upload_video(chat_id, video_path)
+                        # Định nghĩa callback tiến trình
+                        def progress_callback(progress):
+                            if self.progress_dialog:
+                                self.progress_dialog.update_part_progress(1, progress)
+                        
+                        # Tải lên với callback tiến trình
+                        success = app.telethon_uploader.upload_video(
+                            chat_id, 
+                            video_path, 
+                            progress_callback=progress_callback
+                        )
                     else:
-                        # Sử dụng Bot API
-                        success = app.telegram_api.send_video(chat_id, video_path)
+                        # Thiết lập callback tiến trình cho video chia nhỏ
+                        def video_split_callback(part_current, part_total, progress=None):
+                            if self.progress_dialog:
+                                self.progress_dialog.set_video_parts(part_total)
+                                if progress is not None:
+                                    self.progress_dialog.update_part_progress(part_current, progress)
+                                else:
+                                    self.progress_dialog.update_part_progress(part_current, 100)
+                        
+                        # Sử dụng Bot API với callback chia nhỏ
+                        success = app.telegram_api.send_video(
+                            chat_id, 
+                            video_path,
+                            split_callback=video_split_callback
+                        )
                     
                     if success:
                         log_message = f"✅ Đã tải lên thành công: {video_file}"
                         logger.info(log_message)
                         successful_uploads += 1
+                        
+                        # Cập nhật dialog
+                        if self.progress_dialog:
+                            self.progress_dialog.complete_video(index, success=True)
                         
                         # Thêm vào lịch sử
                         video_hash = app.video_analyzer.calculate_video_hash(video_path)
@@ -173,41 +200,41 @@ class Uploader:
                         log_message = f"❌ Tải lên thất bại: {video_file}"
                         logger.error(log_message)
                         failed_uploads += 1
+                        
+                        # Cập nhật dialog
+                        if self.progress_dialog:
+                            self.progress_dialog.complete_video(index, success=False)
                     
                     # Cập nhật tiến trình
                     app.progress['value'] = index + 1
                     app.root.update_idletasks()
                     
                     # Chờ giữa các lần tải lên để tránh rate limit
-                    if index < total_videos - 1 and not app.should_stop:
+                    if index < total_videos - 1 and not app.should_stop and not (self.progress_dialog and self.progress_dialog.is_cancelled):
                         time.sleep(delay)
                 
                 except Exception as e:
                     logger.error(f"Lỗi khi tải lên video {video_file}: {str(e)}")
                     failed_uploads += 1
                     
+                    # Cập nhật dialog
+                    if self.progress_dialog:
+                        self.progress_dialog.complete_video(index, success=False)
+                    
                     # Cập nhật trạng thái lỗi
                     app.status_var.set(f"Lỗi khi tải lên {video_file}: {str(e)}")
                     app.root.update_idletasks()
                     time.sleep(2)  # Hiển thị thông báo lỗi trong 2 giây
             
+            # Đánh dấu hoàn tất cho dialog
+            if self.progress_dialog:
+                self.progress_dialog.complete_all()
+            
             # Hoàn tất
-            if app.should_stop:
+            if app.should_stop or (self.progress_dialog and self.progress_dialog.is_cancelled):
                 app.status_var.set(f"Đã dừng tải lên ({successful_uploads} thành công, {failed_uploads} thất bại)")
-                
-                if notification_chat_id:
-                    app.telegram_api.send_notification(
-                        notification_chat_id, 
-                        f"🛑 Đã dừng tải lên ({successful_uploads} thành công, {failed_uploads} thất bại)"
-                    )
             else:
                 app.status_var.set(f"Đã hoàn tất: {successful_uploads} thành công, {failed_uploads} thất bại")
-                
-                if notification_chat_id:
-                    app.telegram_api.send_notification(
-                        notification_chat_id, 
-                        f"✅ Đã hoàn tất tải lên: {successful_uploads} thành công, {failed_uploads} thất bại"
-                    )
                 
                 # Làm mới thống kê lịch sử
                 from ui.history_tab import refresh_history_stats
@@ -218,6 +245,10 @@ class Uploader:
             logger.error(f"Lỗi trong quá trình tải lên: {str(e)}")
             logger.error(traceback.format_exc())
             app.status_var.set(f"Lỗi: {str(e)}")
+            
+            # Đóng dialog nếu có lỗi
+            if self.progress_dialog:
+                self.progress_dialog.dialog.destroy()
         
         finally:
             # Cập nhật trạng thái
@@ -233,3 +264,7 @@ class Uploader:
             app.should_stop = True
             app.status_var.set("Đang dừng tải lên...")
             logger.info("Đã yêu cầu dừng quá trình tải lên")
+            
+            # Cập nhật dialog nếu đang hiển thị
+            if self.progress_dialog:
+                self.progress_dialog.cancel_upload()
