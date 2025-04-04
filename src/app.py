@@ -301,37 +301,127 @@ class TelegramUploaderApp:
     
     def _create_ui(self):
         """Tạo giao diện người dùng"""
-        # Tạo header
-        header_frame = ttk.Frame(self.root, style="Header.TFrame")
+        # Make sure to initialize these early for checkbox functionality
+        self.video_checkboxes = {}
+        self.checkbox_widgets = []
+        
+        # Add the render_checkboxes method directly to the app instance
+        def render_checkboxes_method():
+            try:
+                from ui.components.checkbox import create_checkbox_cell
+            except ImportError:
+                try:
+                    from .components.checkbox import create_checkbox_cell
+                except ImportError:
+                    from src.ui.components.checkbox import create_checkbox_cell
+            
+            # Clear existing checkboxes
+            if hasattr(self, 'checkbox_widgets'):
+                for checkbox in self.checkbox_widgets:
+                    checkbox.destroy()
+            
+            self.checkbox_widgets = []
+            
+            # Create checkbox for each row
+            for item_id in self.video_tree.get_children():
+                if item_id not in self.video_checkboxes:
+                    self.video_checkboxes[item_id] = tk.BooleanVar(value=False)
+                
+                checkbox = create_checkbox_cell(self.video_tree, item_id, "#1")
+                if checkbox:
+                    checkbox.set(self.video_checkboxes[item_id].get())
+                    self.checkbox_widgets.append(checkbox)
+            
+            # Update UI to ensure checkboxes are visible
+            self.root.update_idletasks()
+        
+        # Attach the method to the app
+        self.render_checkboxes = render_checkboxes_method
+        
+        # Tạo style cho các thành phần
+        style = ttk.Style()
+        
+        # Style cho header
+        style.configure("Header.TFrame", background="#EDEDED", relief="raised")
+        style.configure("Header.TLabel", background="#EDEDED", font=("Arial", 16, "bold"), foreground="#2C3E50")
+        
+        # Style cho tab buttons
+        style.configure("Tab.TButton", font=("Arial", 11), padding=(15, 8))
+        
+        # Tạo header với hiệu ứng 3D và đường viền
+        header_frame = tk.Frame(self.root, bg="#EDEDED", relief="raised", bd=1)
         header_frame.pack(fill=tk.X, padx=0, pady=0)
         
-        # Logo và tên ứng dụng bên trái
-        logo_frame = ttk.Frame(header_frame, style="Header.TFrame")
+        # Logo và tên ứng dụng bên trái với gradient text
+        logo_frame = tk.Frame(header_frame, bg="#EDEDED")
         logo_frame.pack(side=tk.LEFT, padx=15)
         
-        ttk.Label(logo_frame, text="Henlladev", style="Header.TLabel").pack(pady=10)
+        logo_label = tk.Label(logo_frame, text="Henlladev", 
+                            font=("Arial", 18, "bold"), 
+                            fg="#2C3E50",
+                            bg="#EDEDED")
+        logo_label.pack(pady=10)
+        
+        # Add subtle shadow effect to logo text
+        shadow_label = tk.Label(logo_frame, text="Henlladev", 
+                            font=("Arial", 18, "bold"), 
+                            fg="#C0C0C0", 
+                            bg="#EDEDED")
+        shadow_label.place(in_=logo_label, x=1, y=1)
+        logo_label.lift()  # Bring main text to front
         
         # Tab buttons frame in header
-        self.header_tab_frame = ttk.Frame(header_frame, style="Header.TFrame")
+        self.header_tab_frame = tk.Frame(header_frame, bg="#EDEDED")
         self.header_tab_frame.pack(side=tk.LEFT, pady=10)
         
-        # Create tab buttons with proper styling
+        # Create tab buttons with proper styling - gradient effect for active tab
         self.tab_buttons = []
         tab_texts = ["Tải lên", "Cài đặt", "Lịch sử", "Nhật ký", "Hướng dẫn"]
         
         for i, text in enumerate(tab_texts):
-            btn = tk.Button(
-                self.header_tab_frame, 
-                text=text,
-                font=("Arial", 11, "bold"),
-                padx=15, pady=8,
-                relief="flat",
-                bg="#4a7ebb" if i == 0 else "#f0f0f0",
-                fg="white" if i == 0 else "black",
-                command=lambda idx=i: self.switch_tab(idx)
-            )
+            # Use gradient colors for active tab and hover effects
+            if i == 0:  # Active tab
+                btn = tk.Button(
+                    self.header_tab_frame, 
+                    text=text,
+                    font=("Arial", 11, "bold"),
+                    padx=15, pady=8,
+                    relief="flat",
+                    bg="#D4D4D4",  # Slightly darker for active tab
+                    fg="#2C3E50",
+                    activebackground="#C0C0C0",
+                    activeforeground="#2C3E50",
+                    bd=1,
+                    highlightthickness=1,
+                    highlightbackground="#BEBEBE",
+                    command=lambda idx=i: self.switch_tab(idx)
+                )
+            else:  # Inactive tabs
+                btn = tk.Button(
+                    self.header_tab_frame, 
+                    text=text,
+                    font=("Arial", 11),
+                    padx=15, pady=8,
+                    relief="flat",
+                    bg="#EDEDED",
+                    fg="#2C3E50",
+                    activebackground="#D4D4D4",
+                    activeforeground="#2C3E50",
+                    bd=0,
+                    highlightthickness=0,
+                    command=lambda idx=i: self.switch_tab(idx)
+                )
+                
+                # Add hover effect
+                btn.bind("<Enter>", lambda e, b=btn: b.config(bg="#E5E5E5"))
+                btn.bind("<Leave>", lambda e, b=btn: b.config(bg="#EDEDED"))
+                
             btn.pack(side=tk.LEFT)
             self.tab_buttons.append(btn)
+        
+        # Add subtle shadow line below header
+        separator = ttk.Separator(self.root, orient="horizontal")
+        separator.pack(fill=tk.X, pady=0)
         
         # Create content frames directly instead of using notebook
         self.content_frames = []
@@ -356,30 +446,74 @@ class TelegramUploaderApp:
         self.show_content(0)
         
         # Tạo footer với màu nền xám và chiều cao cố định
-        footer_frame = tk.Frame(self.root, bg="#f0f0f0", height=60)
+        footer_frame = tk.Frame(self.root, bg="#EDEDED", height=60, relief="raised", bd=1)
         footer_frame.pack(side=tk.BOTTOM, fill=tk.X)
         footer_frame.pack_propagate(False)  # Prevent the frame from shrinking
 
         # Frame cho các nút ở footer - right aligned with proper spacing
-        button_frame = tk.Frame(footer_frame, bg="#f0f0f0")
+        button_frame = tk.Frame(footer_frame, bg="#EDEDED")
         button_frame.pack(side=tk.RIGHT, padx=10, pady=10)
 
         # Nút dừng lại - màu đỏ
         self.stop_btn = tk.Button(button_frame, text="Dừng tải", 
                                 bg="#e74c3c", fg="white", 
-                                font=("Arial", 11),
-                                padx=15, pady=5,
+                                font=("Arial", 11, "bold"),
+                                padx=15, pady=8,
+                                relief="flat",
+                                bd=0,
+                                activebackground="#c0392b",
+                                activeforeground="white",
                                 command=lambda: self.uploader.stop_upload(self))
         self.stop_btn.pack(side=tk.RIGHT, padx=10)
 
         # Nút bắt đầu tải lên - màu xanh
         self.upload_btn = tk.Button(button_frame, text="Tải video lên", 
                                 bg="#3498db", fg="white", 
-                                font=("Arial", 11),
-                                padx=15, pady=5,
+                                font=("Arial", 11, "bold"),
+                                padx=15, pady=8,
+                                relief="flat",
+                                bd=0,
+                                activebackground="#2980b9",
+                                activeforeground="white",
                                 command=lambda: self.uploader.start_upload(self))
         self.upload_btn.pack(side=tk.RIGHT, padx=10)
-    
+
+    def switch_tab(self, tab_index):
+        """Chuyển đổi giữa các tab"""
+        # Update button styling
+        for i, btn in enumerate(self.tab_buttons):
+            if i == tab_index:
+                btn.config(
+                    bg="#D4D4D4",
+                    relief="flat",
+                    bd=1,
+                    highlightthickness=1,
+                    highlightbackground="#BEBEBE",
+                    font=("Arial", 11, "bold")
+                )
+                # Remove hover bindings for active tab
+                btn.unbind("<Enter>")
+                btn.unbind("<Leave>")
+            else:
+                btn.config(
+                    bg="#EDEDED",
+                    relief="flat",
+                    bd=0,
+                    highlightthickness=0,
+                    font=("Arial", 11)
+                )
+                # Add hover effect back for inactive tabs
+                btn.bind("<Enter>", lambda e, b=btn: b.config(bg="#E5E5E5"))
+                btn.bind("<Leave>", lambda e, b=btn: b.config(bg="#EDEDED"))
+        
+        # Hide current content
+        if self.current_content is not None:
+            self.current_content.pack_forget()
+        
+        # Show selected content
+        self.content_frames[tab_index].pack(fill=tk.BOTH, expand=True)
+        self.current_content = self.content_frames[tab_index]
+        
     def show_content(self, index):
         """Hiển thị nội dung của tab đã chọn"""
         # Hide current content if exists
@@ -397,9 +531,6 @@ class TelegramUploaderApp:
             else:
                 btn.config(bg="#f0f0f0", fg="black")
                     
-    def switch_tab(self, index):
-        """Chuyển đổi tab khi nhấn nút trên header"""
-        self.show_content(index)
     def on_tab_changed(self, event):
         """Xử lý khi tab thay đổi để cập nhật các nút header"""
         selected_tab = self.notebook.index("current")

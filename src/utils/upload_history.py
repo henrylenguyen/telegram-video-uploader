@@ -211,6 +211,27 @@ class UploadHistory:
         self.duplicates = {}
         self.save_history()
         logger.info("Đã xóa toàn bộ lịch sử tải lên")
+    
+    def get_upload_by_hash(self, video_hash):
+        """
+        Tìm thông tin tải lên dựa trên hash của video
+        
+        Args:
+            video_hash: Hash của video cần tìm
+            
+        Returns:
+            dict: Thông tin tải lên hoặc None nếu không tìm thấy
+        """
+        if not video_hash:
+            return None
+            
+        uploads = self.get_all_uploads()
+        
+        for upload_hash, upload_info in uploads.items():
+            if upload_hash == video_hash:
+                return upload_info
+        
+        return None
 
 if __name__ == "__main__":
     # Mã kiểm thử
