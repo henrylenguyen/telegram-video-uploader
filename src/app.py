@@ -1,6 +1,3 @@
-"""
-Lớp ứng dụng chính cho Telegram Video Uploader.
-"""
 import os
 import sys
 import logging
@@ -125,13 +122,24 @@ class TelegramUploaderApp:
                     font=default_font,
                     indicatorsize=24)
         
-        # Style cho nút tab
-        style.configure("TabBig.TButton", 
+        # Style cho Button tab - sửa style cho tab header
+        style.configure("Tab.TButton", 
                     font=("Arial", 11, "bold"), 
                     padding=(15, 8))
-        style.map("TabBig.TButton",
-                background=[("selected", "#4a7ebb"), ("!selected", "#f0f0f0")],
-                foreground=[("selected", "white"), ("!selected", "black")])
+        
+        # Tạo style đặc biệt cho tab đang active
+        style.configure("Tab.Active.TButton", 
+                    font=("Arial", 11, "bold"),
+                    padding=(15, 8),
+                    background="#4a7ebb",
+                    foreground="white")
+        
+        # Style cho các tab không active
+        style.configure("Tab.Inactive.TButton",
+                    font=("Arial", 11, "bold"),
+                    padding=(15, 8),
+                    background="#f0f0f0",
+                    foreground="black")
         
         # Style cho Header
         style.configure("Header.TFrame", background="#4a7ebb")
@@ -147,6 +155,17 @@ class TelegramUploaderApp:
         style.map("Blue.TButton",
                 background=[("active", "#2980b9"), ("!active", "#3498db")],
                 foreground=[("active", "white"), ("!active", "white")])
+    
+    def safe_update_stringvar(self, stringvar, value):
+        """
+        Cập nhật StringVar an toàn từ thread không phải main thread
+        
+        Args:
+            stringvar: StringVar cần cập nhật
+            value: Giá trị mới
+        """
+        self.root.after(0, lambda: stringvar.set(value))
+        
     def _initialize_components(self):
         """Khởi tạo các thành phần của ứng dụng"""
         # Biến trạng thái
@@ -185,19 +204,6 @@ class TelegramUploaderApp:
         self.auto_uploader = None
         self.bulk_uploader = None
         self.watcher_thread = None
-        
-        # Khởi tạo từ điển callbacks cho UI
-        self.ui_callbacks = {
-            'browse_folder': self._browse_folder,
-            'refresh_video_list': self._refresh_video_list,
-            'on_video_tree_click': self._on_video_tree_click,
-            'on_video_select': self._on_video_select,
-            'select_all_videos': self._select_all_videos,
-            'deselect_all_videos': self._deselect_all_videos,
-            'invert_video_selection': self._invert_video_selection,
-            'play_selected_video': self._play_selected_video,
-            'remove_duplicates': self._remove_duplicates
-        }
     
     def _setup_ffmpeg(self):
         """Thiết lập FFmpeg"""
@@ -234,36 +240,56 @@ class TelegramUploaderApp:
         status_label = ttk.Label(main_frame, textvariable=status_var, style="Status.TLabel")
         status_label.pack(pady=5)
         
+        # Queue for thread communication
+        from queue import Queue
+        status_queue = Queue()
+        
         # Function để kiểm tra và cập nhật định kỳ
         def check_ffmpeg_status():
-            # Lấy trạng thái từ FFmpegManager
-            progress_value, status_text, is_downloading = self.ffmpeg_manager.get_download_status()
-            status_var.set(status_text)
-            
-            # Nếu đã thiết lập xong hoặc lỗi
-            if self.ffmpeg_manager.is_available or (not is_downloading and "Lỗi" in status_text):
-                progress.stop()
+            # Check for updates from the setup thread
+            try:
+                if not status_queue.empty():
+                    new_status = status_queue.get_nowait()
+                    status_var.set(new_status)
+                    
+                    # If it's the success message, close the dialog after 1 second
+                    if "thành công" in new_status:
+                        progress.stop()
+                        ffmpeg_info_dialog.after(1000, ffmpeg_info_dialog.destroy)
+                        return
+                        
+                    # If it's an error message
+                    elif "Lỗi" in new_status:
+                        progress.stop()
+                        ttk.Button(main_frame, text="Đóng", command=ffmpeg_info_dialog.destroy).pack(pady=10)
+                        return
+            except:
+                pass
                 
-                if self.ffmpeg_manager.is_available:
-                    status_var.set("Đã cài đặt FFmpeg thành công!")
-                    # Đóng cửa sổ sau 1 giây
-                    ffmpeg_info_dialog.after(1000, ffmpeg_info_dialog.destroy)
-                else:
-                    status_var.set(status_text)
-                    # Thêm nút đóng
-                    ttk.Button(main_frame, text="Đóng", command=ffmpeg_info_dialog.destroy).pack(pady=10)
+            # Continue checking if FFmpeg is available
+            if self.ffmpeg_manager.is_available:
+                progress.stop()
+                status_var.set("Đã cài đặt FFmpeg thành công!")
+                ffmpeg_info_dialog.after(1000, ffmpeg_info_dialog.destroy)
             else:
+                # Kiểm tra trạng thái tải
+                progress_value, status_text, is_downloading = self.ffmpeg_manager.get_download_status()
+                status_var.set(status_text)
+                
                 # Tiếp tục kiểm tra
                 ffmpeg_info_dialog.after(500, check_ffmpeg_status)
         
         # Bắt đầu thiết lập FFmpeg trong thread riêng
         def start_ffmpeg_setup():
-            result = self.ffmpeg_manager.setup_ffmpeg()
-            if result:
-                # Đã cài đặt thành công
-                status_var.set("Đã cài đặt FFmpeg thành công!")
-                progress.stop()
-                ffmpeg_info_dialog.after(1000, ffmpeg_info_dialog.destroy)
+            try:
+                result = self.ffmpeg_manager.setup_ffmpeg()
+                
+                if result:
+                    # Đã cài đặt thành công - send to queue instead of updating directly
+                    status_queue.put("Đã cài đặt FFmpeg thành công!")
+            except Exception as e:
+                # Send error to queue
+                status_queue.put(f"Lỗi: {str(e)}")
         
         # Chạy trong thread riêng để không chặn giao diện
         setup_thread = threading.Thread(target=start_ffmpeg_setup)
@@ -285,123 +311,135 @@ class TelegramUploaderApp:
         
         ttk.Label(logo_frame, text="Henlladev", style="Header.TLabel").pack(pady=10)
         
-        # Tạo notebook (tab)
-        notebook_style = ttk.Style()
-        notebook_style.configure("TNotebook", background="white", borderwidth=0)
-        notebook_style.configure("TNotebook.Tab", font=("Arial", 12, "bold"), padding=(15, 5))
-        notebook_style.map("TNotebook.Tab",
-                        background=[("selected", "#4a7ebb"), ("!selected", "#f0f0f0")],
-                        foreground=[("selected", "white"), ("!selected", "black")])
+        # Tab buttons frame in header
+        self.header_tab_frame = ttk.Frame(header_frame, style="Header.TFrame")
+        self.header_tab_frame.pack(side=tk.LEFT, pady=10)
         
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+        # Create tab buttons with proper styling
+        self.tab_buttons = []
+        tab_texts = ["Tải lên", "Cài đặt", "Lịch sử", "Nhật ký", "Hướng dẫn"]
         
-        # Tạo các tab
-        main_tab = ttk.Frame(self.notebook)
-        settings_tab = ttk.Frame(self.notebook)
-        history_tab = ttk.Frame(self.notebook)
-        log_tab = ttk.Frame(self.notebook)
-        guide_tab = ttk.Frame(self.notebook)
+        for i, text in enumerate(tab_texts):
+            btn = tk.Button(
+                self.header_tab_frame, 
+                text=text,
+                font=("Arial", 11, "bold"),
+                padx=15, pady=8,
+                relief="flat",
+                bg="#4a7ebb" if i == 0 else "#f0f0f0",
+                fg="white" if i == 0 else "black",
+                command=lambda idx=i: self.switch_tab(idx)
+            )
+            btn.pack(side=tk.LEFT)
+            self.tab_buttons.append(btn)
         
-        # Thêm các tab vào notebook
-        self.notebook.add(main_tab, text="Tải lên")
-        self.notebook.add(settings_tab, text="Cài đặt")
-        self.notebook.add(history_tab, text="Lịch sử")
-        self.notebook.add(log_tab, text="Nhật ký")
-        self.notebook.add(guide_tab, text="Hướng dẫn")
+        # Create content frames directly instead of using notebook
+        self.content_frames = []
+        self.current_content = None
         
-        # Tạo UI cho từng tab
-        create_main_tab(self, main_tab)
-        create_settings_tab(self, settings_tab)
-        create_history_tab(self, history_tab)
-        create_log_tab(self, log_tab)
-        create_guide_tab(self, guide_tab)
+        main_content = ttk.Frame(self.root)
+        settings_content = ttk.Frame(self.root)
+        history_content = ttk.Frame(self.root)
+        log_content = ttk.Frame(self.root)
+        guide_content = ttk.Frame(self.root)
         
-        # Tạo footer với màu nền xám
-        footer_frame = tk.Frame(self.root, bg="#f0f0f0", height=50)
+        self.content_frames = [main_content, settings_content, history_content, log_content, guide_content]
+        
+        # Tạo UI cho từng tab content
+        create_main_tab(self, main_content)
+        create_settings_tab(self, settings_content)
+        create_history_tab(self, history_content)
+        create_log_tab(self, log_content)
+        create_guide_tab(self, guide_content)
+        
+        # Show first content by default
+        self.show_content(0)
+        
+        # Tạo footer với màu nền xám và chiều cao cố định
+        footer_frame = tk.Frame(self.root, bg="#f0f0f0", height=60)
         footer_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        
-        # Frame cho các nút ở footer
+        footer_frame.pack_propagate(False)  # Prevent the frame from shrinking
+
+        # Frame cho các nút ở footer - right aligned with proper spacing
         button_frame = tk.Frame(footer_frame, bg="#f0f0f0")
         button_frame.pack(side=tk.RIGHT, padx=10, pady=10)
-        
+
         # Nút dừng lại - màu đỏ
-        self.stop_btn = tk.Button(button_frame, text="Dừng lại", 
-                            bg="#e74c3c", fg="white", 
-                            font=("Arial", 11),
-                            padx=15, pady=5,
-                            command=lambda: self.uploader.stop_upload(self))
+        self.stop_btn = tk.Button(button_frame, text="Dừng tải", 
+                                bg="#e74c3c", fg="white", 
+                                font=("Arial", 11),
+                                padx=15, pady=5,
+                                command=lambda: self.uploader.stop_upload(self))
         self.stop_btn.pack(side=tk.RIGHT, padx=10)
-        
+
         # Nút bắt đầu tải lên - màu xanh
-        self.upload_btn = tk.Button(button_frame, text="Bắt đầu tải lên", 
+        self.upload_btn = tk.Button(button_frame, text="Tải video lên", 
                                 bg="#3498db", fg="white", 
                                 font=("Arial", 11),
                                 padx=15, pady=5,
                                 command=lambda: self.uploader.start_upload(self))
         self.upload_btn.pack(side=tk.RIGHT, padx=10)
-            
+    
+    def show_content(self, index):
+        """Hiển thị nội dung của tab đã chọn"""
+        # Hide current content if exists
+        if self.current_content is not None:
+            self.current_content.pack_forget()
+        
+        # Show selected content
+        self.content_frames[index].pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+        self.current_content = self.content_frames[index]
+        
+        # Update button styling
+        for i, btn in enumerate(self.tab_buttons):
+            if i == index:
+                btn.config(bg="#4a7ebb", fg="white")
+            else:
+                btn.config(bg="#f0f0f0", fg="black")
+                    
     def switch_tab(self, index):
         """Chuyển đổi tab khi nhấn nút trên header"""
-        self.notebook.select(index)
-
+        self.show_content(index)
     def on_tab_changed(self, event):
         """Xử lý khi tab thay đổi để cập nhật các nút header"""
         selected_tab = self.notebook.index("current")
-        for i, btn in enumerate(self.header_buttons):
+        for i, btn in enumerate(self.tab_buttons):
             if i == selected_tab:
-                btn.state(['pressed'])
+                btn.config(bg="#4a7ebb", fg="white")
             else:
-                btn.state(['!pressed'])
-            
+                btn.config(bg="#f0f0f0", fg="black")
+    
+    def render_checkboxes(self):
+        """Vẽ lại tất cả checkbox trên treeview"""
+        # Xóa tất cả checkbox hiện tại
+        if hasattr(self, 'checkbox_widgets'):
+            for checkbox in self.checkbox_widgets:
+                checkbox.destroy()
         
-        # ===== Các phương thức kết nối UI =====
-    
-    def _browse_folder(self, auto=False):
-        """Chuyển tiếp đến hàm browse_folder trong module main_tab"""
-        from ui.main_tab import browse_folder
-        browse_folder(self, auto)
-    
-    def _refresh_video_list(self):
-        """Chuyển tiếp đến hàm refresh_video_list trong module main_tab"""
-        from ui.main_tab import refresh_video_list
-        refresh_video_list(self)
-    
-    def _on_video_tree_click(self, event):
-        """Chuyển tiếp đến hàm on_video_tree_click trong module main_tab"""
-        from ui.main_tab import on_video_tree_click
-        on_video_tree_click(self, event)
-    
-    def _on_video_select(self, event):
-        """Chuyển tiếp đến hàm on_video_select trong module main_tab"""
-        from ui.main_tab import on_video_select
-        on_video_select(self, event)
-    
-    def _select_all_videos(self):
-        """Chuyển tiếp đến hàm select_all_videos trong module main_tab"""
-        from ui.main_tab import select_all_videos
-        select_all_videos(self)
-    
-    def _deselect_all_videos(self):
-        """Chuyển tiếp đến hàm deselect_all_videos trong module main_tab"""
-        from ui.main_tab import deselect_all_videos
-        deselect_all_videos(self)
-    
-    def _invert_video_selection(self):
-        """Chuyển tiếp đến hàm invert_video_selection trong module main_tab"""
-        from ui.main_tab import invert_video_selection
-        invert_video_selection(self)
-    
-    def _play_selected_video(self):
-        """Chuyển tiếp đến hàm play_selected_video trong module main_tab"""
-        from ui.main_tab import play_selected_video
-        play_selected_video(self)
-    
-    def _remove_duplicates(self):
-        """Chuyển tiếp đến hàm remove_duplicates trong module main_tab"""
-        from ui.main_tab import remove_duplicates
-        remove_duplicates(self)
-    
+        self.checkbox_widgets = []
+        
+        # Kiểm tra xem có checkbox nào được chọn không
+        any_checked = False
+        for item_id in self.video_checkboxes:
+            if self.video_checkboxes[item_id].get():
+                any_checked = True
+                break
+        
+        # Chỉ hiển thị checkbox nếu có ít nhất một checkbox được chọn
+        if any_checked:
+            # Tạo mới checkbox cho mỗi hàng hiển thị
+            for item_id in self.video_tree.get_children():
+                # Lấy checkbox từ dict
+                check_var = self.video_checkboxes.get(item_id)
+                if check_var:
+                    from ui.main_tab import create_checkbox_cell
+                    checkbox = create_checkbox_cell(self.video_tree, item_id, "#1")
+                    if checkbox:
+                        # Đặt trạng thái của checkbox
+                        checkbox.set(check_var.get())
+                        self.checkbox_widgets.append(checkbox)
+        
+    # ===== Các phương thức kết nối UI =====
     def _on_closing(self):
         """Xử lý khi đóng ứng dụng"""
         # Dừng tất cả hoạt động

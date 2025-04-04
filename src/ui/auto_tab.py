@@ -24,14 +24,26 @@ def create_auto_tab(app, parent):
     app.auto_folder_path = tk.StringVar()
     app.auto_folder_path.set(app.config['SETTINGS']['video_folder'])
     
-    folder_entry = ttk.Entry(folder_frame, textvariable=app.auto_folder_path, width=50)
-    folder_entry.pack(side=tk.LEFT, padx=5, pady=10, fill=tk.X, expand=True)
+    # Ô input và nút duyệt cải thiện layout với chiều cao 40px
+    input_frame = ttk.Frame(folder_frame)
+    input_frame.pack(fill=tk.X, padx=5, pady=5)
+    
+    folder_entry = tk.Entry(input_frame, textvariable=app.auto_folder_path, 
+                          font=("Arial", 11), 
+                          relief="groove", bg="white",
+                          highlightthickness=1,
+                          highlightbackground="#cccccc")
+    folder_entry.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+    folder_entry.configure(height=2)  # Chiều cao ~40px
     
     # Nút "Duyệt..." với kích thước đủ
     from ui.main_tab import browse_folder  # Import hàm để sử dụng
-    browse_btn = ttk.Button(folder_frame, text="Duyệt...", 
+    browse_btn = tk.Button(input_frame, text="Duyệt...", 
+                          font=("Arial", 11), width=10,
+                          height=2,  # Chiều cao ~40px
+                          relief="raised", bg="#f0f0f0",
                           command=lambda: browse_folder(app, auto=True))
-    browse_btn.pack(side=tk.RIGHT, padx=5, pady=10)
+    browse_btn.pack(side=tk.RIGHT, padx=5, pady=5)
     
     # Thêm khung chọn chế độ tự động
     mode_frame = ttk.LabelFrame(parent, text="Chế độ tự động")

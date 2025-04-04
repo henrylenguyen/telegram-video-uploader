@@ -48,8 +48,14 @@ def create_bot_settings_tab(app, parent):
     app.bot_token_var = tk.StringVar()
     app.bot_token_var.set(app.config['TELEGRAM']['bot_token'])
     
-    token_entry = ttk.Entry(telegram_frame, textvariable=app.bot_token_var, width=60)
-    token_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
+    # Use larger font size instead of height property
+    token_entry = tk.Entry(telegram_frame, textvariable=app.bot_token_var, 
+                          font=("Arial", 14),  # Larger font makes the entry field taller
+                          relief="groove", bg="white", 
+                          highlightthickness=1,
+                          highlightbackground="#cccccc",
+                          width=60)
+    token_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=10)  # Use more padding
     
     # Chat ID đích
     ttk.Label(telegram_frame, text="Chat ID đích:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
@@ -57,8 +63,14 @@ def create_bot_settings_tab(app, parent):
     app.chat_id_var = tk.StringVar()
     app.chat_id_var.set(app.config['TELEGRAM']['chat_id'])
     
-    chat_id_entry = ttk.Entry(telegram_frame, textvariable=app.chat_id_var, width=60)
-    chat_id_entry.grid(row=1, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
+    # Use larger font size instead of height property
+    chat_id_entry = tk.Entry(telegram_frame, textvariable=app.chat_id_var, 
+                            font=("Arial", 14),  # Larger font makes the entry field taller
+                            relief="groove", bg="white", 
+                            highlightthickness=1,
+                            highlightbackground="#cccccc",
+                            width=60)
+    chat_id_entry.grid(row=1, column=1, sticky=tk.W+tk.E, padx=5, pady=10)  # Use more padding
     
     # Chat ID thông báo
     ttk.Label(telegram_frame, text="Chat ID thông báo:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
@@ -66,21 +78,31 @@ def create_bot_settings_tab(app, parent):
     app.notification_chat_id_var = tk.StringVar()
     app.notification_chat_id_var.set(app.config['TELEGRAM']['notification_chat_id'])
     
-    notif_id_entry = ttk.Entry(telegram_frame, textvariable=app.notification_chat_id_var, width=60)
-    notif_id_entry.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=5)
+    # Use larger font size instead of height property
+    notif_id_entry = tk.Entry(telegram_frame, textvariable=app.notification_chat_id_var, 
+                             font=("Arial", 14),  # Larger font makes the entry field taller
+                             relief="groove", bg="white", 
+                             highlightthickness=1,
+                             highlightbackground="#cccccc",
+                             width=60)
+    notif_id_entry.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=10)  # Use more padding
     
     # Frame điều khiển
     control_frame = ttk.Frame(parent)
     control_frame.pack(fill=tk.X, padx=10, pady=10)
     
     # Nút kiểm tra kết nối
-    test_btn = ttk.Button(control_frame, text="Kiểm tra kết nối Telegram", 
-                         command=lambda: app.telegram_connector.test_telegram_connection(app))
+    test_btn = tk.Button(control_frame, text="Kiểm tra kết nối Telegram", 
+                        font=("Arial", 11),
+                        relief="raised", bg="#f0f0f0",
+                        command=lambda: app.telegram_connector.test_telegram_connection(app))
     test_btn.pack(side=tk.LEFT, padx=5, pady=10)
     
     # Nút lưu cài đặt
-    save_btn = ttk.Button(control_frame, text="Lưu cài đặt", 
-                         command=lambda: app.telegram_connector.save_telegram_settings(app))
+    save_btn = tk.Button(control_frame, text="Lưu cài đặt", 
+                        font=("Arial", 11),
+                        relief="raised", bg="#f0f0f0",
+                        command=lambda: app.telegram_connector.save_telegram_settings(app))
     save_btn.pack(side=tk.RIGHT, padx=5, pady=10)
     
     # Thêm thông tin hướng dẫn

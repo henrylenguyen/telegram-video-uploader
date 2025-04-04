@@ -366,7 +366,12 @@ class BulkUploader:
                     file_path = self.upload_queue.get(timeout=1.0)
                 except Empty:
                     # Hàng đợi đã xử lý hết
-                    self.log("Đã hoàn tất tất cả video trong hàng đợi")
+                    if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                        app = self.telegram_uploader.app
+                        app.root.after(0, lambda: self.log_callback("Đã hoàn tất tất cả video trong hàng đợi"))
+                    else:
+                        logger.info("Đã hoàn tất tất cả video trong hàng đợi")
+                    
                     self.running = False
                     break
                 
@@ -379,7 +384,14 @@ class BulkUploader:
                             if self.video_analyzer.compare_videos(file_path, existing_file):
                                 is_duplicate = True
                                 duplicate_name = os.path.basename(existing_file)
-                                self.log(f"Phát hiện trùng lặp: {os.path.basename(file_path)} với {duplicate_name}")
+                                
+                                if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                                    app = self.telegram_uploader.app
+                                    app.root.after(0, lambda msg=f"Phát hiện trùng lặp: {os.path.basename(file_path)} với {duplicate_name}": 
+                                                self.log_callback(msg))
+                                else:
+                                    logger.info(f"Phát hiện trùng lặp: {os.path.basename(file_path)} với {duplicate_name}")
+                                
                                 break
                     
                     # Kiểm tra lịch sử tải lên nếu được yêu cầu
@@ -388,19 +400,40 @@ class BulkUploader:
                         video_hash = self.video_analyzer.calculate_video_hash(file_path)
                         if video_hash and self.upload_history.is_uploaded(video_hash):
                             already_uploaded = True
-                            self.log(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}")
+                            
+                            if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                                app = self.telegram_uploader.app
+                                app.root.after(0, lambda msg=f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}": 
+                                            self.log_callback(msg))
+                            else:
+                                logger.info(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}")
                     
                     # Nếu không trùng lặp và chưa tải lên, tải lên Telegram
                     if not is_duplicate and not already_uploaded:
-                        self.log(f"Đang tải lên: {os.path.basename(file_path)}")
+                        if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                            app = self.telegram_uploader.app
+                            app.root.after(0, lambda msg=f"Đang tải lên: {os.path.basename(file_path)}": 
+                                        self.log_callback(msg))
+                        else:
+                            logger.info(f"Đang tải lên: {os.path.basename(file_path)}")
                         
                         # Gọi hàm tải lên của telegram_uploader
                         success = self.telegram_uploader.upload_single_video(file_path)
                         
                         if success:
-                            self.log(f"Đã tải lên thành công: {os.path.basename(file_path)}")
+                            if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                                app = self.telegram_uploader.app
+                                app.root.after(0, lambda msg=f"Đã tải lên thành công: {os.path.basename(file_path)}": 
+                                            self.log_callback(msg))
+                            else:
+                                logger.info(f"Đã tải lên thành công: {os.path.basename(file_path)}")
                         else:
-                            self.log(f"Tải lên thất bại: {os.path.basename(file_path)}")
+                            if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                                app = self.telegram_uploader.app
+                                app.root.after(0, lambda msg=f"Tải lên thất bại: {os.path.basename(file_path)}": 
+                                            self.log_callback(msg))
+                            else:
+                                logger.error(f"Tải lên thất bại: {os.path.basename(file_path)}")
                     
                     # Đánh dấu file đã được xử lý
                     self.processed_files.add(file_path)
@@ -409,10 +442,21 @@ class BulkUploader:
                     processed_count += 1
                     if self.progress_callback and total_count > 0:
                         progress = int(processed_count / total_count * 100)
-                        self.progress_callback(progress)
+                        
+                        if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                            app = self.telegram_uploader.app
+                            app.root.after(0, lambda p=progress: self.progress_callback(p))
+                        else:
+                            # Fallback - không an toàn nếu progress_callback cập nhật UI
+                            self.progress_callback(progress)
                 
                 except Exception as e:
-                    self.log(f"Lỗi khi xử lý file {os.path.basename(file_path)}: {str(e)}")
+                    if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                        app = self.telegram_uploader.app
+                        app.root.after(0, lambda msg=f"Lỗi khi xử lý file {os.path.basename(file_path)}: {str(e)}": 
+                                    self.log_callback(msg))
+                    else:
+                        logger.error(f"Lỗi khi xử lý file {os.path.basename(file_path)}: {str(e)}")
                 
                 # Đánh dấu task hoàn thành
                 self.upload_queue.task_done()
@@ -422,11 +466,21 @@ class BulkUploader:
                 
             except Exception as e:
                 if not isinstance(e, Empty):  # Bỏ qua lỗi timeout
-                    self.log(f"Lỗi trong thread tải lên: {str(e)}")
+                    if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                        app = self.telegram_uploader.app
+                        app.root.after(0, lambda msg=f"Lỗi trong thread tải lên: {str(e)}": 
+                                    self.log_callback(msg))
+                    else:
+                        logger.error(f"Lỗi trong thread tải lên: {str(e)}")
         
         # Đảm bảo tiến trình đạt 100% khi hoàn tất
         if self.progress_callback:
-            self.progress_callback(100)
+            if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                app = self.telegram_uploader.app
+                app.root.after(0, lambda: self.progress_callback(100))
+            else:
+                # Fallback - không an toàn nếu progress_callback cập nhật UI
+                self.progress_callback(100)
 
 class AutoUploader:
     """
@@ -571,7 +625,11 @@ class AutoUploader:
         while self.running:
             try:
                 # Lấy file từ hàng đợi với timeout
-                file_path = self.upload_queue.get(timeout=1.0)
+                try:
+                    file_path = self.upload_queue.get(timeout=1.0)
+                except Empty:
+                    time.sleep(0.5)
+                    continue  # Tiếp tục vòng lặp để chờ video mới
                 
                 try:
                     # Kiểm tra trùng lặp nếu được yêu cầu
@@ -585,26 +643,73 @@ class AutoUploader:
                             if self.video_analyzer.compare_videos(file_path, existing_file):
                                 is_duplicate = True
                                 duplicate_name = os.path.basename(existing_file)
-                                self.log(f"Phát hiện trùng lặp: {os.path.basename(file_path)} với {duplicate_name}")
+                                
+                                if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                                    app = self.telegram_uploader.app
+                                    msg = f"Phát hiện trùng lặp: {os.path.basename(file_path)} với {duplicate_name}"
+                                    app.root.after(0, lambda m=msg: self.log_callback(m))
+                                else:
+                                    logger.info(f"Phát hiện trùng lặp: {os.path.basename(file_path)} với {duplicate_name}")
+                                
                                 break
                     
-                    # Nếu không trùng lặp, tải lên Telegram
-                    if not is_duplicate:
-                        self.log(f"Đang tải lên: {os.path.basename(file_path)}")
+                    # Kiểm tra lịch sử tải lên nếu được yêu cầu
+                    already_uploaded = False
+                    if not is_duplicate and self.check_history and self.upload_history and self.video_analyzer:
+                        try:
+                            # Tính hash của video
+                            video_hash = self.video_analyzer.calculate_video_hash(file_path)
+                            
+                            # Kiểm tra xem video đã tồn tại trong lịch sử chưa
+                            if video_hash and self.upload_history.is_uploaded(video_hash):
+                                already_uploaded = True
+                                
+                                if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                                    app = self.telegram_uploader.app
+                                    msg = f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}"
+                                    app.root.after(0, lambda m=msg: self.log_callback(m))
+                                else:
+                                    logger.info(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}")
+                        except Exception as e:
+                            logger.error(f"Lỗi khi kiểm tra lịch sử video {os.path.basename(file_path)}: {str(e)}")
+                    
+                    # Nếu không trùng lặp và chưa tải lên, tải lên Telegram
+                    if not is_duplicate and not already_uploaded:
+                        if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                            app = self.telegram_uploader.app
+                            msg = f"Đang tải lên: {os.path.basename(file_path)}"
+                            app.root.after(0, lambda m=msg: self.log_callback(m))
+                        else:
+                            logger.info(f"Đang tải lên: {os.path.basename(file_path)}")
                         
                         # Gọi hàm tải lên của telegram_uploader
                         success = self.telegram_uploader.upload_single_video(file_path)
                         
                         if success:
-                            self.log(f"Đã tải lên thành công: {os.path.basename(file_path)}")
+                            if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                                app = self.telegram_uploader.app
+                                msg = f"Đã tải lên thành công: {os.path.basename(file_path)}"
+                                app.root.after(0, lambda m=msg: self.log_callback(m))
+                            else:
+                                logger.info(f"Đã tải lên thành công: {os.path.basename(file_path)}")
                         else:
-                            self.log(f"Tải lên thất bại: {os.path.basename(file_path)}")
+                            if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                                app = self.telegram_uploader.app
+                                msg = f"Tải lên thất bại: {os.path.basename(file_path)}"
+                                app.root.after(0, lambda m=msg: self.log_callback(m))
+                            else:
+                                logger.error(f"Tải lên thất bại: {os.path.basename(file_path)}")
                     
                     # Đánh dấu file đã được xử lý
                     self.processed_files.add(file_path)
                 
                 except Exception as e:
-                    self.log(f"Lỗi khi xử lý file {os.path.basename(file_path)}: {str(e)}")
+                    if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                        app = self.telegram_uploader.app
+                        msg = f"Lỗi khi xử lý file {os.path.basename(file_path)}: {str(e)}"
+                        app.root.after(0, lambda m=msg: self.log_callback(m))
+                    else:
+                        logger.error(f"Lỗi khi xử lý file {os.path.basename(file_path)}: {str(e)}")
                 
                 # Đánh dấu task hoàn thành
                 self.upload_queue.task_done()
@@ -614,7 +719,12 @@ class AutoUploader:
                 
             except Exception as e:
                 if not isinstance(e, Empty):  # Bỏ qua lỗi timeout
-                    self.log(f"Lỗi trong thread tải lên: {str(e)}")
+                    if hasattr(self, 'telegram_uploader') and hasattr(self.telegram_uploader, 'app'):
+                        app = self.telegram_uploader.app
+                        msg = f"Lỗi trong thread tải lên: {str(e)}"
+                        app.root.after(0, lambda m=msg: self.log_callback(m))
+                    else:
+                        logger.error(f"Lỗi trong thread tải lên: {str(e)}")
 
 if __name__ == "__main__":
     # Mã kiểm thử

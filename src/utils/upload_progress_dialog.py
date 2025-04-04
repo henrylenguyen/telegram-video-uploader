@@ -214,9 +214,11 @@ class UploadProgressDialog:
         """Đặt video hiện tại đang tải lên"""
         self.current_video = index
         self.update_video_name(index, name)
-        self.status_vars[index].set("Đang tải lên...")
-        self.icon_labels[index].config(text=self.icon_loading)
-        self.update_overall_progress()
+        
+        # Sử dụng after để đảm bảo cập nhật UI từ main thread
+        self.dialog.after(0, lambda: self.status_vars[index].set("Đang tải lên..."))
+        self.dialog.after(0, lambda: self.icon_labels[index].config(text=self.icon_loading))
+        self.dialog.after(0, self.update_overall_progress)
     
     def set_video_parts(self, total_parts):
         """Đặt tổng số phần của video hiện tại"""
@@ -230,30 +232,36 @@ class UploadProgressDialog:
         # Tính toán tiến trình tổng thể của video hiện tại
         overall_video_progress = ((part_index - 1) + progress/100) / self.total_parts * 100
         
-        # Cập nhật hiển thị
-        if 0 <= self.current_video < len(self.progress_vars):
-            self.progress_vars[self.current_video].set(overall_video_progress)
+        # Cập nhật hiển thị thông qua main thread
+        def update_ui():
+            if 0 <= self.current_video < len(self.progress_vars):
+                self.progress_vars[self.current_video].set(overall_video_progress)
+                
+                # Cập nhật trạng thái
+                if self.total_parts > 1:
+                    self.status_vars[self.current_video].set(f"Phần {part_index}/{self.total_parts} ({progress:.0f}%)")
+                else:
+                    self.status_vars[self.current_video].set(f"{progress:.0f}%")
             
-            # Cập nhật trạng thái
-            if self.total_parts > 1:
-                self.status_vars[self.current_video].set(f"Phần {part_index}/{self.total_parts} ({progress:.0f}%)")
-            else:
-                self.status_vars[self.current_video].set(f"{progress:.0f}%")
+            self.update_overall_progress()
         
-        self.update_overall_progress()
+        self.dialog.after(0, update_ui)
     
     def complete_video(self, index, success=True):
         """Đánh dấu video đã hoàn tất"""
-        if 0 <= index < len(self.status_vars):
-            if success:
-                self.status_vars[index].set("Hoàn tất")
-                self.icon_labels[index].config(text=self.icon_success)
-                self.progress_vars[index].set(100)
-            else:
-                self.status_vars[index].set("Lỗi")
-                self.icon_labels[index].config(text=self.icon_error)
+        def update_ui():
+            if 0 <= index < len(self.status_vars):
+                if success:
+                    self.status_vars[index].set("Hoàn tất")
+                    self.icon_labels[index].config(text=self.icon_success)
+                    self.progress_vars[index].set(100)
+                else:
+                    self.status_vars[index].set("Lỗi")
+                    self.icon_labels[index].config(text=self.icon_error)
+            
+            self.update_overall_progress()
         
-        self.update_overall_progress()
+        self.dialog.after(0, update_ui)
     
     def update_overall_progress(self):
         """Cập nhật tiến trình tổng thể"""
@@ -270,9 +278,10 @@ class UploadProgressDialog:
     
     def complete_all(self):
         """Đánh dấu tất cả quá trình đã hoàn tất"""
-        self.current_video = self.total_videos
-        self.overall_var.set(100)
-        self.cancel_btn.config(text="Đóng", command=self.dialog.destroy)
+        def update_ui():
+            self.current_video = self.total_videos
+            self.overall_var.set(100)
+            self.cancel_btn.config(text="Đóng", command=self.dialog.destroy)
+            self.dialog.title("Hoàn tất tải lên")
         
-        # Cập nhật UI
-        self.dialog.title("Hoàn tất tải lên") 
+        self.dialog.after(0, update_ui)

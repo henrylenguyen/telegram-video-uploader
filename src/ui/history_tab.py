@@ -44,18 +44,24 @@ def create_history_tab(app, parent):
     app.history_stats_label.pack(side=tk.LEFT, padx=5)
     
     # Các nút điều khiển
-    view_btn = ttk.Button(
+    view_btn = tk.Button(
         control_frame, 
         text="Xem lịch sử chi tiết", 
+        font=("Arial", 11),
+        height=2,  # Chiều cao ~40px
+        relief="raised", bg="#f0f0f0",
         command=lambda: show_history_dialog(app)
     )
     view_btn.pack(side=tk.RIGHT, padx=5)
     
-    clear_btn = ttk.Button(
+    clear_btn = tk.Button(
         control_frame, 
         text="Xóa lịch sử", 
-        command=lambda: confirm_clear_history(app),
-        style="Warning.TButton"
+        font=("Arial", 11),
+        height=2,  # Chiều cao ~40px
+        relief="raised", bg="#e74c3c",
+        fg="white",
+        command=lambda: confirm_clear_history(app)
     )
     clear_btn.pack(side=tk.RIGHT, padx=5)
     
@@ -121,10 +127,13 @@ def create_history_tab(app, parent):
     ttk.Label(stats_frame, textvariable=app.month_videos_var, style="Status.TLabel").grid(
         row=1, column=1, sticky=tk.W, padx=5, pady=5)
     
-    # Nút làm mới thống kê
-    refresh_stats_btn = ttk.Button(
+     # Nút làm mới thống kê
+    refresh_stats_btn = tk.Button(
         stats_frame, 
         text="Làm mới thống kê", 
+        font=("Arial", 11),
+        height=2,  # Chiều cao ~40px
+        relief="raised", bg="#f0f0f0",
         command=lambda: refresh_history_stats(app)
     )
     refresh_stats_btn.grid(row=0, column=2, rowspan=2, padx=20, pady=10)

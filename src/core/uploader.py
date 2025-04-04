@@ -25,6 +25,17 @@ class Uploader:
         self.app = app
         self.progress_dialog = None
     
+    def safe_update_ui(self, app, func, *args, **kwargs):
+        """
+        Cập nhật UI an toàn từ thread không phải main thread
+        
+        Args:
+            app: Đối tượng TelegramUploaderApp
+            func: Hàm cập nhật UI
+            *args, **kwargs: Tham số cho hàm
+        """
+        app.root.after(0, lambda: func(*args, **kwargs))
+    
     def start_upload(self, app):
         """Bắt đầu quá trình tải lên video"""
         # Kiểm tra điều kiện
@@ -97,8 +108,8 @@ class Uploader:
             successful_uploads = 0
             failed_uploads = 0
             
-            # Cập nhật giao diện
-            app.status_var.set(f"Đang tải lên {total_videos} video...")
+            # Cập nhật giao diện an toàn
+            self.safe_update_ui(app, lambda: app.status_var.set(f"Đang tải lên {total_videos} video..."))
             
             # Lấy thời gian chờ giữa các lần tải lên
             try:
@@ -141,8 +152,8 @@ class Uploader:
                     self.progress_dialog.set_current_video(index, video_file)
                 
                 try:
-                    # Cập nhật trạng thái
-                    app.status_var.set(f"Đang tải lên video {index + 1}/{total_videos}: {video_file}")
+                    # Cập nhật trạng thái an toàn
+                    self.safe_update_ui(app, lambda: app.status_var.set(f"Đang tải lên video {index + 1}/{total_videos}: {video_file}"))
                     
                     # Lấy kích thước file để xác định phương thức tải lên
                     file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
@@ -152,7 +163,7 @@ class Uploader:
                     if use_telethon and file_size > 49 and app.telethon_uploader.connected:
                         # Sử dụng Telethon cho file lớn
                         logger.info(f"Sử dụng Telethon API để tải lên file lớn: {video_file} ({file_size:.2f} MB)")
-                        app.status_var.set(f"Đang tải lên qua Telethon: {video_file}")
+                        self.safe_update_ui(app, lambda: app.status_var.set(f"Đang tải lên qua Telethon: {video_file}"))
                         
                         # Định nghĩa callback tiến trình
                         def progress_callback(progress):
@@ -178,8 +189,7 @@ class Uploader:
                         # Sử dụng Bot API với callback chia nhỏ
                         success = app.telegram_api.send_video(
                             chat_id, 
-                            video_path,
-                            split_callback=video_split_callback
+                            video_path
                         )
                     
                     if success:
@@ -205,9 +215,8 @@ class Uploader:
                         if self.progress_dialog:
                             self.progress_dialog.complete_video(index, success=False)
                     
-                    # Cập nhật tiến trình
-                    app.progress['value'] = index + 1
-                    app.root.update_idletasks()
+                    # Cập nhật tiến trình an toàn
+                    self.safe_update_ui(app, lambda: app.progress.config(value=index + 1))
                     
                     # Chờ giữa các lần tải lên để tránh rate limit
                     if index < total_videos - 1 and not app.should_stop and not (self.progress_dialog and self.progress_dialog.is_cancelled):
@@ -221,9 +230,8 @@ class Uploader:
                     if self.progress_dialog:
                         self.progress_dialog.complete_video(index, success=False)
                     
-                    # Cập nhật trạng thái lỗi
-                    app.status_var.set(f"Lỗi khi tải lên {video_file}: {str(e)}")
-                    app.root.update_idletasks()
+                    # Cập nhật trạng thái lỗi an toàn
+                    self.safe_update_ui(app, lambda: app.status_var.set(f"Lỗi khi tải lên {video_file}: {str(e)}"))
                     time.sleep(2)  # Hiển thị thông báo lỗi trong 2 giây
             
             # Đánh dấu hoàn tất cho dialog
@@ -232,31 +240,34 @@ class Uploader:
             
             # Hoàn tất
             if app.should_stop or (self.progress_dialog and self.progress_dialog.is_cancelled):
-                app.status_var.set(f"Đã dừng tải lên ({successful_uploads} thành công, {failed_uploads} thất bại)")
+                self.safe_update_ui(app, lambda: app.status_var.set(f"Đã dừng tải lên ({successful_uploads} thành công, {failed_uploads} thất bại)"))
             else:
-                app.status_var.set(f"Đã hoàn tất: {successful_uploads} thành công, {failed_uploads} thất bại")
+                self.safe_update_ui(app, lambda: app.status_var.set(f"Đã hoàn tất: {successful_uploads} thành công, {failed_uploads} thất bại"))
                 
-                # Làm mới thống kê lịch sử
-                from ui.history_tab import refresh_history_stats
-                refresh_history_stats(app)
+                # Làm mới thống kê lịch sử an toàn
+                def update_history():
+                    from ui.history_tab import refresh_history_stats
+                    refresh_history_stats(app)
+                
+                self.safe_update_ui(app, update_history)
         
         except Exception as e:
             import traceback
             logger.error(f"Lỗi trong quá trình tải lên: {str(e)}")
             logger.error(traceback.format_exc())
-            app.status_var.set(f"Lỗi: {str(e)}")
+            self.safe_update_ui(app, lambda: app.status_var.set(f"Lỗi: {str(e)}"))
             
             # Đóng dialog nếu có lỗi
             if self.progress_dialog:
-                self.progress_dialog.dialog.destroy()
+                self.safe_update_ui(app, self.progress_dialog.dialog.destroy)
         
         finally:
-            # Cập nhật trạng thái
-            app.is_uploading = False
+            # Cập nhật trạng thái an toàn
+            self.safe_update_ui(app, lambda: setattr(app, 'is_uploading', False))
             
-            # Cập nhật giao diện
-            app.upload_btn.config(state=tk.NORMAL)
-            app.stop_btn.config(state=tk.DISABLED)
+            # Cập nhật giao diện an toàn
+            self.safe_update_ui(app, lambda: app.upload_btn.config(state=tk.NORMAL))
+            self.safe_update_ui(app, lambda: app.stop_btn.config(state=tk.DISABLED))
     
     def stop_upload(self, app):
         """Dừng quá trình tải lên"""

@@ -25,6 +25,17 @@ class AutoUploaderManager:
         """
         self.app = app
     
+    def safe_update_ui(self, app, func, *args, **kwargs):
+        """
+        Cập nhật UI an toàn từ thread không phải main thread
+        
+        Args:
+            app: Đối tượng TelegramUploaderApp
+            func: Hàm cập nhật UI
+            *args, **kwargs: Tham số cho hàm
+        """
+        app.root.after(0, lambda: func(*args, **kwargs))
+    
     def start_auto_upload(self, app):
         """Bắt đầu chế độ tự động tải lên"""
         # Kiểm tra chế độ tự động được chọn
@@ -177,19 +188,23 @@ class AutoUploaderManager:
     
     def update_bulk_progress(self, app, progress):
         """Cập nhật tiến trình tải lên hàng loạt"""
-        # Cập nhật thanh tiến trình nếu có
-        if progress >= 100:
-            app.auto_status_var.set("Đã hoàn tất tải lên hàng loạt")
-            app.auto_upload_active = False
-            app.start_auto_btn.config(state=tk.NORMAL)
-            app.bulk_upload_btn.config(state=tk.NORMAL)
-            app.stop_auto_btn.config(state=tk.DISABLED)
-            
-            # Cập nhật thống kê lịch sử
-            from ui.history_tab import refresh_history_stats
-            refresh_history_stats(app)
-        else:
-            app.auto_status_var.set(f"Đang tải lên hàng loạt: {progress}%")
+        # Cập nhật thanh tiến trình an toàn 
+        # qua main thread để tránh lỗi thread
+        def _update():
+            if progress >= 100:
+                app.auto_status_var.set("Đã hoàn tất tải lên hàng loạt")
+                app.auto_upload_active = False
+                app.start_auto_btn.config(state=tk.NORMAL)
+                app.bulk_upload_btn.config(state=tk.NORMAL)
+                app.stop_auto_btn.config(state=tk.DISABLED)
+                
+                # Cập nhật thống kê lịch sử
+                from ui.history_tab import refresh_history_stats
+                refresh_history_stats(app)
+            else:
+                app.auto_status_var.set(f"Đang tải lên hàng loạt: {progress}%")
+        
+        self.safe_update_ui(app, _update)
     
     def stop_auto_upload(self, app):
         """Dừng chế độ tự động tải lên"""
@@ -228,18 +243,72 @@ class AutoUploaderManager:
             app: Đối tượng TelegramUploaderApp
             message (str): Thông báo cần thêm
         """
-        if not app.auto_log_var.get():
+        # Kiểm tra xem log đã được bật chưa
+        if not hasattr(app, 'auto_log_var') or not app.auto_log_var.get():
             return
-            
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}\n"
         
-        # Thêm vào Text widget
-        app.auto_log_text.config(state=tk.NORMAL)
-        app.auto_log_text.insert(tk.END, log_entry)
-        app.auto_log_text.see(tk.END)  # Cuộn xuống dòng cuối
-        app.auto_log_text.config(state=tk.DISABLED)
+        # Đưa việc cập nhật UI vào main thread
+        def update_log():
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_entry = f"[{timestamp}] {message}\n"
+            
+            # Thêm vào Text widget
+            app.auto_log_text.config(state=tk.NORMAL)
+            app.auto_log_text.insert(tk.END, log_entry)
+            app.auto_log_text.see(tk.END)  # Cuộn xuống dòng cuối
+            app.auto_log_text.config(state=tk.DISABLED)
+        
+        self.safe_update_ui(app, update_log)
         
         # Thêm vào log chung
         logger.info(f"[AUTO] {message}")
+    
+    def set_log_callback(self, callback):
+        """
+        Đặt callback để ghi log
+        
+        Args:
+            callback (function): Hàm callback nhận chuỗi log
+        """
+        self.log_callback = callback
+    
+    # Cập nhật lại _on_new_file để xử lý thread safety
+    def _on_new_file(self, file_path):
+        """
+        Xử lý khi phát hiện file mới
+        
+        Args:
+            file_path (str): Đường dẫn đến file mới
+        """
+        # Kiểm tra xem file đã được xử lý chưa
+        if file_path in self.processed_files:
+            return
+            
+        # Gọi log callback an toàn qua main thread
+        if self.log_callback:
+            self.log_callback(f"Đã phát hiện file mới: {os.path.basename(file_path)}")
+        else:
+            logger.info(f"Đã phát hiện file mới: {os.path.basename(file_path)}")
+        
+        # Kiểm tra lịch sử tải lên nếu cần
+        if self.check_history and self.upload_history and self.video_analyzer:
+            try:
+                # Tính hash của video
+                video_hash = self.video_analyzer.calculate_video_hash(file_path)
+                
+                # Kiểm tra xem video đã tồn tại trong lịch sử chưa
+                if video_hash and self.upload_history.is_uploaded(video_hash):
+                    if self.log_callback:
+                        self.log_callback(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}")
+                    else:
+                        logger.info(f"Bỏ qua video đã tải lên trước đó: {os.path.basename(file_path)}")
+                    
+                    # Đánh dấu là đã xử lý để không xử lý lại
+                    self.processed_files.add(file_path)
+                    return
+            except Exception as e:
+                logger.error(f"Lỗi khi kiểm tra lịch sử video {os.path.basename(file_path)}: {str(e)}")
+        
+        # Thêm vào hàng đợi tải lên
+        self.upload_queue.put(file_path)
