@@ -7,6 +7,7 @@ from tkinter import ttk, filedialog, messagebox
 import logging
 from PIL import Image, ImageTk
 import cv2
+import math
 
 logger = logging.getLogger("MainTab")
 
@@ -18,30 +19,34 @@ def create_main_tab(app, parent):
         app: Đối tượng TelegramUploaderApp
         parent: Frame cha
     """
-    # Tạo canvas và thanh cuộn để cho phép cuộn toàn bộ nội dung
+    # Tạo canvas để hỗ trợ cuộn
     main_canvas = tk.Canvas(parent)
     main_scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=main_canvas.yview)
     
-    # Tạo frame con trong canvas để chứa toàn bộ nội dung
-    content_frame = ttk.Frame(main_canvas)
-    
-    # Cấu hình canvas để cuộn
+    # Thiết lập canvas
     main_canvas.configure(yscrollcommand=main_scrollbar.set)
-    main_canvas.bind('<Configure>', lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all")))
-    
-    # Tạo cửa sổ cho content_frame trong canvas
-    main_canvas.create_window((0, 0), window=content_frame, anchor="nw", width=main_canvas.winfo_width())
     
     # Sắp xếp canvas và thanh cuộn
     main_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     
-    # Bổ sung chức năng cuộn bằng chuột
-    def _on_mousewheel(event):
+    # Tạo frame chứa nội dung
+    content_frame = ttk.Frame(main_canvas)
+    content_window = main_canvas.create_window((0, 0), window=content_frame, anchor="nw", width=main_canvas.winfo_width())
+    
+    # Cấu hình cuộn
+    def on_frame_configure(event):
+        main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        # Đảm bảo frame nội dung có chiều rộng phù hợp
+        main_canvas.itemconfig(content_window, width=main_canvas.winfo_width())
+    
+    content_frame.bind("<Configure>", on_frame_configure)
+    
+    # Kích hoạt cuộn bằng chuột
+    def on_mousewheel(event):
         main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
     
-    content_frame.bind("<MouseWheel>", _on_mousewheel)
-    main_canvas.bind("<MouseWheel>", _on_mousewheel)
+    main_canvas.bind_all("<MouseWheel>", on_mousewheel)
     
     # Frame chọn thư mục
     folder_frame = ttk.LabelFrame(content_frame, text="Thư mục chứa video")
@@ -51,13 +56,22 @@ def create_main_tab(app, parent):
     app.folder_path = tk.StringVar()
     app.folder_path.set(app.config['SETTINGS']['video_folder'])
     
-    folder_entry = ttk.Entry(folder_frame, textvariable=app.folder_path, width=50)
-    folder_entry.pack(side=tk.LEFT, padx=5, pady=10, fill=tk.X, expand=True)
+    # Ô input và nút duyệt cải thiện layout
+    input_frame = ttk.Frame(folder_frame)
+    input_frame.pack(fill=tk.X, padx=5, pady=5)
     
-    # Nút "Duyệt..."
-    browse_btn = ttk.Button(folder_frame, text="Duyệt...", 
-                           command=lambda: browse_folder(app))
-    browse_btn.pack(side=tk.RIGHT, padx=5, pady=10)
+    # Ô nhập liệu với font lớn hơn
+    folder_entry = tk.Entry(input_frame, textvariable=app.folder_path, 
+                         font=("Arial", 11), 
+                         relief="groove", bg="white")
+    folder_entry.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+    
+    # Nút "Duyệt..." - cân đối và rộng hơn
+    browse_btn = tk.Button(input_frame, text="Duyệt...", 
+                         relief="raised", bg="#f0f0f0",
+                         font=("Arial", 11), width=10,
+                         command=lambda: browse_folder(app))
+    browse_btn.pack(side=tk.RIGHT, padx=5, pady=5)
     
     # Frame kiểm soát
     control_top_frame = ttk.Frame(content_frame)
@@ -68,40 +82,146 @@ def create_main_tab(app, parent):
                            command=lambda: refresh_video_list(app))
     refresh_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
-    # Checkbox kiểm tra trùng lặp
-    app.check_duplicates_var = tk.BooleanVar()
-    app.check_duplicates_var.set(app.config['SETTINGS'].getboolean('check_duplicates', True))
+    # Frame cho các checkbox bên phải - xếp theo dòng
+    checkbox_frame = ttk.Frame(control_top_frame)
+    checkbox_frame.pack(side=tk.RIGHT, padx=5, pady=5)
     
-    check_duplicates_cb = ttk.Checkbutton(
-        control_top_frame, 
-        text="Kiểm tra video trùng lặp", 
-        variable=app.check_duplicates_var,
-        command=lambda: refresh_video_list(app)
-    )
-    check_duplicates_cb.pack(side=tk.RIGHT, padx=5, pady=5)
+    # Tạo style cho checkbox
+    style = ttk.Style()
+    style.configure("Custom.TCheckbutton", 
+                  font=("Arial", 10),
+                  indicatorsize=20)
     
-    # Checkbox kiểm tra với lịch sử
-    app.check_history_var = tk.BooleanVar()
-    app.check_history_var.set(True)
-    
-    check_history_cb = ttk.Checkbutton(
-        control_top_frame, 
+    # Checkbox kiểm tra với lịch sử - đồng bộ style
+    app.check_history_var = tk.IntVar(value=1)
+    history_check = ttk.Checkbutton(
+        checkbox_frame, 
         text="Kiểm tra với lịch sử đã tải lên", 
         variable=app.check_history_var,
-        command=lambda: refresh_video_list(app)
+        command=lambda: refresh_video_list(app),
+        style="Custom.TCheckbutton"
     )
-    check_history_cb.pack(side=tk.RIGHT, padx=15, pady=5)
+    history_check.grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+    
+    # Checkbox kiểm tra trùng lặp - đồng bộ style
+    app.check_duplicates_var = tk.IntVar(value=app.config['SETTINGS'].getboolean('check_duplicates', True))
+    duplicates_check = ttk.Checkbutton(
+        checkbox_frame, 
+        text="Kiểm tra video trùng lặp", 
+        variable=app.check_duplicates_var,
+        command=lambda: refresh_video_list(app),
+        style="Custom.TCheckbutton"
+    )
+    duplicates_check.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+    
+    # Container cho tabs
+    tab_container = ttk.Frame(content_frame)
+    tab_container.pack(fill=tk.X, padx=10, pady=5)
+    
+    # Tạo style cho các tab button
+    tab_style = ttk.Style()
+    tab_style.configure("Tab.TFrame", background="#f0f0f0")
+    
+    # Tab frame
+    tab_frame = ttk.Frame(tab_container, style="Tab.TFrame")
+    tab_frame.pack(fill=tk.X)
+    
+    # Các tab với padding và font phù hợp
+    tab_names = [
+        ("manual", "Tải lên thủ công"),
+        ("auto", "Tải lên tự động"),
+        ("duplicate", "Danh sách video trùng"),
+        ("uploaded", "Danh sách video đã tải lên")
+    ]
+    
+    app.sub_tab_buttons = {}
+    
+    # Tạo các tab button với style như hình ảnh
+    for i, (code, name) in enumerate(tab_names):
+        btn = tk.Button(
+            tab_frame, 
+            text=name,
+            font=("Arial", 11),
+            padx=15, pady=8,
+            relief="raised",
+            borderwidth=1,
+            bg="#4a7ebb" if code == "manual" else "#f0f0f0",
+            fg="white" if code == "manual" else "black",
+            command=lambda c=code: switch_tab(app, c)
+        )
+        btn.pack(side=tk.LEFT)
+        app.sub_tab_buttons[code] = btn
+    
+    # Frame chứa nội dung tab
+    app.tab_content_frame = ttk.Frame(content_frame)
+    app.tab_content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+    
+    # Hiển thị tab đầu tiên
+    create_manual_tab(app, app.tab_content_frame)
+    
+    # Thanh tiến trình và nút ở cuối
+    app.bottom_space_frame = ttk.Frame(content_frame, height=100)
+    app.bottom_space_frame.pack(fill=tk.X)
+
+def switch_tab(app, tab_code):
+    """
+    Chuyển đổi giữa các tab nội dung
+    
+    Args:
+        app: Đối tượng TelegramUploaderApp
+        tab_code: Mã tab cần chuyển đến
+    """
+    # Cập nhật trạng thái nút
+    for code, btn in app.sub_tab_buttons.items():
+        if code == tab_code:
+            btn.config(bg="#4a7ebb", fg="white", relief="sunken")
+        else:
+            btn.config(bg="#f0f0f0", fg="black", relief="raised")
+    
+    # Lưu tab hiện tại
+    app.current_tab = tab_code
+    
+    # Xóa nội dung hiện tại
+    for widget in app.tab_content_frame.winfo_children():
+        widget.destroy()
+    
+    # Hiển thị nội dung tab mới
+    if tab_code == "manual":
+        create_manual_tab(app, app.tab_content_frame)
+    elif tab_code == "auto":
+        create_auto_tab(app, app.tab_content_frame)
+    elif tab_code == "duplicate":
+        create_duplicate_tab(app, app.tab_content_frame)
+    elif tab_code == "uploaded":
+        create_uploaded_tab(app, app.tab_content_frame)
+
+def create_manual_tab(app, parent):
+    """
+    Tạo giao diện tab tải lên thủ công
+    
+    Args:
+        app: Đối tượng TelegramUploaderApp
+        parent: Frame cha
+    """
+    # Biến lưu trữ trang hiện tại
+    app.current_page = 1
+    app.items_per_page = 10  # Số lượng video trên mỗi trang
     
     # Frame hiển thị danh sách video
-    videos_frame = ttk.LabelFrame(content_frame, text="Danh sách video")
-    videos_frame.pack(fill=tk.BOTH, padx=10, pady=10)
+    videos_frame = ttk.LabelFrame(parent, text="Danh sách video")
+    videos_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=5)
     
     # Tạo frame cho danh sách và thanh cuộn
     list_frame = ttk.Frame(videos_frame)
     list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
     
+    # Tạo style cho treeview
+    style = ttk.Style()
+    style.configure("Treeview", rowheight=30, font=("Arial", 10))
+    style.configure("Treeview.Heading", font=("Arial", 10, "bold"))
+    
     # Cấu hình cột
-    app.video_tree = ttk.Treeview(list_frame, columns=("select", "filename", "status", "info"), show="headings", height=12)
+    app.video_tree = ttk.Treeview(list_frame, columns=("select", "filename", "status", "info"), show="headings", height=10)
     app.video_tree.heading("select", text="")
     app.video_tree.heading("filename", text="Tên file")
     app.video_tree.heading("status", text="Trạng thái")
@@ -111,80 +231,143 @@ def create_main_tab(app, parent):
     app.video_tree.column("select", width=30, anchor=tk.CENTER)
     app.video_tree.column("filename", width=400, anchor=tk.W)
     app.video_tree.column("status", width=150, anchor=tk.CENTER)
-    app.video_tree.column("info", width=200, anchor=tk.W)
+    app.video_tree.column("info", width=300, anchor=tk.W)
     
-    # Tạo thanh cuộn cho treeview
-    tree_scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=app.video_tree.yview)
-    app.video_tree.configure(yscrollcommand=tree_scrollbar.set)
+    # Tạo thanh cuộn ngang và dọc cho treeview
+    tree_y_scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=app.video_tree.yview)
+    tree_x_scrollbar = ttk.Scrollbar(list_frame, orient=tk.HORIZONTAL, command=app.video_tree.xview)
+    app.video_tree.configure(yscrollcommand=tree_y_scrollbar.set, xscrollcommand=tree_x_scrollbar.set)
     
     # Sắp xếp treeview và thanh cuộn
-    tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    tree_y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     app.video_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    tree_x_scrollbar.pack(fill=tk.X)
     
-    # Biến lưu trữ checkbox
-    app.video_checkboxes = {}  # {item_id: BooleanVar}
+    # Tạo dictionary để lưu các checkbutton
+    app.video_checkboxes = {}
+    app.video_items = []
     
-    # Xử lý sự kiện khi click vào cột checkbox
+    # Cấu hình bề mặt cho các trạng thái
+    app.video_tree.tag_configure("duplicate", background="#FFD2D2")
+    app.video_tree.tag_configure("uploaded", background="#D2F0FF")
+    
+    # Xử lý sự kiện khi click vào bảng
     app.video_tree.bind("<ButtonRelease-1>", lambda event: on_video_tree_click(app, event))
-    
-    # Xử lý sự kiện khi chọn video
     app.video_tree.bind("<<TreeviewSelect>>", lambda event: on_video_select(app, event))
     
-    # Tạo 3 nút dưới danh sách
-    tree_buttons_frame = ttk.Frame(videos_frame)
-    tree_buttons_frame.pack(fill=tk.X, pady=5)
+    # Frame cho phân trang và thông tin tổng số
+    pagination_frame = ttk.Frame(videos_frame)
+    pagination_frame.pack(fill=tk.X, pady=5)
     
-    select_all_btn = ttk.Button(tree_buttons_frame, text="Chọn tất cả", 
-                               command=lambda: select_all_videos(app))
-    select_all_btn.pack(side=tk.LEFT, padx=5)
+    # Thông tin tổng số video
+    app.total_info_var = tk.StringVar(value="Tổng: 0 video, 0 video trùng, 0 video đã tải lên")
+    total_info_label = ttk.Label(pagination_frame, textvariable=app.total_info_var)
+    total_info_label.pack(side=tk.LEFT, padx=5)
     
-    deselect_all_btn = ttk.Button(tree_buttons_frame, text="Bỏ chọn tất cả", 
-                                 command=lambda: deselect_all_videos(app))
-    deselect_all_btn.pack(side=tk.LEFT, padx=5)
+    # Frame cho các nút phân trang
+    page_control_frame = ttk.Frame(pagination_frame)
+    page_control_frame.pack(side=tk.RIGHT, padx=5)
     
-    invert_selection_btn = ttk.Button(tree_buttons_frame, text="Đảo chọn", 
-                                     command=lambda: invert_video_selection(app))
-    invert_selection_btn.pack(side=tk.LEFT, padx=5)
+    # Nút trang trước
+    app.prev_page_btn = tk.Button(page_control_frame, text="←", width=3,
+                                command=lambda: change_page(app, -1))
+    app.prev_page_btn.pack(side=tk.LEFT, padx=2)
+    
+    # Hiển thị trang hiện tại
+    app.page_info_var = tk.StringVar(value="Trang 1/1")
+    page_label = ttk.Label(page_control_frame, textvariable=app.page_info_var, width=10)
+    page_label.pack(side=tk.LEFT, padx=2)
+    
+    # Nút trang tiếp
+    app.next_page_btn = tk.Button(page_control_frame, text="→", width=3,
+                                command=lambda: change_page(app, 1))
+    app.next_page_btn.pack(side=tk.LEFT, padx=2)
     
     # Frame thông tin video
-    info_frame = ttk.LabelFrame(content_frame, text="Thông tin video đã chọn")
-    info_frame.pack(fill=tk.X, padx=10, pady=5)
+    info_frame = ttk.LabelFrame(parent, text="Thông tin video đã chọn")
+    info_frame.pack(fill=tk.X, padx=0, pady=5)
     
-    # Frame thông tin bên trái
-    info_left_frame = ttk.Frame(info_frame)
-    info_left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+    # Tạo 2 phần bên trái và bên phải
+    info_layout = ttk.Frame(info_frame)
+    info_layout.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    # Frame bên trái - hình thu nhỏ và nút
+    info_left_frame = ttk.Frame(info_layout)
+    info_left_frame.pack(side=tk.LEFT, fill=tk.Y)
+    
+    # Frame bao quanh thumbnail để tạo viền - đảm bảo kích thước cân đối
+    thumbnail_frame = ttk.Frame(info_left_frame, width=200, height=150)
+    thumbnail_frame.pack(padx=5, pady=5)
+    thumbnail_frame.pack_propagate(False)  # Giữ kích thước cố định
     
     # Hiển thị hình thu nhỏ
-    app.thumbnail_label = ttk.Label(info_left_frame, text="Không có video nào được chọn")
-    app.thumbnail_label.pack(padx=5, pady=5)
+    app.thumbnail_label = tk.Label(thumbnail_frame, text="Thumbnail", 
+                                bg="white", relief="solid", bd=1)
+    app.thumbnail_label.pack(fill=tk.BOTH, expand=True)
     
-    # Thêm nút để xem video
-    app.play_video_btn = ttk.Button(info_left_frame, text="Xem video", 
-                                   command=lambda: play_selected_video(app),
-                                   state=tk.DISABLED)
-    app.play_video_btn.pack(padx=5, pady=5)
+    # Frame nút bên dưới hình thu nhỏ - đảm bảo kích thước phù hợp
+    button_container = ttk.Frame(info_left_frame, width=200)
+    button_container.pack(padx=5, pady=5, fill=tk.X)
+    
+    # Các nút cân đối với thumbnail
+    btn_frame = ttk.Frame(button_container)
+    btn_frame.pack(anchor=tk.CENTER)
+    
+    # Nút xem video
+    app.play_video_btn = tk.Button(btn_frame, text="Xem video", 
+                                bg="#f0f0f0", relief="raised",
+                                width=10, font=("Arial", 10),
+                                command=lambda: play_selected_video(app))
+    app.play_video_btn.pack(side=tk.LEFT, padx=5, pady=5)
+    
+    # Nút tải lên video đang chọn
+    app.upload_single_btn = tk.Button(btn_frame, text="Tải lên video đang chọn", 
+                                   bg="#f0f0f0", relief="raised",
+                                   width=20, font=("Arial", 10),
+                                   command=lambda: upload_selected_video(app))
+    app.upload_single_btn.pack(side=tk.LEFT, padx=5, pady=5)
     
     # Frame thông tin bên phải
-    info_right_frame = ttk.Frame(info_frame)
-    info_right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+    info_right_frame = ttk.Frame(info_layout)
+    info_right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10)
     
-    # Thông tin chi tiết với thanh cuộn
-    info_text_frame = ttk.Frame(info_right_frame)
-    info_text_frame.pack(fill=tk.BOTH, expand=True)
+    # Frame thông tin chi tiết
+    info_details_frame = ttk.Frame(info_right_frame)
+    info_details_frame.pack(fill=tk.BOTH, expand=True)
     
-    app.info_text = tk.Text(info_text_frame, height=6, width=40, wrap=tk.WORD, font=("Arial", 10))
+    # Thông tin chi tiết - hiển thị các thông tin cụ thể hơn
+    info_details = [
+        ("Thông tin video", ""),
+        ("Tên file:", ""),
+        ("Thời lượng:", ""),
+        ("Độ phân giải:", ""),
+        ("Kích thước:", ""),
+        ("Codec:", ""),
+        ("Định dạng:", "")
+    ]
     
-    # Thanh cuộn cho thông tin
-    info_scrollbar = ttk.Scrollbar(info_text_frame, orient=tk.VERTICAL, command=app.info_text.yview)
-    app.info_text.configure(yscrollcommand=info_scrollbar.set)
+    # Lưu các biến hiển thị thông tin
+    app.info_vars = {}
+    row = 0
     
-    info_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    app.info_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    app.info_text.config(state=tk.DISABLED)
+    # Header
+    header_label = ttk.Label(info_details_frame, text=info_details[0][0], font=("Arial", 11, "bold"))
+    header_label.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+    row += 1
+    
+    # Các thông tin chi tiết
+    for label_text, value in info_details[1:]:
+        ttk.Label(info_details_frame, text=label_text).grid(row=row, column=0, sticky=tk.W, pady=2)
+        
+        var = tk.StringVar(value=value)
+        app.info_vars[label_text] = var
+        
+        ttk.Label(info_details_frame, textvariable=var).grid(row=row, column=1, sticky=tk.W, pady=2)
+        row += 1
     
     # Frame hiển thị các frame từ video
-    frames_frame = ttk.LabelFrame(content_frame, text="Các khung hình từ video")
-    frames_frame.pack(fill=tk.X, padx=10, pady=5)
+    frames_frame = ttk.LabelFrame(parent, text="Các khung hình từ video")
+    frames_frame.pack(fill=tk.X, padx=0, pady=5)
     
     # Frame chứa các hình thu nhỏ
     app.frames_container = ttk.Frame(frames_frame)
@@ -193,67 +376,131 @@ def create_main_tab(app, parent):
     # Tạo 5 label cho các frame
     app.frame_labels = []
     for i in range(5):
-        frame = ttk.Frame(app.frames_container)
-        frame.pack(side=tk.LEFT, padx=5, expand=True)
+        frame_container = ttk.Frame(app.frames_container, width=120, height=90)
+        frame_container.pack(side=tk.LEFT, padx=8, expand=True)
+        frame_container.pack_propagate(False)  # Giữ kích thước cố định
         
-        label = ttk.Label(frame, text=f"Frame {i+1}")
-        label.pack(pady=2)
+        # Sử dụng Label thông thường 
+        label = tk.Label(frame_container, text=f"Frame {i+1}", 
+                       bg="white", relief="solid", bd=1)
+        label.pack(fill=tk.BOTH, expand=True)
         
         app.frame_labels.append(label)
     
-    # Frame trạng thái và điều khiển
-    control_frame = ttk.Frame(content_frame)
-    control_frame.pack(fill=tk.X, padx=10, pady=10)
-    
     # Thanh tiến trình
-    app.progress = ttk.Progressbar(control_frame, orient=tk.HORIZONTAL, length=100, mode='determinate')
+    progress_frame = ttk.Frame(parent)
+    progress_frame.pack(fill=tk.X, padx=0, pady=5)
+    
+    app.progress = ttk.Progressbar(progress_frame, orient=tk.HORIZONTAL, length=100, mode='determinate')
     app.progress.pack(fill=tk.X, padx=5, pady=5)
     
     # Nhãn trạng thái
     app.status_var = tk.StringVar()
     app.status_var.set("Sẵn sàng")
-    status_label = ttk.Label(control_frame, textvariable=app.status_var, style="Status.TLabel")
+    status_label = ttk.Label(progress_frame, textvariable=app.status_var)
     status_label.pack(pady=5)
     
-    # Frame chứa các nút điều khiển
-    btn_frame = ttk.Frame(control_frame)
-    btn_frame.pack(fill=tk.X, pady=10)
+    # Cập nhật danh sách khi tab được tạo
+    folder_path = app.folder_path.get()
+    if folder_path and os.path.exists(folder_path) and os.path.isdir(folder_path):
+        refresh_video_list(app)
+
+def create_auto_tab(app, parent):
+    """
+    Tạo giao diện tab tải lên tự động
     
-    # Nút tải lên
-    app.upload_btn = ttk.Button(btn_frame, text="Bắt đầu tải lên", 
-                              command=lambda: app.uploader.start_upload(app))
-    app.upload_btn.pack(side=tk.LEFT, padx=5)
+    Args:
+        app: Đối tượng TelegramUploaderApp
+        parent: Frame cha
+    """
+    # Hiển thị thông báo "Đang phát triển"
+    ttk.Label(parent, text="Nội dung của tab Tải lên tự động").pack(pady=20)
+    # Tương tự như trong module auto_tab.py
+
+def create_duplicate_tab(app, parent):
+    """
+    Tạo giao diện tab danh sách video trùng
     
-    # Nút dừng
-    app.stop_btn = ttk.Button(btn_frame, text="Dừng lại", 
-                           command=lambda: app.uploader.stop_upload(app), 
-                           state=tk.DISABLED)
-    app.stop_btn.pack(side=tk.LEFT, padx=5)
+    Args:
+        app: Đối tượng TelegramUploaderApp
+        parent: Frame cha
+    """
+    # Hiển thị thông báo "Đang phát triển"
+    ttk.Label(parent, text="Nội dung của tab Danh sách video trùng").pack(pady=20)
+    # Ở đây sẽ hiển thị danh sách các video trùng lặp đã phát hiện
+
+def create_uploaded_tab(app, parent):
+    """
+    Tạo giao diện tab danh sách video đã tải lên
     
-    # Nút xóa video trùng lặp
-    app.remove_duplicates_btn = ttk.Button(btn_frame, text="Loại bỏ trùng lặp", 
-                                         command=lambda: remove_duplicates(app))
-    app.remove_duplicates_btn.pack(side=tk.RIGHT, padx=5)
+    Args:
+        app: Đối tượng TelegramUploaderApp
+        parent: Frame cha
+    """
+    # Hiển thị thông báo "Đang phát triển"
+    ttk.Label(parent, text="Nội dung của tab Danh sách video đã tải lên").pack(pady=20)
+    # Ở đây sẽ hiển thị danh sách video đã tải lên từ lịch sử
+
+def change_page(app, delta):
+    """
+    Thay đổi trang hiển thị
     
-    # Cập nhật kích thước content_frame khi parent thay đổi kích thước
-    def update_canvas_width(event):
-        # Thiết lập width của canvas là width của parent trừ đi width của thanh cuộn
-        canvas_width = parent.winfo_width() - main_scrollbar.winfo_width() - 10
-        main_canvas.itemconfig(main_canvas.find_withtag("all")[0], width=canvas_width)
+    Args:
+        app: Đối tượng TelegramUploaderApp
+        delta: -1 để trở về trang trước, 1 để đến trang tiếp
+    """
+    total_items = len(app.video_items)
+    total_pages = max(1, math.ceil(total_items / app.items_per_page))
+    
+    # Tính trang mới
+    new_page = app.current_page + delta
+    
+    # Kiểm tra giới hạn
+    if new_page < 1 or new_page > total_pages:
+        return
+    
+    # Cập nhật trang hiện tại
+    app.current_page = new_page
+    
+    # Cập nhật thông tin trang
+    app.page_info_var.set(f"Trang {app.current_page}/{total_pages}")
+    
+    # Cập nhật trạng thái nút
+    app.prev_page_btn["state"] = tk.NORMAL if app.current_page > 1 else tk.DISABLED
+    app.next_page_btn["state"] = tk.NORMAL if app.current_page < total_pages else tk.DISABLED
+    
+    # Cập nhật nội dung bảng
+    update_table_content(app)
+
+def update_table_content(app):
+    """Cập nhật nội dung bảng theo trang hiện tại"""
+    # Xóa tất cả các mục trong bảng
+    for item in app.video_tree.get_children():
+        app.video_tree.delete(item)
+    
+    # Tính chỉ số bắt đầu và kết thúc
+    start_idx = (app.current_page - 1) * app.items_per_page
+    end_idx = min(start_idx + app.items_per_page, len(app.video_items))
+    
+    # Thêm các mục của trang hiện tại vào bảng
+    for i in range(start_idx, end_idx):
+        item_data = app.video_items[i]
+        video_name = item_data["name"]
+        status = item_data["status"]
+        info = item_data["info"]
+        tags = item_data["tags"]
         
-    parent.bind("<Configure>", update_canvas_width)
-    
-    # Thiết lập style cho treeview
-    style = ttk.Style()
-    style.configure("Treeview", rowheight=25)
-    
-    # Kết nối sự kiện MouseWheel từ tất cả các widget đến canvas
-    def bind_mousewheel_to_canvas(widget):
-        widget.bind("<MouseWheel>", _on_mousewheel)
-        for child in widget.winfo_children():
-            bind_mousewheel_to_canvas(child)
-    
-    bind_mousewheel_to_canvas(content_frame)
+        # Kiểm tra xem item này đã được chọn hay chưa
+        item_id = f"item_{i}"
+        is_checked = app.video_checkboxes.get(item_id, tk.BooleanVar(value=False)).get()
+        
+        # Thêm vào treeview với ký hiệu checkbox
+        checkbox_symbol = "☑" if is_checked else "☐"
+        item_id = app.video_tree.insert("", tk.END, values=(checkbox_symbol, video_name, status, info), tags=tags)
+        
+        # Tạo biến checkbox mới nếu chưa có
+        if item_id not in app.video_checkboxes:
+            app.video_checkboxes[item_id] = tk.BooleanVar(value=is_checked)
 
 def browse_folder(app, auto=False):
     """
@@ -298,6 +545,7 @@ def refresh_video_list(app):
     app.videos = {}
     app.duplicate_groups = []
     app.video_checkboxes = {}
+    app.video_items = []
     
     # Lấy danh sách phần mở rộng video hợp lệ
     extensions = app.config['SETTINGS']['video_extensions'].split(',')
@@ -316,25 +564,32 @@ def refresh_video_list(app):
     # Kiểm tra nếu không có video nào
     if not video_files:
         app.status_var.set(f"Không tìm thấy video trong thư mục (định dạng hỗ trợ: {', '.join(extensions)})")
+        app.total_info_var.set("Tổng: 0 video, 0 video trùng, 0 video đã tải lên")
+        
+        # Cập nhật phân trang
+        app.current_page = 1
+        app.page_info_var.set("Trang 1/1")
+        app.prev_page_btn["state"] = tk.DISABLED
+        app.next_page_btn["state"] = tk.DISABLED
         return
     
     # Tạo danh sách video đã tải lên để so sánh
     already_uploaded_videos = set()
     
-    # Thêm video vào treeview
+    # Tạo danh sách các mục video
     for video in video_files:
         # Đường dẫn đầy đủ
         video_path = os.path.join(folder_path, video)
         app.videos[video] = video_path
         
-        # Tạo checkbox var
-        check_var = tk.BooleanVar(value=False)
-        
-        # Thêm vào treeview với checkbox
-        item_id = app.video_tree.insert("", tk.END, values=("☐", video, "", ""))
-        
-        # Lưu biến checkbox
-        app.video_checkboxes[item_id] = check_var
+        # Thêm vào danh sách
+        app.video_items.append({
+            "name": video,
+            "path": video_path,
+            "status": "",
+            "info": "",
+            "tags": ()
+        })
     
     # Nếu có yêu cầu kiểm tra với lịch sử
     if app.check_history_var.get():
@@ -345,21 +600,19 @@ def refresh_video_list(app):
         upload_history = app.upload_history.get_all_uploads()
         
         # Kiểm tra từng video
-        for item in app.video_tree.get_children():
-            video_name = app.video_tree.item(item, "values")[1]
-            video_path = app.videos.get(video_name)
+        for i, item in enumerate(app.video_items):
+            video_path = item["path"]
             
             if video_path:
                 video_hash = app.video_analyzer.calculate_video_hash(video_path)
                 if video_hash and app.upload_history.is_uploaded(video_hash):
                     # Đánh dấu đã tải lên
-                    app.video_tree.item(item, values=(app.video_tree.item(item, "values")[0], 
-                                                    video_name, 
-                                                    "Đã tải lên", 
-                                                    ""))
-                    already_uploaded_videos.add(video_name)
+                    app.video_items[i]["status"] = "Đã tải lên"
+                    app.video_items[i]["tags"] = ("uploaded",)
+                    already_uploaded_videos.add(item["name"])
     
     # Nếu có yêu cầu kiểm tra trùng lặp
+    duplicate_count = 0
     if app.check_duplicates_var.get() and len(video_files) > 1:
         app.status_var.set("Đang phân tích video để tìm trùng lặp...")
         app.root.update_idletasks()
@@ -379,13 +632,11 @@ def refresh_video_list(app):
                     for video_path in group:
                         video_name = os.path.basename(video_path)
                         
-                        # Tìm video trong treeview
-                        for item in app.video_tree.get_children():
-                            tree_video_name = app.video_tree.item(item, "values")[1]
-                            
-                            if tree_video_name == video_name:
-                                current_values = app.video_tree.item(item, "values")
-                                status = current_values[2] or "Trùng lặp"
+                        # Tìm video trong danh sách
+                        for i, item in enumerate(app.video_items):
+                            if item["name"] == video_name:
+                                # Trạng thái hiện tại
+                                current_status = item["status"] or "Trùng lặp"
                                 
                                 # Tìm tên video trùng lặp khác trong nhóm
                                 dup_names = [os.path.basename(v) for v in group if v != video_path]
@@ -393,39 +644,30 @@ def refresh_video_list(app):
                                 if len(dup_names) > 2:
                                     info += f" và {len(dup_names)-2} video khác"
                                 
-                                # Cập nhật trạng thái
-                                app.video_tree.item(item, values=(current_values[0], 
-                                                                 tree_video_name, 
-                                                                 status, 
-                                                                 info))
-                                app.video_tree.item(item, tags=("duplicate",))
+                                # Cập nhật thông tin
+                                app.video_items[i]["status"] = current_status
+                                app.video_items[i]["info"] = info
+                                app.video_items[i]["tags"] = ("duplicate",)
                                 marked_videos.add(video_name)
                                 break
             
-            # Đặt style cho video trùng lặp
-            app.video_tree.tag_configure("duplicate", background="#FFD2D2")  # Màu đỏ nhạt
-            
-            app.status_var.set(f"Đã tìm thấy {len(video_files)} video ({len(marked_videos)} video trùng lặp)")
-        else:
-            app.status_var.set(f"Đã tìm thấy {len(video_files)} video (không có trùng lặp)")
+            duplicate_count = len(marked_videos)
     
-    # Đánh dấu các video đã tải lên trước đó
-    if already_uploaded_videos:
-        # Đặt style cho video đã tải lên
-        app.video_tree.tag_configure("uploaded", background="#D2F0FF")  # Màu xanh nhạt
-        
-        for item in app.video_tree.get_children():
-            video_name = app.video_tree.item(item, "values")[1]
-            if video_name in already_uploaded_videos:
-                # Đánh dấu video đã tải lên
-                current_values = app.video_tree.item(item, "values")
-                app.video_tree.item(item, values=(current_values[0], 
-                                                video_name, 
-                                                "Đã tải lên", 
-                                                current_values[3]))
-                app.video_tree.item(item, tags=("uploaded",))
-        
-        app.status_var.set(f"Đã tìm thấy {len(video_files)} video ({len(already_uploaded_videos)} đã tải lên trước đó)")
+    # Cập nhật thông tin tổng số
+    app.total_info_var.set(f"Tổng: {len(video_files)} video, {duplicate_count} video trùng, {len(already_uploaded_videos)} video đã tải lên")
+    app.status_var.set(f"Đã tìm thấy {len(video_files)} video")
+    
+    # Cập nhật phân trang
+    total_pages = max(1, math.ceil(len(app.video_items) / app.items_per_page))
+    app.current_page = 1
+    app.page_info_var.set(f"Trang 1/{total_pages}")
+    
+    # Cập nhật trạng thái nút phân trang
+    app.prev_page_btn["state"] = tk.DISABLED
+    app.next_page_btn["state"] = tk.NORMAL if total_pages > 1 else tk.DISABLED
+    
+    # Cập nhật nội dung bảng
+    update_table_content(app)
 
 def on_video_tree_click(app, event):
     """
@@ -436,8 +678,10 @@ def on_video_tree_click(app, event):
         event: Sự kiện click
     """
     region = app.video_tree.identify("region", event.x, event.y)
-    if region == "heading":
-        return  # Bỏ qua nếu click vào tiêu đề
+    if region == "heading" and app.video_tree.identify("column", event.x, event.y) == "#1":
+        # Toggle tất cả các checkbox khi click vào heading
+        toggle_all_checkboxes(app)
+        return
     
     item = app.video_tree.identify("item", event.x, event.y)
     if not item:
@@ -453,72 +697,89 @@ def on_video_tree_click(app, event):
             
             # Cập nhật hiển thị
             current_values = app.video_tree.item(item, "values")
-            checkbox_text = "☑" if check_var.get() else "☐"
+            checkbox_symbol = "☑" if check_var.get() else "☐"
             
-            app.video_tree.item(item, values=(checkbox_text, 
+            app.video_tree.item(item, values=(checkbox_symbol, 
                                             current_values[1], 
                                             current_values[2], 
                                             current_values[3]))
 
-def select_all_videos(app):
+def toggle_all_checkboxes(app):
     """
-    Chọn tất cả video trong danh sách
+    Toggle tất cả các checkbox trong treeview
     
     Args:
         app: Đối tượng TelegramUploaderApp
     """
-    for item in app.video_tree.get_children():
-        check_var = app.video_checkboxes.get(item)
-        if check_var:
-            check_var.set(True)
-            
-            # Cập nhật hiển thị
-            current_values = app.video_tree.item(item, "values")
-            app.video_tree.item(item, values=("☑", 
-                                            current_values[1], 
-                                            current_values[2], 
-                                            current_values[3]))
+    # Kiểm tra xem có hàng nào được chọn không
+    any_checked = False
+    for item_id in app.video_checkboxes:
+        if app.video_checkboxes[item_id].get():
+            any_checked = True
+            break
+    
+    # Đảo trạng thái - nếu có checkbox nào được chọn, bỏ chọn tất cả, ngược lại chọn tất cả
+    new_state = not any_checked
+    
+    # Cập nhật trạng thái của tất cả checkbox
+    for item_id in app.video_checkboxes:
+        app.video_checkboxes[item_id].set(new_state)
+    
+    # Cập nhật hiển thị
+    for item_id in app.video_tree.get_children():
+        current_values = app.video_tree.item(item_id, "values")
+        checkbox_symbol = "☑" if new_state else "☐"
+        app.video_tree.item(item_id, values=(checkbox_symbol, 
+                                           current_values[1], 
+                                           current_values[2], 
+                                           current_values[3]))
 
-def deselect_all_videos(app):
+def on_video_select(app, event):
     """
-    Bỏ chọn tất cả video trong danh sách
+    Xử lý khi chọn video từ treeview
     
     Args:
         app: Đối tượng TelegramUploaderApp
+        event: Sự kiện chọn
     """
-    for item in app.video_tree.get_children():
-        check_var = app.video_checkboxes.get(item)
-        if check_var:
-            check_var.set(False)
-            
-            # Cập nhật hiển thị
-            current_values = app.video_tree.item(item, "values")
-            app.video_tree.item(item, values=("☐", 
-                                            current_values[1], 
-                                            current_values[2], 
-                                            current_values[3]))
+    # Lấy video đã chọn
+    selected_items = app.video_tree.selection()
+    
+    if not selected_items:
+        # Không có video nào được chọn
+        app.thumbnail_label.config(text="Thumbnail")
+        # Xóa thông tin hiển thị
+        reset_video_info(app)
+        app.play_video_btn.config(state=tk.DISABLED)
+        app.upload_single_btn.config(state=tk.DISABLED)
+        
+        # Xóa các frame
+        for label in app.frame_labels:
+            label.config(text="", image="")
+        
+        return
+    
+    # Lấy tên video
+    video_name = app.video_tree.item(selected_items[0], "values")[1]
+    video_path = app.videos.get(video_name)
+    
+    if not video_path or not os.path.exists(video_path):
+        return
+    
+    # Bật nút phát video và tải lên
+    app.play_video_btn.config(state=tk.NORMAL)
+    app.upload_single_btn.config(state=tk.NORMAL)
+    
+    # Hiển thị thông tin video
+    display_video_info(app, video_path)
+    
+    # Hiển thị các frame từ video
+    display_video_frames(app, video_path)
 
-def invert_video_selection(app):
-    """
-    Đảo trạng thái chọn tất cả video
-    
-    Args:
-        app: Đối tượng TelegramUploaderApp
-    """
-    for item in app.video_tree.get_children():
-        check_var = app.video_checkboxes.get(item)
-        if check_var:
-            # Đảo trạng thái
-            check_var.set(not check_var.get())
-            
-            # Cập nhật hiển thị
-            current_values = app.video_tree.item(item, "values")
-            checkbox_text = "☑" if check_var.get() else "☐"
-            
-            app.video_tree.item(item, values=(checkbox_text, 
-                                            current_values[1], 
-                                            current_values[2], 
-                                            current_values[3]))
+def reset_video_info(app):
+    """Xóa thông tin video hiển thị"""
+    for key, var in app.info_vars.items():
+        var.set("")
 
 def play_selected_video(app):
     """
@@ -550,29 +811,16 @@ def play_selected_video(app):
     except Exception as e:
         messagebox.showerror("Lỗi", f"Không thể mở video: {str(e)}")
 
-def on_video_select(app, event):
+def upload_selected_video(app):
     """
-    Xử lý khi chọn video từ treeview
+    Tải lên video đã chọn
     
     Args:
         app: Đối tượng TelegramUploaderApp
-        event: Sự kiện chọn
     """
     # Lấy video đã chọn
     selected_items = app.video_tree.selection()
-    
     if not selected_items:
-        # Không có video nào được chọn
-        app.thumbnail_label.config(text="Không có video nào được chọn")
-        app.info_text.config(state=tk.NORMAL)
-        app.info_text.delete(1.0, tk.END)
-        app.info_text.config(state=tk.DISABLED)
-        app.play_video_btn.config(state=tk.DISABLED)
-        
-        # Xóa các frame
-        for label in app.frame_labels:
-            label.config(text="", image="")
-        
         return
     
     # Lấy tên video
@@ -580,16 +828,55 @@ def on_video_select(app, event):
     video_path = app.videos.get(video_name)
     
     if not video_path or not os.path.exists(video_path):
+        messagebox.showerror("Lỗi", "Không tìm thấy file video!")
         return
     
-    # Bật nút phát video
-    app.play_video_btn.config(state=tk.NORMAL)
+    # Kiểm tra cấu hình Telegram
+    bot_token = app.config['TELEGRAM']['bot_token']
+    chat_id = app.config['TELEGRAM']['chat_id']
     
-    # Hiển thị thông tin video
-    display_video_info(app, video_path)
+    if not bot_token or not chat_id:
+        messagebox.showerror("Lỗi", "Vui lòng cấu hình Bot Token và Chat ID trong tab Cài đặt!")
+        app.notebook.select(1)  # Chuyển đến tab Cài đặt
+        return
     
-    # Hiển thị các frame từ video
-    display_video_frames(app, video_path)
+    # Kết nối lại với Telegram nếu cần
+    if not app.telegram_api.connected:
+        if not app.telegram_api.connect(bot_token):
+            messagebox.showerror("Lỗi", "Không thể kết nối với Telegram API. Vui lòng kiểm tra Bot Token và kết nối internet!")
+            return
+    
+    # Cập nhật trạng thái
+    app.status_var.set(f"Đang tải lên video: {video_name}")
+    app.root.update_idletasks()
+    
+    # Tải lên video
+    try:
+        success = app.telegram_api.send_video(chat_id, video_path)
+        
+        if success:
+            app.status_var.set(f"Đã tải lên thành công: {video_name}")
+            
+            # Thêm vào lịch sử
+            video_hash = app.video_analyzer.calculate_video_hash(video_path)
+            if video_hash:
+                file_size = os.path.getsize(video_path)
+                app.upload_history.add_upload(video_hash, video_name, video_path, file_size)
+                
+                # Cập nhật trạng thái trong treeview
+                for i, item in enumerate(app.video_items):
+                    if item["name"] == video_name:
+                        app.video_items[i]["status"] = "Đã tải lên"
+                        app.video_items[i]["tags"] = ("uploaded",)
+                        break
+                
+                # Cập nhật hiển thị
+                update_table_content(app)
+        else:
+            app.status_var.set(f"Tải lên thất bại: {video_name}")
+    
+    except Exception as e:
+        app.status_var.set(f"Lỗi khi tải lên: {str(e)}")
 
 def display_video_frames(app, video_path):
     """
@@ -609,9 +896,8 @@ def display_video_frames(app, video_path):
         # Lấy tổng số frame
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
-        # Chọn 5 vị trí ngẫu nhiên
-        import random
-        positions = sorted([random.uniform(0.1, 0.9) for _ in range(5)])
+        # Chọn 5 vị trí cho các frame
+        positions = [0.1, 0.3, 0.5, 0.7, 0.9]  # 10%, 30%, 50%, 70%, 90%
         
         # Lưu các frame
         frames = []
@@ -642,7 +928,7 @@ def display_video_frames(app, video_path):
         for i, frame in enumerate(frames):
             if i < len(app.frame_labels):
                 pos_percent = int(positions[i] * 100)
-                app.frame_labels[i].config(text=f"Frame {pos_percent}%", image=frame)
+                app.frame_labels[i].config(text="", image=frame)
     
     except Exception as e:
         logger.error(f"Lỗi khi lấy frame từ video: {str(e)}")
@@ -669,115 +955,24 @@ def display_video_info(app, video_path):
         app.current_thumbnail = thumbnail
         app.thumbnail_label.config(image=thumbnail, text="")
     else:
-        app.thumbnail_label.config(text="Không thể tạo hình thu nhỏ", image="")
+        app.thumbnail_label.config(text="Thumbnail", image="")
     
-    # Tính hash video để kiểm tra với lịch sử
-    video_hash = info.get('hash', None)
-    
-    # Hiển thị thông tin
+    # Lấy thông tin cần hiển thị
     file_name = info.get('file_name', os.path.basename(video_path))
     duration = info.get('duration', 0)
     resolution = info.get('resolution', 'Không rõ')
     file_size = info.get('file_size', 'Không rõ')
     
-    # Kiểm tra trùng lặp
-    duplicate_info = ""
-    history_info = ""
+    # Định dạng thời lượng (giây -> HH:MM:SS)
+    hours = int(duration // 3600)
+    minutes = int((duration % 3600) // 60)
+    seconds = int(duration % 60)
+    formatted_duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
     
-    # Kiểm tra với lịch sử tải lên
-    if video_hash and app.check_history_var.get():
-        if app.upload_history.is_uploaded(video_hash):
-            upload_info = app.upload_history.get_upload_info(video_hash)
-            if upload_info:
-                history_info = f"\n\nĐã tải lên trước đó vào: {upload_info.get('upload_date', 'Không rõ')}"
-    
-    # Kiểm tra trùng lặp trong thư mục hiện tại
-    if app.check_duplicates_var.get() and app.duplicate_groups:
-        for group in app.duplicate_groups:
-            if video_path in group:
-                # Video này nằm trong một nhóm trùng lặp
-                if len(group) > 1:
-                    other_videos = [os.path.basename(v) for v in group if v != video_path]
-                    duplicate_info = f"\n\nTrùng lặp với: {', '.join(other_videos)}"
-                break
-    
-    # Định dạng thông tin
-    info_text = (
-        f"Tên file: {file_name}\n"
-        f"Thời lượng: {duration:.2f} giây\n"
-        f"Độ phân giải: {resolution}\n"
-        f"Kích thước: {file_size}{duplicate_info}{history_info}"
-    )
-    
-    # Hiển thị thông tin
-    app.info_text.config(state=tk.NORMAL)
-    app.info_text.delete(1.0, tk.END)
-    app.info_text.insert(tk.END, info_text)
-    app.info_text.config(state=tk.DISABLED)
-
-def remove_duplicates(app):
-    """
-    Loại bỏ video trùng lặp khỏi danh sách
-    
-    Args:
-        app: Đối tượng TelegramUploaderApp
-    """
-    if not app.duplicate_groups and not app.check_history_var.get():
-        messagebox.showinfo("Thông báo", "Không có video trùng lặp nào để loại bỏ!")
-        return
-    
-    # Tập hợp các video cần giữ lại (một video từ mỗi nhóm trùng lặp)
-    keep_videos = set()
-    # Tập hợp các video cần loại bỏ
-    remove_videos = set()
-    
-    # Xử lý trùng lặp trong thư mục hiện tại
-    for group in app.duplicate_groups:
-        if len(group) > 1:
-            # Chọn video có kích thước lớn nhất trong nhóm để giữ lại
-            best_video = max(group, key=os.path.getsize)
-            
-            # Thêm vào danh sách giữ lại
-            keep_videos.add(best_video)
-            
-            # Thêm các video còn lại vào danh sách loại bỏ
-            for video in group:
-                if video != best_video:
-                    remove_videos.add(video)
-    
-    # Xử lý trùng lặp với lịch sử nếu có yêu cầu
-    if app.check_history_var.get():
-        # Lấy video trong thư mục
-        for video_name, video_path in app.videos.items():
-            # Tính hash của video
-            video_hash = app.video_analyzer.calculate_video_hash(video_path)
-            
-            # Kiểm tra nếu đã tồn tại trong lịch sử
-            if video_hash and app.upload_history.is_uploaded(video_hash):
-                # Thêm vào danh sách loại bỏ nếu không phải là video tốt nhất
-                if video_path not in keep_videos:
-                    remove_videos.add(video_path)
-    
-    if not remove_videos:
-        messagebox.showinfo("Thông báo", "Không có video trùng lặp nào để loại bỏ!")
-        return
-    
-    # Loại bỏ các video trùng lặp khỏi treeview
-    video_names_to_remove = [os.path.basename(video) for video in remove_videos]
-    
-    # Xóa từ treeview
-    for item in list(app.video_tree.get_children()):
-        video_name = app.video_tree.item(item, "values")[1]
-        if video_name in video_names_to_remove:
-            app.video_tree.delete(item)
-            # Xóa khỏi dict videos
-            if video_name in app.videos:
-                del app.videos[video_name]
-            # Xóa khỏi video_checkboxes
-            if item in app.video_checkboxes:
-                del app.video_checkboxes[item]
-    
-    # Cập nhật trạng thái
-    removed_count = len(video_names_to_remove)
-    logger.info(f"Đã loại bỏ {removed_count} video trùng lặp")
-    app.status_var.set(f"Đã loại bỏ {removed_count} video trùng lặp")
+    # Cập nhật thông tin hiển thị
+    app.info_vars["Tên file:"].set(file_name)
+    app.info_vars["Thời lượng:"].set(formatted_duration)
+    app.info_vars["Độ phân giải:"].set(resolution)
+    app.info_vars["Kích thước:"].set(file_size)
+    app.info_vars["Codec:"].set(info.get('codec', 'H.264'))
+    app.info_vars["Định dạng:"].set(info.get('format', 'MP4'))

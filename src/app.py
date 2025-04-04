@@ -16,6 +16,7 @@ from ui.auto_tab import create_auto_tab
 from ui.settings_tab import create_settings_tab
 from ui.history_tab import create_history_tab
 from ui.log_tab import create_log_tab
+from ui.guide_tab import create_guide_tab  # Thêm module tab hướng dẫn
 
 from core.config_manager import ConfigManager
 from core.uploader import Uploader
@@ -100,7 +101,7 @@ class TelegramUploaderApp:
         default_font = ("Segoe UI", 10)
         heading_font = ("Segoe UI", 11, "bold")
         
-        # Thiết lập style cho button để tránh bị thu hẹp
+        # Thiết lập style cho button
         style.configure("TButton", padding=(10, 5), font=default_font)
         
         # Style cho label
@@ -113,18 +114,39 @@ class TelegramUploaderApp:
         style.configure("TLabelframe.Label", font=heading_font)
         
         # Style cho Treeview
-        style.configure("Treeview", font=default_font, rowheight=25)
+        style.configure("Treeview", font=default_font, rowheight=30)
         style.configure("Treeview.Heading", font=heading_font)
         
         # Style cho thanh trạng thái
         style.configure("Status.TLabel", font=default_font, foreground="#0066CC")
         
-        # Style cho nút cảnh báo
-        style.configure("Warning.TButton", foreground="red")
+        # Style cho checkbox lớn
+        style.configure("Large.TCheckbutton", 
+                    font=default_font,
+                    indicatorsize=24)
         
-        # Style cho tab
-        style.configure("TNotebook.Tab", font=default_font, padding=(10, 5))
-    
+        # Style cho nút tab
+        style.configure("TabBig.TButton", 
+                    font=("Arial", 11, "bold"), 
+                    padding=(15, 8))
+        style.map("TabBig.TButton",
+                background=[("selected", "#4a7ebb"), ("!selected", "#f0f0f0")],
+                foreground=[("selected", "white"), ("!selected", "black")])
+        
+        # Style cho Header
+        style.configure("Header.TFrame", background="#4a7ebb")
+        style.configure("Header.TLabel", font=("Segoe UI", 14, "bold"), foreground="white", background="#4a7ebb")
+        
+        # Style cho các nút màu sắc
+        style.configure("Red.TButton", font=default_font)
+        style.map("Red.TButton",
+                background=[("active", "#c0392b"), ("!active", "#e74c3c")],
+                foreground=[("active", "white"), ("!active", "white")])
+        
+        style.configure("Blue.TButton", font=default_font)
+        style.map("Blue.TButton",
+                background=[("active", "#2980b9"), ("!active", "#3498db")],
+                foreground=[("active", "white"), ("!active", "white")])
     def _initialize_components(self):
         """Khởi tạo các thành phần của ứng dụng"""
         # Biến trạng thái
@@ -253,32 +275,87 @@ class TelegramUploaderApp:
     
     def _create_ui(self):
         """Tạo giao diện người dùng"""
+        # Tạo header
+        header_frame = ttk.Frame(self.root, style="Header.TFrame")
+        header_frame.pack(fill=tk.X, padx=0, pady=0)
+        
+        # Logo và tên ứng dụng bên trái
+        logo_frame = ttk.Frame(header_frame, style="Header.TFrame")
+        logo_frame.pack(side=tk.LEFT, padx=15)
+        
+        ttk.Label(logo_frame, text="Henlladev", style="Header.TLabel").pack(pady=10)
+        
         # Tạo notebook (tab)
+        notebook_style = ttk.Style()
+        notebook_style.configure("TNotebook", background="white", borderwidth=0)
+        notebook_style.configure("TNotebook.Tab", font=("Arial", 12, "bold"), padding=(15, 5))
+        notebook_style.map("TNotebook.Tab",
+                        background=[("selected", "#4a7ebb"), ("!selected", "#f0f0f0")],
+                        foreground=[("selected", "white"), ("!selected", "black")])
+        
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
         
         # Tạo các tab
         main_tab = ttk.Frame(self.notebook)
-        auto_tab = ttk.Frame(self.notebook)
         settings_tab = ttk.Frame(self.notebook)
         history_tab = ttk.Frame(self.notebook)
         log_tab = ttk.Frame(self.notebook)
+        guide_tab = ttk.Frame(self.notebook)
         
         # Thêm các tab vào notebook
         self.notebook.add(main_tab, text="Tải lên")
-        self.notebook.add(auto_tab, text="Tự động")
         self.notebook.add(settings_tab, text="Cài đặt")
         self.notebook.add(history_tab, text="Lịch sử")
         self.notebook.add(log_tab, text="Nhật ký")
+        self.notebook.add(guide_tab, text="Hướng dẫn")
         
         # Tạo UI cho từng tab
         create_main_tab(self, main_tab)
-        create_auto_tab(self, auto_tab)
         create_settings_tab(self, settings_tab)
         create_history_tab(self, history_tab)
         create_log_tab(self, log_tab)
-    
-    # ===== Các phương thức kết nối UI =====
+        create_guide_tab(self, guide_tab)
+        
+        # Tạo footer với màu nền xám
+        footer_frame = tk.Frame(self.root, bg="#f0f0f0", height=50)
+        footer_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Frame cho các nút ở footer
+        button_frame = tk.Frame(footer_frame, bg="#f0f0f0")
+        button_frame.pack(side=tk.RIGHT, padx=10, pady=10)
+        
+        # Nút dừng lại - màu đỏ
+        self.stop_btn = tk.Button(button_frame, text="Dừng lại", 
+                            bg="#e74c3c", fg="white", 
+                            font=("Arial", 11),
+                            padx=15, pady=5,
+                            command=lambda: self.uploader.stop_upload(self))
+        self.stop_btn.pack(side=tk.RIGHT, padx=10)
+        
+        # Nút bắt đầu tải lên - màu xanh
+        self.upload_btn = tk.Button(button_frame, text="Bắt đầu tải lên", 
+                                bg="#3498db", fg="white", 
+                                font=("Arial", 11),
+                                padx=15, pady=5,
+                                command=lambda: self.uploader.start_upload(self))
+        self.upload_btn.pack(side=tk.RIGHT, padx=10)
+            
+    def switch_tab(self, index):
+        """Chuyển đổi tab khi nhấn nút trên header"""
+        self.notebook.select(index)
+
+    def on_tab_changed(self, event):
+        """Xử lý khi tab thay đổi để cập nhật các nút header"""
+        selected_tab = self.notebook.index("current")
+        for i, btn in enumerate(self.header_buttons):
+            if i == selected_tab:
+                btn.state(['pressed'])
+            else:
+                btn.state(['!pressed'])
+            
+        
+        # ===== Các phương thức kết nối UI =====
     
     def _browse_folder(self, auto=False):
         """Chuyển tiếp đến hàm browse_folder trong module main_tab"""
