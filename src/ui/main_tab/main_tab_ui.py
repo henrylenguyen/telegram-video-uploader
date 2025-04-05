@@ -75,13 +75,27 @@ def create_main_tab(app, parent):
     entry_container.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     entry_container.pack_propagate(False)  # Maintain fixed height
 
-    # Ô nhập liệu với font lớn hơn
+    # Ô nhập liệu với font lớn hơn và có padding
     folder_entry = tk.Entry(entry_container, textvariable=app.folder_path, 
-                        font=("Arial", 14),
-                        relief="groove", bg="white",
-                        highlightthickness=1,
-                        highlightbackground="#cccccc")
+                          font=("Arial", 14),
+                          relief="groove", bg="white",
+                          highlightthickness=1,
+                          highlightbackground="#cccccc",
+                          bd=5)  # Sử dụng border để tạo padding
     folder_entry.pack(fill=tk.BOTH, expand=True)
+
+    # Cài đặt văn bản có khoảng trống bên trái để tạo padding
+    def pad_text(event=None):
+        """Thêm padding bằng cách thêm khoảng trống vào đầu text"""
+        current_text = folder_entry.get()
+        # Chỉ thêm nếu không có sẵn
+        if not current_text.startswith("  "):
+            folder_entry.delete(0, tk.END)
+            folder_entry.insert(0, "  " + current_text.lstrip())
+
+    # Áp dụng padding ban đầu và khi focus
+    folder_entry.bind("<FocusIn>", pad_text)
+    app.root.after(100, pad_text)  # Áp dụng padding sau khi khởi tạo
 
     # Container for browse button with fixed height
     button_container = ttk.Frame(input_frame, height=50, width=100)
@@ -214,6 +228,9 @@ def create_manual_tab(app, parent):
         app: Đối tượng TelegramUploaderApp
         parent: Frame cha
     """
+    # Khởi tạo info_vars nếu chưa có
+    if not hasattr(app, 'info_vars'):
+        app.info_vars = {}
     # Biến lưu trữ trang hiện tại
     app.current_page = 1
     app.items_per_page = 10  # Số lượng video trên mỗi trang
@@ -237,6 +254,7 @@ def create_manual_tab(app, parent):
     app.video_tree.heading("filename", text="Tên file")
     app.video_tree.heading("status", text="Trạng thái")
     app.video_tree.heading("info", text="Thông tin thêm")
+    
     
     # Thiết lập độ rộng cột
     app.video_tree.column("select", width=30, anchor=tk.CENTER)
@@ -378,6 +396,8 @@ def create_manual_tab(app, parent):
     info_details_frame = ttk.Frame(info_right_frame)
     info_details_frame.pack(fill=tk.BOTH, expand=True)
     
+    # Tìm đoạn code tạo thông tin chi tiết trong hàm create_manual_tab
+
     # Thông tin chi tiết - hiển thị các thông tin cụ thể hơn
     info_details = [
         ("Thông tin video", ""),
@@ -386,18 +406,15 @@ def create_manual_tab(app, parent):
         ("Độ phân giải:", ""),
         ("Kích thước:", ""),
         ("Codec:", ""),
-        ("Định dạng:", "")
+        ("Định dạng:", ""),
     ]
-    
-    # Lưu các biến hiển thị thông tin
-    app.info_vars = {}
+
     row = 0
-    
     # Header
     header_label = ttk.Label(info_details_frame, text=info_details[0][0], font=("Arial", 11, "bold"))
-    header_label.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+    header_label.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
     row += 1
-    
+
     # Các thông tin chi tiết
     for label_text, value in info_details[1:]:
         label = ttk.Label(info_details_frame, text=label_text)
@@ -409,11 +426,17 @@ def create_manual_tab(app, parent):
         value_label = ttk.Label(info_details_frame, textvariable=var)
         value_label.grid(row=row, column=1, sticky=tk.W, pady=2)
         
-        # Store reference to label for finding parent later
-        var.label = value_label
-        
         row += 1
-    
+
+    # Thêm trường trạng thái với tk.Label thay vì ttk.Label để hỗ trợ màu sắc
+    status_label = ttk.Label(info_details_frame, text="Trạng thái:")
+    status_label.grid(row=row, column=0, sticky=tk.W, pady=2)
+
+    # Sử dụng tk.Label thông thường thay vì ttk.Label để có thể thay đổi màu
+    # Không cố gắng lấy background từ ttk.Frame, sử dụng màu mặc định của hệ thống
+    app.status_value_label = tk.Label(info_details_frame, text="", anchor=tk.W)
+    app.status_value_label.grid(row=row, column=1, sticky=tk.W, pady=2)
+  
     # Frame hiển thị các frame từ video
     frames_frame = ttk.LabelFrame(parent, text="Các khung hình từ video")
     frames_frame.pack(fill=tk.X, padx=0, pady=5)
@@ -429,13 +452,13 @@ def create_manual_tab(app, parent):
     # Tạo 5 label cho các frame
     app.frame_labels = []
     for i in range(5):
-        frame_container = ttk.Frame(app.frames_container, height=120, width=170)
+        frame_container = ttk.Frame(app.frames_container, height=280, width=170)  # Chiều cao cố định 280px
         frame_container.grid(row=0, column=i, padx=4, sticky="ew")
         frame_container.pack_propagate(False)  # Giữ kích thước cố định
         
         # Sử dụng Label thông thường 
         label = tk.Label(frame_container, text=f"Frame {i+1}", 
-                       bg="white", relief="solid", bd=1)
+                      bg="white", relief="solid", bd=1)
         label.pack(fill=tk.BOTH, expand=True)
         
         app.frame_labels.append(label)
@@ -448,6 +471,35 @@ def create_manual_tab(app, parent):
     # Disable buttons until video is selected
     app.play_video_btn.config(state=tk.DISABLED)
     app.upload_single_btn.config(state=tk.DISABLED)
+    
+    def initialize_checkboxes():
+      """Khởi tạo checkbox sau khi UI đã được render"""
+      # Import render_checkboxes từ main_tab_func
+      try:
+          from ui.main_tab.main_tab_func import render_checkboxes
+      except ImportError:
+          try:
+              from .main_tab_func import render_checkboxes
+          except ImportError:
+              from src.ui.main_tab.main_tab_func import render_checkboxes
+      
+      # Đảm bảo UI đã cập nhật
+      app.root.update_idletasks()
+      
+      # Vẽ lại checkbox
+      render_checkboxes(app)
+      
+      # Vẽ checkbox khi chuyển tab hoặc mở dialog
+      def add_tab_callbacks():
+          if hasattr(app, 'notebook'):
+              app.notebook.bind("<<NotebookTabChanged>>", lambda e: render_checkboxes(app))
+      
+      # Force UI update trước khi vẽ checkbox
+      app.root.after(200, add_tab_callbacks)
+      app.root.after(100, render_checkboxes, app)
+
+    # Khởi tạo checkbox từ đầu
+    app.root.after(300, initialize_checkboxes)
 
 def switch_tab(app, tab_code):
     """
@@ -505,6 +557,46 @@ def switch_tab(app, tab_code):
         create_uploaded_tab(app, app.tab_content_frame)
 
 def render_checkboxes(app):
+    """Vẽ lại tất cả checkbox trên treeview - LUÔN hiển thị chúng"""
+    # Import CustomCheckbox từ components
+    try:
+        from ui.components.checkbox import create_checkbox_cell
+    except ImportError:
+        try:
+            from .components.checkbox import create_checkbox_cell
+        except ImportError:
+            from src.ui.components.checkbox import create_checkbox_cell
+    
+    # Xóa tất cả checkbox hiện tại
+    if hasattr(app, 'checkbox_widgets'):
+        for checkbox in app.checkbox_widgets:
+            try:
+                checkbox.destroy()
+            except:
+                pass
+    
+    app.checkbox_widgets = []
+    
+    # LUÔN tạo checkbox cho tất cả hàng
+    for item_id in app.video_tree.get_children():
+        if item_id not in app.video_checkboxes:
+            # Lấy thông tin video để quyết định có nên chọn mặc định không
+            video_values = app.video_tree.item(item_id, "values")
+            tags = app.video_tree.item(item_id, "tags")
+            status = video_values[2] if len(video_values) > 2 else ""
+            
+            # Mặc định chọn những video không phải đã tải lên hoặc trùng lặp
+            should_check = not (status == "Đã tải lên" or status == "Trùng lặp" or "uploaded" in tags or "duplicate" in tags)
+            app.video_checkboxes[item_id] = tk.BooleanVar(value=should_check)
+        
+        checkbox = create_checkbox_cell(app.video_tree, item_id, "#1")
+        if checkbox:
+            # Đặt trạng thái của checkbox
+            checkbox.set(app.video_checkboxes[item_id].get())
+            app.checkbox_widgets.append(checkbox)
+    
+    # Cập nhật UI để đảm bảo checkbox hiển thị
+    app.root.after(50, app.root.update_idletasks)
     """Vẽ lại tất cả checkbox trên treeview - LUÔN hiển thị chúng"""
     # Import CustomCheckbox từ components
     try:

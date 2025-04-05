@@ -224,7 +224,68 @@ def update_table_content(app):
             # Thiết lập trạng thái checkbox từ biến đã tạo ở trên
             checkbox.set(app.video_checkboxes[item_id].get())
             app.checkbox_widgets.append(checkbox)
+def render_checkboxes(app):
+    """Vẽ lại tất cả checkbox trên treeview"""
+    # Import CustomCheckbox từ components
+    try:
+        from ui.components.checkbox import create_checkbox_cell, CustomCheckbox
+    except ImportError:
+        try:
+            from ..components.checkbox import create_checkbox_cell, CustomCheckbox
+        except ImportError:
+            # Cố gắng import trực tiếp
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            from ui.components.checkbox import create_checkbox_cell, CustomCheckbox
+    
+    # Xóa tất cả checkbox hiện tại
+    if hasattr(app, 'checkbox_widgets'):
+        for checkbox in app.checkbox_widgets:
+            try:
+                checkbox.destroy()
+            except:
+                pass
+    else:
+        app.checkbox_widgets = []
+    
+    app.checkbox_widgets = []
+    
+    # Đảm bảo UI đã được cập nhật
+    app.root.update_idletasks()
+    
+    # Tạo checkbox cho tất cả hàng
+    for item_id in app.video_tree.get_children():
+        if item_id not in app.video_checkboxes:
+            # Kiểm tra trạng thái video
+            values = app.video_tree.item(item_id, "values")
+            status = values[1] if len(values) > 1 else ""
+            is_uploaded = status == "Đã tải lên"
+            default_checked = not is_uploaded
             
+            app.video_checkboxes[item_id] = tk.BooleanVar(value=default_checked)
+        
+        # Tạo checkbox cho mỗi hàng
+        bbox = app.video_tree.bbox(item_id, "#1")
+        if bbox:
+            x = bbox[0] + 5
+            y = bbox[1] + (bbox[3] - 30) // 2  # Căn giữa với kích thước 30px
+            
+            checkbox = CustomCheckbox(app.video_tree)
+            checkbox.place(x=x, y=y, width=30, height=30)  # Chỉ định kích thước 30x30px
+            checkbox.item_id = item_id
+            checkbox.set(app.video_checkboxes[item_id].get())
+            
+            # Thêm callback để cập nhật giá trị khi click
+            def update_var(item=item_id, check=checkbox):
+                app.video_checkboxes[item].set(check.get())
+            
+            checkbox.config(command=update_var)
+            app.checkbox_widgets.append(checkbox)
+    
+    # Force update UI
+    app.root.update_idletasks()          
+
 def set_default_selection(app):
     """
     Thiết lập trạng thái mặc định cho các checkbox - chọn tất cả video
@@ -542,7 +603,7 @@ def display_video_frames(app, video_path):
                 label.config(image="", text=f"Không thể mở video")
             return
         
-        # Lấy thông tin video
+        # Lấy thông tin cơ bản
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
         duration = total_frames / fps if fps > 0 else 0
@@ -555,14 +616,26 @@ def display_video_frames(app, video_path):
         
         # Chọn 5 vị trí frame để hiển thị
         positions = [0.1, 0.3, 0.5, 0.7, 0.9]  # 10%, 30%, 50%, 70%, 90%
+        
+        # Tạo mảng lưu frames (QUAN TRỌNG: phải lưu tham chiếu)
         frames = []
         
-        # Tính toán kích thước frame để hiển thị
-        frame_width = 170  # Kích thước cố định
-        frame_height = 120
+        # Tính toán kích thước cho mỗi frame - Thiết lập chiều cao 280px theo yêu cầu
+        frame_height = 280
         
-        # Lưu các frame thành công
-        successful_frames = 0
+        # Tính tỉ lệ khung hình để giữ tỉ lệ khung hình đúng
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        
+        # Tính toán chiều rộng dựa trên tỉ lệ khung hình
+        if video_height > 0:
+            aspect_ratio = video_width / video_height
+            frame_width = int(frame_height * aspect_ratio)
+        else:
+            frame_width = 170  # Giá trị mặc định
+        
+        # Đảm bảo frame_width không quá nhỏ hoặc quá lớn
+        frame_width = max(170, min(frame_width, 450))
         
         # Xử lý từng vị trí
         for i, pos in enumerate(positions):
@@ -587,33 +660,36 @@ def display_video_frames(app, video_path):
                 try:
                     pil_image = pil_image.resize((frame_width, frame_height), Image.LANCZOS)
                 except Exception:
-                    pil_image = pil_image.resize((frame_width, frame_height), Image.BICUBIC)
+                    try:
+                        # Fallback nếu LANCZOS không hoạt động
+                        pil_image = pil_image.resize((frame_width, frame_height), Image.BICUBIC)
+                    except Exception as e:
+                        logger.error(f"Không thể resize frame: {str(e)}")
+                        continue
                 
                 # Chuyển sang định dạng Tkinter
                 tk_image = ImageTk.PhotoImage(pil_image)
-                frames.append(tk_image)  # Lưu reference để tránh bị thu hồi bởi garbage collector
+                frames.append(tk_image)  # Lưu reference để tránh bị thu hồi
                 
                 # Hiển thị lên label
-                app.frame_labels[i].config(image=tk_image, text="")
-                successful_frames += 1
+                app.frame_labels[i].config(text="")
+                app.frame_labels[i].config(image=tk_image)
             else:
                 app.frame_labels[i].config(image="", text=f"Không thể đọc frame tại {pos*100:.0f}%")
-                
+        
         # Giải phóng tài nguyên
         cap.release()
         
-        # Lưu các frame để tránh bị thu hồi bởi garbage collector
+        # QUAN TRỌNG: Lưu frames vào đối tượng app để tránh bị thu hồi
         app.current_frames = frames
-        
-        if successful_frames == 0:
-            logger.warning(f"Không thể đọc frame nào từ video: {video_path}")
     
     except Exception as e:
         logger.error(f"Lỗi hiển thị frame: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         # Hiển thị thông báo lỗi trong các frame
         for i, label in enumerate(app.frame_labels):
             label.config(image="", text=f"Lỗi: {str(e)[:30]}")
-
 def display_video_info(app, video_path):
     """
     Hiển thị thông tin chi tiết của video với trạng thái tải lên
@@ -650,7 +726,10 @@ def display_video_info(app, video_path):
                 
                 # Create PIL image and resize to fill the frame exactly
                 pil_img = Image.fromarray(frame)
-                pil_img = pil_img.resize((frame_width, frame_height), Image.LANCZOS)
+                try:
+                    pil_img = pil_img.resize((frame_width, frame_height), Image.LANCZOS)
+                except Exception:
+                    pil_img = pil_img.resize((frame_width, frame_height), Image.BICUBIC)
                 
                 # Create PhotoImage for display
                 thumbnail = ImageTk.PhotoImage(pil_img)
@@ -688,11 +767,11 @@ def display_video_info(app, video_path):
     app.info_vars["Codec:"].set(info.get('codec', 'H.264'))
     app.info_vars["Định dạng:"].set(info.get('format', 'MP4'))
     
-    # Kiểm tra trạng thái tải lên và trùng lặp
+  # Kiểm tra trạng thái tải lên và trùng lặp
     video_hash = app.video_analyzer.calculate_video_hash(video_path)
     upload_info = None
     is_duplicate = False
-    
+        
     # Kiểm tra đã tải lên
     if hasattr(app.upload_history, 'get_upload_by_hash'):
         upload_info = app.upload_history.get_upload_by_hash(video_hash) if video_hash else None
@@ -701,89 +780,72 @@ def display_video_info(app, video_path):
         uploads = app.upload_history.get_all_uploads()
         if video_hash and video_hash in uploads:
             upload_info = uploads[video_hash]
-    
+
     # Kiểm tra trùng lặp
     video_name = os.path.basename(video_path)
     for item in app.video_items:
         if item["name"] == video_name and ("duplicate" in item["tags"] or item["status"] == "Trùng lặp"):
             is_duplicate = True
             break
-    
-    # Tìm frame chứa thông tin chi tiết
-    info_details_frame = None
-    for child in app.info_vars["Tên file:"].master.winfo_children():
-        if isinstance(child, tk.Label) and child.cget("textvariable") == str(app.info_vars["Tên file:"]):
-            info_details_frame = child.master
-            break
-    
-    if not info_details_frame:
-        logger.error("Không tìm thấy frame thông tin chi tiết")
-        return
-    
-    # Tạo hoặc cập nhật label trạng thái tải lên
-    # Tìm row cuối cùng trong info_details_frame
-    last_row = 0
-    for child in info_details_frame.winfo_children():
-        info = child.grid_info()
-        if info and 'row' in info:
-            last_row = max(last_row, info['row'])
-    
-    # Tạo frame mới cho trạng thái
-    if hasattr(app, 'status_frame'):
-        try:
-            app.status_frame.destroy()
-        except:
-            pass
-    
-    app.status_frame = tk.Frame(info_details_frame)
-    app.status_frame.grid(row=last_row + 1, column=0, columnspan=2, sticky=tk.W, pady=(10, 2))
-    
-    app.upload_status_label = tk.Label(app.status_frame, anchor=tk.W, justify=tk.LEFT, 
-                                    font=("Arial", 10))
-    app.upload_status_label.pack(fill=tk.X)
-    
-    # Hiển thị trạng thái tải lên và trùng lặp
-    if upload_info:
-        # Định dạng ngày giờ tải lên
-        try:
-            upload_time = datetime.datetime.fromisoformat(upload_info.get('upload_time', ''))
-            formatted_time = upload_time.strftime("%d/%m/%Y %H:%M:%S")
-        except (ValueError, TypeError):
-            formatted_time = "thời gian không xác định"
-        
-        # Hiển thị với màu đỏ, in đậm
-        app.upload_status_label.config(
-            text=f"Người dùng đã tải lên vào {formatted_time}",
-            fg="red",
-            font=("Arial", 10, "bold")
-        )
-        
-        # Disable nút tải lên video đang chọn
-        if hasattr(app, 'upload_single_btn'):
-            app.upload_single_btn.config(state=tk.DISABLED)
-    elif is_duplicate:
-        # Hiển thị trạng thái trùng lặp
-        app.upload_status_label.config(
-            text="Video này trùng lặp với video khác",
-            fg="#FF6600",  # Màu cam
-            font=("Arial", 10, "bold")
-        )
-        
-        # Disable nút tải lên video đang chọn
-        if hasattr(app, 'upload_single_btn'):
-            app.upload_single_btn.config(state=tk.DISABLED)
-    else:
-        # Hiển thị trạng thái chưa tải lên
-        app.upload_status_label.config(
-            text="Video chưa được tải lên",
-            fg="black",
-            font=("Arial", 10)
-        )
-        
-        # Enable nút tải lên video đang chọn
-        if hasattr(app, 'upload_single_btn'):
-            app.upload_single_btn.config(state=tk.NORMAL)
 
+    # Cập nhật trạng thái với màu sắc
+    if hasattr(app, 'status_value_label'):
+        if upload_info:
+            upload_date = upload_info.get('upload_date', 'thời gian không xác định')
+            app.status_value_label.config(
+                text=f"Video đã tải lên vào {upload_date}",
+                fg="#FF8C00"  # Màu vàng cam
+            )
+            
+            # Disable nút tải lên video đang chọn
+            if hasattr(app, 'upload_single_btn'):
+                app.upload_single_btn.config(state=tk.DISABLED)
+        elif is_duplicate:
+            app.status_value_label.config(
+                text="Video trùng lặp với video khác",
+                fg="#FF0000"  # Màu đỏ
+            )
+            
+            # Disable nút tải lên video đang chọn
+            if hasattr(app, 'upload_single_btn'):
+                app.upload_single_btn.config(state=tk.DISABLED)
+        else:
+            app.status_value_label.config(
+                text="Video chưa tải lên",
+                fg="#009900"  # Màu xanh lá
+            )
+            
+            # Enable nút tải lên video đang chọn
+            if hasattr(app, 'upload_single_btn'):
+                app.upload_single_btn.config(state=tk.NORMAL)
+    
+    # Cập nhật biến "Trạng thái:" trong info_vars
+    if "Trạng thái:" in app.info_vars:
+        app.info_vars["Trạng thái:"].set(trạng_thái)
+        
+        # Tìm label của trạng thái để cập nhật màu sắc
+        for widget in app.root.winfo_children():
+            for child in widget.winfo_children():
+                if hasattr(child, 'winfo_children'):
+                    for frame in child.winfo_children():
+                        if isinstance(frame, ttk.LabelFrame) and "Thông tin video đã chọn" in str(frame.cget("text")):
+                            for inner_frame in frame.winfo_children():
+                                if isinstance(inner_frame, ttk.Frame):
+                                    for detail_frame in inner_frame.winfo_children():
+                                        if isinstance(detail_frame, ttk.Frame):
+                                            # Tìm trong các widget con của detail_frame
+                                            for label in detail_frame.winfo_children():
+                                                if (isinstance(label, ttk.Label) and 
+                                                    hasattr(label, 'cget') and 
+                                                    label.cget("text") == "Trạng thái:"):
+                                                    # Tìm status label kế bên
+                                                    for widget in detail_frame.winfo_children():
+                                                        if (isinstance(widget, ttk.Label) and 
+                                                            hasattr(widget, 'cget') and 
+                                                            "textvariable" in widget.keys() and 
+                                                            widget.cget("textvariable") == str(app.info_vars["Trạng thái:"])):
+                                                            widget.config(foreground=color)
+                                                            break
 def change_page(app, delta):
     """
     Thay đổi trang hiển thị

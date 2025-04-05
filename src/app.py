@@ -42,7 +42,7 @@ class TelegramUploaderApp:
         """
         self.root = root
         self.root.title("Telegram Video Uploader")
-        
+        self.info_vars = {}
         # Thiết lập kích thước và vị trí cửa sổ
         self._setup_window()
         
@@ -334,7 +334,22 @@ class TelegramUploaderApp:
             
             # Update UI to ensure checkboxes are visible
             self.root.update_idletasks()
-        
+        # Thêm các sự kiện để hiển thị checkbox
+        def force_render_checkboxes():
+            """Hàm hiển thị checkbox sau khi tạo UI"""
+            if hasattr(self, 'video_tree'):  # Chỉ hiển thị nếu video_tree đã tồn tại
+                try:
+                    from ui.main_tab.main_tab_func import render_checkboxes
+                    render_checkboxes(self)
+                except (ImportError, AttributeError) as e:
+                    import logging
+                    logging.getLogger().error(f"Error rendering checkboxes: {str(e)}")
+            else:
+                # Thử lại sau nếu video_tree chưa được tạo
+                self.root.after(500, force_render_checkboxes)
+
+        # Hiển thị checkbox sau khi tạo UI
+        self.root.after(1000, force_render_checkboxes)
         # Attach the method to the app
         self.render_checkboxes = render_checkboxes_method
         
@@ -468,15 +483,16 @@ class TelegramUploaderApp:
 
         # Nút bắt đầu tải lên - màu xanh
         self.upload_btn = tk.Button(button_frame, text="Tải video lên", 
-                                bg="#3498db", fg="white", 
-                                font=("Arial", 11, "bold"),
-                                padx=15, pady=8,
-                                relief="flat",
-                                bd=0,
-                                activebackground="#2980b9",
-                                activeforeground="white",
-                                command=lambda: self.uploader.start_upload(self))
+                        bg="#3498db", fg="white", 
+                        font=("Arial", 11, "bold"),
+                        padx=15, pady=8,
+                        relief="flat",
+                        bd=0,
+                        activebackground="#2980b9",
+                        activeforeground="white",
+                        command=lambda: self._start_upload())
         self.upload_btn.pack(side=tk.RIGHT, padx=10)
+
 
     def switch_tab(self, tab_index):
         """Chuyển đổi giữa các tab"""
@@ -540,37 +556,59 @@ class TelegramUploaderApp:
             else:
                 btn.config(bg="#f0f0f0", fg="black")
     
-    def render_checkboxes(self):
+    def render_checkboxes(app):
         """Vẽ lại tất cả checkbox trên treeview"""
+        # Import CustomCheckbox từ components
+        try:
+            from ui.components.checkbox import create_checkbox_cell
+        except ImportError:
+            try:
+                from .components.checkbox import create_checkbox_cell
+            except ImportError:
+                from src.ui.components.checkbox import create_checkbox_cell
+        
         # Xóa tất cả checkbox hiện tại
-        if hasattr(self, 'checkbox_widgets'):
-            for checkbox in self.checkbox_widgets:
-                checkbox.destroy()
+        if hasattr(app, 'checkbox_widgets'):
+            for checkbox in app.checkbox_widgets:
+                try:
+                    checkbox.destroy()
+                except:
+                    pass
+        else:
+            app.checkbox_widgets = []
         
-        self.checkbox_widgets = []
+        app.checkbox_widgets = []
         
-        # Kiểm tra xem có checkbox nào được chọn không
-        any_checked = False
-        for item_id in self.video_checkboxes:
-            if self.video_checkboxes[item_id].get():
-                any_checked = True
-                break
+        # Đảm bảo UI đã được cập nhật
+        app.root.update_idletasks()
         
-        # Chỉ hiển thị checkbox nếu có ít nhất một checkbox được chọn
-        if any_checked:
-            # Tạo mới checkbox cho mỗi hàng hiển thị
-            for item_id in self.video_tree.get_children():
-                # Lấy checkbox từ dict
-                check_var = self.video_checkboxes.get(item_id)
-                if check_var:
-                    from ui.main_tab import create_checkbox_cell
-                    checkbox = create_checkbox_cell(self.video_tree, item_id, "#1")
-                    if checkbox:
-                        # Đặt trạng thái của checkbox
-                        checkbox.set(check_var.get())
-                        self.checkbox_widgets.append(checkbox)
+        # Tạo checkbox cho tất cả hàng
+        for item_id in app.video_tree.get_children():
+            if item_id not in app.video_checkboxes:
+                # Các video đã tải lên hoặc trùng lặp mặc định không chọn
+                status = app.video_tree.item(item_id, "values")[1] if len(app.video_tree.item(item_id, "values")) > 1 else ""
+                is_uploaded = status == "Đã tải lên"
+                default_checked = not is_uploaded
+                
+                app.video_checkboxes[item_id] = tk.BooleanVar(value=default_checked)
+            
+            checkbox = create_checkbox_cell(app.video_tree, item_id, "#1")
+            if checkbox:
+                checkbox.set(app.video_checkboxes[item_id].get())
+                app.checkbox_widgets.append(checkbox)
+        
+        # Force update lần nữa
+        app.root.update_idletasks()
         
     # ===== Các phương thức kết nối UI =====
+    def _start_upload(self):
+        """Sử dụng logic kiểm tra trùng lặp trước khi tải lên"""
+        try:
+            from ui.main_tab.upload_button_logic import start_upload
+            start_upload(self)
+        except ImportError:
+            # Fallback nếu không import được
+            self.uploader.start_upload(self)
     def _on_closing(self):
         """Xử lý khi đóng ứng dụng"""
         # Dừng tất cả hoạt động
