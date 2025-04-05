@@ -220,7 +220,7 @@ class TelegramAPI:
             # Ưu tiên chia nhỏ trước
             return 'split', size_mb
     
-    def send_video(self, chat_id, video_path, caption=None, width=None, height=None, duration=None, disable_notification=False):
+    def send_video(self, chat_id, video_path, caption=None, width=None, height=None, duration=None, disable_notification=False, progress_callback=None):
         """
         Gửi file video, tự động xử lý video lớn hơn 50MB
         
@@ -232,6 +232,7 @@ class TelegramAPI:
             height (int): Chiều cao video
             duration (int): Thời lượng video (giây)
             disable_notification (bool): Có tắt thông báo không
+            progress_callback (function): Callback để cập nhật tiến trình (không bắt buộc)
             
         Returns:
             bool: True nếu gửi thành công
@@ -253,13 +254,27 @@ class TelegramAPI:
                 file_name = os.path.basename(video_path)
                 caption = f"📹 {file_name}\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             
+            # Update progress to 10% (preparing)
+            if progress_callback:
+                progress_callback(10)
+            
             # Xử lý theo chế độ
             if mode == 'direct':
+                # Update progress to 20% (starting direct upload)
+                if progress_callback:
+                    progress_callback(20)
+                    
                 # Gửi trực tiếp nếu kích thước cho phép
-                return self._send_video_direct(chat_id, video_path, caption, width, height, duration, disable_notification)
+                result = self._send_video_direct(chat_id, video_path, caption, width, height, duration, disable_notification)
+                
+                # Update progress to 100% if successful
+                if result and progress_callback:
+                    progress_callback(100)
+                    
+                return result
             elif mode == 'split':
                 # Xử lý video lớn bằng cách chia nhỏ
-                return self._send_video_split(chat_id, video_path, caption, disable_notification)
+                return self._send_video_split(chat_id, video_path, caption, disable_notification, progress_callback)
             else:
                 logger.error(f"Chế độ không hợp lệ: {mode}")
                 return False
@@ -269,7 +284,152 @@ class TelegramAPI:
             import traceback
             logger.error(traceback.format_exc())
             return False
-    
+
+    def _send_video_split(self, chat_id, video_path, caption, disable_notification=False, progress_callback=None):
+        """
+        Gửi video lớn bằng cách chia nhỏ
+        
+        Args:
+            chat_id (str/int): ID chat
+            video_path (str): Đường dẫn video
+            caption (str): Chú thích
+            disable_notification (bool): Tắt thông báo
+            progress_callback (function): Callback để cập nhật tiến trình (không bắt buộc)
+            
+        Returns:
+            bool: True nếu thành công
+        """
+        try:
+            # Lấy thông tin video gốc
+            file_name = os.path.basename(video_path)
+            file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
+            
+            # Thông báo bắt đầu xử lý
+            start_message = f"🔄 Đang xử lý video lớn: {file_name} ({file_size:.2f} MB)"
+            logger.info(start_message)
+            
+            # Update progress to 15% (processing video)
+            if progress_callback:
+                progress_callback(15)
+                
+            self.send_message(chat_id, start_message)
+            
+            # Chia nhỏ video
+            video_parts = self.video_splitter.split_video(video_path)
+            
+            # Update progress to 25% (splitting completed)
+            if progress_callback:
+                progress_callback(25)
+            
+            if not video_parts:
+                # Thử phương pháp nén
+                logger.info(f"Không thể chia nhỏ video, thử phương pháp nén...")
+                
+                # Update progress to 30% (trying compression)
+                if progress_callback:
+                    progress_callback(30)
+                    
+                compressed_video = self.video_splitter.compress_video(video_path)
+                
+                # Update progress to 50% (compression completed)
+                if progress_callback:
+                    progress_callback(50)
+                    
+                if compressed_video and os.path.exists(compressed_video):
+                    # Kiểm tra kích thước sau khi nén
+                    compressed_size = os.path.getsize(compressed_video) / (1024 * 1024)
+                    
+                    if compressed_size <= 49:
+                        # Nếu đã nén xuống dưới 50MB, gửi bình thường
+                        self.send_message(
+                            chat_id,
+                            f"Video đã được nén: {file_name} ({file_size:.2f}MB → {compressed_size:.2f}MB)"
+                        )
+                        
+                        # Update progress to 60% (starting upload of compressed video)
+                        if progress_callback:
+                            progress_callback(60)
+                            
+                        result = self._send_video_direct(
+                            chat_id,
+                            compressed_video,
+                            caption,
+                            disable_notification=disable_notification
+                        )
+                        
+                        # Update progress to 100% if successful
+                        if result and progress_callback:
+                            progress_callback(100)
+                            
+                        return result
+                    else:
+                        # Nếu vẫn lớn hơn 50MB sau khi nén
+                        self.send_message(
+                            chat_id,
+                            f"❌ Không thể xử lý video: {file_name} (vẫn lớn hơn 50MB sau khi nén)"
+                        )
+                        return False
+                else:
+                    # Không thể nén
+                    self.send_message(
+                        chat_id,
+                        f"❌ Không thể xử lý video: {file_name} (không thể chia nhỏ hoặc nén)"
+                    )
+                    return False
+            
+            # Thông báo số lượng phần
+            part_message = f"Video {file_name} ({file_size:.2f} MB) sẽ được gửi thành {len(video_parts)} phần"
+            logger.info(part_message)
+            self.send_message(chat_id, part_message)
+            
+            # Gửi từng phần
+            total_parts = len(video_parts)
+            for i, part_path in enumerate(video_parts):
+                # Calculate progress (25% to 95%)
+                if progress_callback:
+                    percent = 25 + (i / total_parts) * 70
+                    progress_callback(int(percent))
+                    
+                part_caption = f"{caption}\nPhần {i+1}/{len(video_parts)}"
+                
+                # Gửi phần video
+                success = self._send_video_direct(
+                    chat_id,
+                    part_path,
+                    part_caption,
+                    disable_notification=disable_notification
+                )
+                
+                if not success:
+                    logger.error(f"Lỗi khi gửi phần {i+1}/{len(video_parts)} của video {file_name}")
+                    return False
+                
+                # Chờ giữa các lần gửi để tránh flood
+                if i < len(video_parts) - 1:
+                    time.sleep(2)
+            
+            # Thông báo hoàn tất
+            complete_message = f"✅ Đã gửi xong video: {file_name} ({len(video_parts)} phần)"
+            logger.info(complete_message)
+            self.send_message(chat_id, complete_message)
+            
+            # Update progress to 100%
+            if progress_callback:
+                progress_callback(100)
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi gửi video chia nhỏ {os.path.basename(video_path)}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # Thông báo lỗi
+            error_message = f"❌ Lỗi khi gửi video: {os.path.basename(video_path)}\n{str(e)}"
+            self.send_message(chat_id, error_message)
+            
+            return False
+        
     def _send_video_direct(self, chat_id, video_path, caption, width=None, height=None, duration=None, disable_notification=False):
         """
         Gửi video trực tiếp không qua xử lý, với cơ chế tự động thử lại
@@ -307,113 +467,7 @@ class TelegramAPI:
         
         return self.send_with_retry(_send)
     
-    def _send_video_split(self, chat_id, video_path, caption, disable_notification=False):
-        """
-        Gửi video lớn bằng cách chia nhỏ
-        
-        Args:
-            chat_id (str/int): ID chat
-            video_path (str): Đường dẫn video
-            caption (str): Chú thích
-            disable_notification (bool): Tắt thông báo
-            
-        Returns:
-            bool: True nếu thành công
-        """
-        try:
-            # Lấy thông tin video gốc
-            file_name = os.path.basename(video_path)
-            file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
-            
-            # Thông báo bắt đầu xử lý
-            start_message = f"🔄 Đang xử lý video lớn: {file_name} ({file_size:.2f} MB)"
-            logger.info(start_message)
-            
-            self.send_message(chat_id, start_message)
-            
-            # Chia nhỏ video
-            video_parts = self.video_splitter.split_video(video_path)
-            
-            if not video_parts:
-                # Thử phương pháp nén
-                logger.info(f"Không thể chia nhỏ video, thử phương pháp nén...")
-                compressed_video = self.video_splitter.compress_video(video_path)
-                
-                if compressed_video and os.path.exists(compressed_video):
-                    # Kiểm tra kích thước sau khi nén
-                    compressed_size = os.path.getsize(compressed_video) / (1024 * 1024)
-                    
-                    if compressed_size <= 49:
-                        # Nếu đã nén xuống dưới 50MB, gửi bình thường
-                        self.send_message(
-                            chat_id,
-                            f"Video đã được nén: {file_name} ({file_size:.2f}MB → {compressed_size:.2f}MB)"
-                        )
-                        
-                        return self._send_video_direct(
-                            chat_id,
-                            compressed_video,
-                            caption,
-                            disable_notification=disable_notification
-                        )
-                    else:
-                        # Nếu vẫn lớn hơn 50MB sau khi nén
-                        self.send_message(
-                            chat_id,
-                            f"❌ Không thể xử lý video: {file_name} (vẫn lớn hơn 50MB sau khi nén)"
-                        )
-                        return False
-                else:
-                    # Không thể nén
-                    self.send_message(
-                        chat_id,
-                        f"❌ Không thể xử lý video: {file_name} (không thể chia nhỏ hoặc nén)"
-                    )
-                    return False
-            
-            # Thông báo số lượng phần
-            part_message = f"Video {file_name} ({file_size:.2f} MB) sẽ được gửi thành {len(video_parts)} phần"
-            logger.info(part_message)
-            self.send_message(chat_id, part_message)
-            
-            # Gửi từng phần
-            for i, part_path in enumerate(video_parts):
-                part_caption = f"{caption}\nPhần {i+1}/{len(video_parts)}"
-                
-                # Gửi phần video
-                success = self._send_video_direct(
-                    chat_id,
-                    part_path,
-                    part_caption,
-                    disable_notification=disable_notification
-                )
-                
-                if not success:
-                    logger.error(f"Lỗi khi gửi phần {i+1}/{len(video_parts)} của video {file_name}")
-                    return False
-                
-                # Chờ giữa các lần gửi để tránh flood
-                if i < len(video_parts) - 1:
-                    time.sleep(2)
-            
-            # Thông báo hoàn tất
-            complete_message = f"✅ Đã gửi xong video: {file_name} ({len(video_parts)} phần)"
-            logger.info(complete_message)
-            self.send_message(chat_id, complete_message)
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Lỗi khi gửi video chia nhỏ {os.path.basename(video_path)}: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            
-            # Thông báo lỗi
-            error_message = f"❌ Lỗi khi gửi video: {os.path.basename(video_path)}\n{str(e)}"
-            self.send_message(chat_id, error_message)
-            
-            return False
-    
+
     def send_notification(self, notification_chat_id, text, disable_notification=False):
         """
         Gửi thông báo đến chat ID nhận thông báo

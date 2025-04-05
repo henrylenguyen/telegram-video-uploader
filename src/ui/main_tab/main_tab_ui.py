@@ -250,14 +250,13 @@ def create_manual_tab(app, parent):
     
     # Cấu hình cột
     app.video_tree = ttk.Treeview(list_frame, columns=("select", "filename", "status", "info"), show="headings", height=10)
-    app.video_tree.heading("select", text="")
+    app.video_tree.heading("select", text="Chọn")  # Add text to the first column heading
     app.video_tree.heading("filename", text="Tên file")
     app.video_tree.heading("status", text="Trạng thái")
     app.video_tree.heading("info", text="Thông tin thêm")
-    
-    
+
     # Thiết lập độ rộng cột
-    app.video_tree.column("select", width=30, anchor=tk.CENTER)
+    app.video_tree.column("select", width=60, anchor=tk.CENTER)  # Increase width for checkbox+text
     app.video_tree.column("filename", width=400, anchor=tk.W)
     app.video_tree.column("status", width=150, anchor=tk.CENTER)
     app.video_tree.column("info", width=300, anchor=tk.W)
@@ -396,7 +395,6 @@ def create_manual_tab(app, parent):
     info_details_frame = ttk.Frame(info_right_frame)
     info_details_frame.pack(fill=tk.BOTH, expand=True)
     
-    # Tìm đoạn code tạo thông tin chi tiết trong hàm create_manual_tab
 
     # Thông tin chi tiết - hiển thị các thông tin cụ thể hơn
     info_details = [

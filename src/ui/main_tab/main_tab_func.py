@@ -19,211 +19,329 @@ logger = logging.getLogger("MainTabFunc")
 
 def refresh_video_list(app):
     """
-    Làm mới danh sách video từ thư mục đã chọn
+    Làm mới danh sách video từ thư mục đã chọn - with improved error handling
     
     Args:
         app: Đối tượng TelegramUploaderApp
     """
-    folder_path = app.folder_path.get()
-    
-    if not folder_path or not os.path.exists(folder_path) or not os.path.isdir(folder_path):
-        messagebox.showerror("Lỗi", "Thư mục không hợp lệ hoặc không tồn tại!")
-        return
-    
-    # Xóa danh sách hiện tại
-    for item in app.video_tree.get_children():
-        app.video_tree.delete(item)
-    app.videos = {}
-    app.duplicate_groups = []
-    app.video_checkboxes = {}
-    app.video_items = []
-    
-    # Xóa các checkbox widget hiện tại
-    if hasattr(app, 'checkbox_widgets'):
-        for checkbox in app.checkbox_widgets:
-            checkbox.destroy()
-    app.checkbox_widgets = []
-    
-    # Lấy danh sách phần mở rộng video hợp lệ
-    extensions = app.config['SETTINGS']['video_extensions'].split(',')
-    
-    # Cập nhật trạng thái
-    if hasattr(app, 'status_var'):
-        app.status_var.set("Đang quét thư mục...")
-        app.root.update_idletasks()
-    
-    # Quét thư mục
-    video_files = []
-    for file in os.listdir(folder_path):
-        file_ext = os.path.splitext(file)[1].lower()
-        if file_ext in extensions:
-            video_files.append(file)
-    
-    # Kiểm tra nếu không có video nào
-    if not video_files:
+    try:
+        folder_path = app.folder_path.get()
+        
+        if not folder_path or not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            messagebox.showerror("Lỗi", "Thư mục không hợp lệ hoặc không tồn tại!")
+            return
+        
+        # Save selection state before clearing the list
+        selected_videos = {}
+        # Only check items that actually exist in the tree
+        valid_items = [item for item in app.video_tree.get_children()]
+        
+        for item_id in list(app.video_checkboxes.keys()):
+            try:
+                if item_id in valid_items:
+                    if app.video_checkboxes[item_id].get():
+                        values = app.video_tree.item(item_id, "values")
+                        if len(values) > 1:
+                            video_name = values[1]
+                            selected_videos[video_name] = True
+            except Exception as e:
+                logger.error(f"Error accessing item {item_id}: {str(e)}")
+                # Remove invalid item reference
+                if item_id in app.video_checkboxes:
+                    del app.video_checkboxes[item_id]
+        
+        # Xóa danh sách hiện tại
+        for item in app.video_tree.get_children():
+            app.video_tree.delete(item)
+        
+        # Reset data structures
+        app.videos = {}
+        app.duplicate_groups = []
+        app.video_checkboxes = {}
+        app.video_items = []
+        
+        # Xóa các checkbox widget hiện tại
+        if hasattr(app, 'checkbox_widgets'):
+            for checkbox in app.checkbox_widgets:
+                try:
+                    checkbox.destroy()
+                except Exception:
+                    pass
+        app.checkbox_widgets = []
+        
+        # Lấy danh sách phần mở rộng video hợp lệ
+        extensions = app.config['SETTINGS']['video_extensions'].split(',')
+        
+        # Cập nhật trạng thái
         if hasattr(app, 'status_var'):
-            app.status_var.set("")
-        app.total_info_var.set("Tổng: 0 video, 0 video trùng, 0 video đã tải lên")
+            app.status_var.set("Đang quét thư mục...")
+            app.root.update_idletasks()
+        
+        # Quét thư mục
+        video_files = []
+        try:
+            for file in os.listdir(folder_path):
+                file_ext = os.path.splitext(file)[1].lower()
+                if file_ext in extensions:
+                    video_files.append(file)
+        except Exception as e:
+            logger.error(f"Error scanning directory {folder_path}: {str(e)}")
+            if hasattr(app, 'status_var'):
+                app.status_var.set(f"Lỗi quét thư mục: {str(e)}")
+            video_files = []
+        
+        # Kiểm tra nếu không có video nào
+        if not video_files:
+            if hasattr(app, 'status_var'):
+                app.status_var.set("Không tìm thấy video trong thư mục")
+            app.total_info_var.set("Tổng: 0 video, 0 video trùng, 0 video đã tải lên")
+            
+            # Cập nhật phân trang
+            app.current_page = 1
+            app.page_info_var.set("Trang 1/1")
+            app.prev_page_btn["state"] = tk.DISABLED
+            app.next_page_btn["state"] = tk.DISABLED
+            return
+        
+        # Tạo danh sách video đã tải lên để so sánh
+        already_uploaded_videos = set()
+        
+        # Tạo danh sách các mục video
+        for video in video_files:
+            # Đường dẫn đầy đủ
+            video_path = os.path.join(folder_path, video)
+            app.videos[video] = video_path
+            
+            # Thêm vào danh sách
+            app.video_items.append({
+                "name": video,
+                "path": video_path,
+                "status": "",
+                "info": "",
+                "tags": ()
+            })
+        
+        # Nếu có yêu cầu kiểm tra với lịch sử
+        if hasattr(app, 'check_history_var') and app.check_history_var.get():
+            if hasattr(app, 'status_var'):
+                app.status_var.set("Đang kiểm tra với lịch sử tải lên...")
+            app.root.update_idletasks()
+            
+            # Lấy lịch sử đã tải lên
+            upload_history = app.upload_history.get_all_uploads()
+            
+            # Kiểm tra từng video
+            for i, item in enumerate(app.video_items):
+                try:
+                    video_path = item["path"]
+                    
+                    if video_path:
+                        video_hash = app.video_analyzer.calculate_video_hash(video_path)
+                        if video_hash and app.upload_history.is_uploaded(video_hash):
+                            # Đánh dấu đã tải lên
+                            app.video_items[i]["status"] = "Đã tải lên"
+                            app.video_items[i]["tags"] = ("uploaded",)
+                            already_uploaded_videos.add(item["name"])
+                except Exception as e:
+                    logger.error(f"Error checking history for {item.get('name', 'unknown')}: {str(e)}")
+        
+        # Nếu có yêu cầu kiểm tra trùng lặp
+        duplicate_count = 0
+        if hasattr(app, 'check_duplicates_var') and app.check_duplicates_var.get() and len(video_files) > 1:
+            if hasattr(app, 'status_var'):
+                app.status_var.set("Đang phân tích video để tìm trùng lặp...")
+            app.root.update_idletasks()
+            
+            try:
+                # Tìm các video trùng lặp
+                video_paths = [os.path.join(folder_path, video) for video in video_files]
+                app.duplicate_groups = app.video_analyzer.find_duplicates(video_paths)
+                
+                # Đánh dấu các video trùng lặp
+                if app.duplicate_groups:
+                    # Danh sách video đã đánh dấu trùng lặp
+                    marked_videos = set()
+                    
+                    for group in app.duplicate_groups:
+                        # Chỉ đánh dấu nếu có từ 2 video trở lên trong nhóm
+                        if len(group) > 1:
+                            for video_path in group:
+                                video_name = os.path.basename(video_path)
+                                
+                                # Tìm video trong danh sách
+                                for i, item in enumerate(app.video_items):
+                                    if item["name"] == video_name:
+                                        # Trạng thái hiện tại
+                                        current_status = item["status"] or "Trùng lặp"
+                                        
+                                        # Tìm tên video trùng lặp khác trong nhóm
+                                        dup_names = [os.path.basename(v) for v in group if v != video_path]
+                                        info = f"Trùng với: {', '.join(dup_names[:2])}"
+                                        if len(dup_names) > 2:
+                                            info += f" và {len(dup_names)-2} video khác"
+                                        
+                                        # Cập nhật thông tin
+                                        app.video_items[i]["status"] = current_status
+                                        app.video_items[i]["info"] = info
+                                        app.video_items[i]["tags"] = ("duplicate",)
+                                        marked_videos.add(video_name)
+                                        break
+                    
+                    duplicate_count = len(marked_videos)
+            except Exception as e:
+                logger.error(f"Error checking duplicates: {str(e)}")
+        
+        # Cập nhật thông tin tổng số
+        app.total_info_var.set(f"Tổng: {len(video_files)} video, {duplicate_count} video trùng, {len(already_uploaded_videos)} video đã tải lên")
+        if hasattr(app, 'status_var'):
+            app.status_var.set("Đã sẵn sàng") 
         
         # Cập nhật phân trang
+        total_pages = max(1, math.ceil(len(app.video_items) / app.items_per_page))
         app.current_page = 1
-        app.page_info_var.set("Trang 1/1")
+        app.page_info_var.set(f"Trang 1/{total_pages}")
+        
+        # Cập nhật trạng thái nút phân trang
         app.prev_page_btn["state"] = tk.DISABLED
-        app.next_page_btn["state"] = tk.DISABLED
-        return
-    
-    # Tạo danh sách video đã tải lên để so sánh
-    already_uploaded_videos = set()
-    
-    # Tạo danh sách các mục video
-    for video in video_files:
-        # Đường dẫn đầy đủ
-        video_path = os.path.join(folder_path, video)
-        app.videos[video] = video_path
+        app.next_page_btn["state"] = tk.NORMAL if total_pages > 1 else tk.DISABLED
         
-        # Thêm vào danh sách
-        app.video_items.append({
-            "name": video,
-            "path": video_path,
-            "status": "",
-            "info": "",
-            "tags": ()
-        })
-    
-    # Nếu có yêu cầu kiểm tra với lịch sử
-    if app.check_history_var.get():
-        if hasattr(app, 'status_var'):
-            app.status_var.set("Đang kiểm tra với lịch sử tải lên...")
-        app.root.update_idletasks()
-        
-        # Lấy lịch sử đã tải lên
-        upload_history = app.upload_history.get_all_uploads()
-        
-        # Kiểm tra từng video
-        for i, item in enumerate(app.video_items):
-            video_path = item["path"]
-            
-            if video_path:
-                video_hash = app.video_analyzer.calculate_video_hash(video_path)
-                if video_hash and app.upload_history.is_uploaded(video_hash):
-                    # Đánh dấu đã tải lên
-                    app.video_items[i]["status"] = "Đã tải lên"
-                    app.video_items[i]["tags"] = ("uploaded",)
-                    already_uploaded_videos.add(item["name"])
-    
-    # Nếu có yêu cầu kiểm tra trùng lặp
-    duplicate_count = 0
-    if app.check_duplicates_var.get() and len(video_files) > 1:
-        if hasattr(app, 'status_var'):
-            app.status_var.set("Đang phân tích video để tìm trùng lặp...")
-        app.root.update_idletasks()
-        
-        # Tìm các video trùng lặp
-        video_paths = [os.path.join(folder_path, video) for video in video_files]
-        app.duplicate_groups = app.video_analyzer.find_duplicates(video_paths)
-        
-        # Đánh dấu các video trùng lặp
-        if app.duplicate_groups:
-            # Danh sách video đã đánh dấu trùng lặp
-            marked_videos = set()
-            
-            for group in app.duplicate_groups:
-                # Chỉ đánh dấu nếu có từ 2 video trở lên trong nhóm
-                if len(group) > 1:
-                    for video_path in group:
-                        video_name = os.path.basename(video_path)
-                        
-                        # Tìm video trong danh sách
-                        for i, item in enumerate(app.video_items):
-                            if item["name"] == video_name:
-                                # Trạng thái hiện tại
-                                current_status = item["status"] or "Trùng lặp"
-                                
-                                # Tìm tên video trùng lặp khác trong nhóm
-                                dup_names = [os.path.basename(v) for v in group if v != video_path]
-                                info = f"Trùng với: {', '.join(dup_names[:2])}"
-                                if len(dup_names) > 2:
-                                    info += f" và {len(dup_names)-2} video khác"
-                                
-                                # Cập nhật thông tin
-                                app.video_items[i]["status"] = current_status
-                                app.video_items[i]["info"] = info
-                                app.video_items[i]["tags"] = ("duplicate",)
-                                marked_videos.add(video_name)
-                                break
-            
-            duplicate_count = len(marked_videos)
-    
-    # Cập nhật thông tin tổng số
-    app.total_info_var.set(f"Tổng: {len(video_files)} video, {duplicate_count} video trùng, {len(already_uploaded_videos)} video đã tải lên")
-    if hasattr(app, 'status_var'):
-        app.status_var.set("") # Bỏ "Đã tìm thấy ... video"
-    
-    # Cập nhật phân trang
-    total_pages = max(1, math.ceil(len(app.video_items) / app.items_per_page))
-    app.current_page = 1
-    app.page_info_var.set(f"Trang 1/{total_pages}")
-    
-    # Cập nhật trạng thái nút phân trang
-    app.prev_page_btn["state"] = tk.DISABLED
-    app.next_page_btn["state"] = tk.NORMAL if total_pages > 1 else tk.DISABLED
-    
-    # Cập nhật nội dung bảng
-    update_table_content(app)
-
-def update_table_content(app):
-    """Cập nhật nội dung bảng theo trang hiện tại"""
-    # Xóa tất cả các mục trong bảng
-    for item in app.video_tree.get_children():
-        app.video_tree.delete(item)
-    
-    # Tính chỉ số bắt đầu và kết thúc
-    start_idx = (app.current_page - 1) * app.items_per_page
-    end_idx = min(start_idx + app.items_per_page, len(app.video_items))
-    
-    # Thêm các mục của trang hiện tại vào bảng
-    for i in range(start_idx, end_idx):
-        item_data = app.video_items[i]
-        video_name = item_data["name"]
-        status = item_data["status"]
-        info = item_data["info"]
-        tags = item_data["tags"]
-        
-        # Xác định trước nếu video này cần được chọn
-        should_check = not (status == "Đã tải lên" or status == "Trùng lặp" or "uploaded" in tags or "duplicate" in tags)
-        
-        # Thêm vào treeview với ô checkbox (rỗng, sẽ được vẽ sau)
-        item_id = app.video_tree.insert("", tk.END, values=(" ", video_name, status, info), tags=tags)
-        
-        # Tạo biến checkbox với trạng thái mặc định
-        app.video_checkboxes[item_id] = tk.BooleanVar(value=should_check)
-    
-    # Đảm bảo UI được cập nhật
-    app.root.update_idletasks()
-    
-    # Vẽ các checkbox mà không gọi set_default_selection
-    try:
-        from ui.components.checkbox import create_checkbox_cell
-    except ImportError:
+        # Cập nhật nội dung bảng
         try:
-            from .components.checkbox import create_checkbox_cell
+            update_table_content(app)
+            
+            # Khôi phục lại các trạng thái của checkbox
+            # Đợi UI cập nhật
+            app.root.update_idletasks()
+            
+            # Đảm bảo render lại checkbox sau khi cập nhật
+            app.root.after(200, lambda: safely_render_checkboxes(app))
+        except Exception as e:
+            logger.error(f"Error updating table content: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+    except Exception as e:
+        logger.error(f"Error in refresh_video_list: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # Do not show error message box here to prevent double errors
+        if hasattr(app, 'status_var'):
+            app.status_var.set(f"Lỗi làm mới danh sách: {str(e)}")
+
+def safely_render_checkboxes(app):
+    """Vẽ lại checkbox với xử lý lỗi cẩn thận hơn"""
+    try:
+        # Import CustomCheckbox từ components
+        try:
+            from ui.components.checkbox import create_checkbox_cell
         except ImportError:
-            from src.ui.components.checkbox import create_checkbox_cell
-    
-    # Xóa các checkbox hiện tại
-    if hasattr(app, 'checkbox_widgets'):
-        for checkbox in app.checkbox_widgets:
-            checkbox.destroy()
-    
-    app.checkbox_widgets = []
-    
-    # Tạo mới các checkbox
-    for item_id in app.video_tree.get_children():
-        checkbox = create_checkbox_cell(app.video_tree, item_id, "#1")
-        if checkbox:
-            # Thiết lập trạng thái checkbox từ biến đã tạo ở trên
-            checkbox.set(app.video_checkboxes[item_id].get())
-            app.checkbox_widgets.append(checkbox)
+            try:
+                from src.ui.components.checkbox import create_checkbox_cell
+            except ImportError:
+                # Last resort: direct import
+                import sys, os
+                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                from ui.components.checkbox import create_checkbox_cell
+        
+        # Xóa tất cả checkbox hiện tại
+        if hasattr(app, 'checkbox_widgets'):
+            for checkbox in app.checkbox_widgets:
+                try:
+                    checkbox.destroy()
+                except Exception as e:
+                    logger.error(f"Error destroying checkbox: {str(e)}")
+        
+        app.checkbox_widgets = []
+        
+        # Force cập nhật UI
+        app.root.update_idletasks()
+        
+        # Lấy danh sách các item hiện có
+        try:
+            valid_items = [item for item in app.video_tree.get_children()]
+        except Exception as e:
+            logger.error(f"Error getting tree children: {str(e)}")
+            valid_items = []
+        
+        # Dọn dẹp các tham chiếu không còn hợp lệ trong checkbox_vars
+        invalid_keys = [key for key in app.video_checkboxes if key not in valid_items]
+        for key in invalid_keys:
+            if key in app.video_checkboxes:
+                del app.video_checkboxes[key]
+        
+        # Tạo checkbox cho tất cả hàng
+        for item_id in valid_items:
+            try:
+                if item_id not in app.video_checkboxes:
+                    # Lấy thông tin video để quyết định có nên chọn mặc định không
+                    video_values = app.video_tree.item(item_id, "values")
+                    tags = app.video_tree.item(item_id, "tags")
+                    status = video_values[2] if len(video_values) > 2 else ""
+                    
+                    # Mặc định chọn những video không phải đã tải lên hoặc trùng lặp
+                    should_check = not (status == "Đã tải lên" or status == "Trùng lặp" or "uploaded" in tags or "duplicate" in tags)
+                    app.video_checkboxes[item_id] = tk.BooleanVar(value=should_check)
+                
+                checkbox = create_checkbox_cell(app.video_tree, item_id, "#1")
+                if checkbox:
+                    checkbox.set(app.video_checkboxes[item_id].get())
+                    app.checkbox_widgets.append(checkbox)
+            except Exception as e:
+                logger.error(f"Error creating checkbox for item {item_id}: {str(e)}")
+        
+        # Force cập nhật lại lần nữa để đảm bảo hiển thị
+        app.root.update_idletasks()
+        
+    except Exception as e:
+        logger.error(f"Error in safely_render_checkboxes: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+def update_table_content(app):
+    """Cập nhật nội dung bảng theo trang hiện tại và đảm bảo checkboxes hiển thị"""
+    try:
+        # Xóa tất cả các mục trong bảng
+        for item in app.video_tree.get_children():
+            try:
+                app.video_tree.delete(item)
+            except Exception as e:
+                logger.error(f"Error deleting tree item {item}: {str(e)}")
+        
+        # Tính chỉ số bắt đầu và kết thúc
+        start_idx = (app.current_page - 1) * app.items_per_page
+        end_idx = min(start_idx + app.items_per_page, len(app.video_items))
+        
+        # Thêm các mục của trang hiện tại vào bảng
+        for i in range(start_idx, end_idx):
+            try:
+                if i < len(app.video_items):
+                    item_data = app.video_items[i]
+                    video_name = item_data["name"]
+                    status = item_data.get("status", "")
+                    info = item_data.get("info", "")
+                    tags = item_data.get("tags", ())
+                    
+                    # Xác định trước nếu video này cần được chọn
+                    should_check = not (status == "Đã tải lên" or status == "Trùng lặp" or "uploaded" in tags or "duplicate" in tags)
+                    
+                    # Thêm text "Chọn" để cải thiện hiển thị cho cột checkbox
+                    item_id = app.video_tree.insert("", tk.END, values=("Chọn", video_name, status, info), tags=tags)
+                    
+                    # Tạo biến checkbox với trạng thái mặc định
+                    app.video_checkboxes[item_id] = tk.BooleanVar(value=should_check)
+            except Exception as e:
+                logger.error(f"Error adding item to tree: {str(e)}")
+        
+        # Đảm bảo UI được cập nhật
+        try:
+            app.root.update_idletasks()
+        except Exception as e:
+            logger.error(f"Error updating UI: {str(e)}")
+        
+    except Exception as e:
+        logger.error(f"Error in update_table_content: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
 def render_checkboxes(app):
     """Vẽ lại tất cả checkbox trên treeview"""
     # Import CustomCheckbox từ components
@@ -370,10 +488,14 @@ def browse_folder(app, auto=False):
             app.folder_path.set(folder_path)
             # Làm mới danh sách video
             refresh_video_list(app)
+            
+            # Đảm bảo render lại checkboxes sau khi làm mới
+            # Đợi một chút để UI cập nhật trước
+            app.root.after(100, lambda: render_checkboxes(app))
+            
             # Lưu vào cấu hình
             app.config['SETTINGS']['video_folder'] = folder_path
             app.config_manager.save_config(app.config)
-
 def on_video_tree_click(app, event):
     """
     Xử lý khi click vào bảng

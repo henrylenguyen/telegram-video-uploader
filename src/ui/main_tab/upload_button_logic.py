@@ -20,56 +20,78 @@ def check_duplicates_and_uploaded(app):
     Returns:
         tuple: (has_duplicates, has_uploaded, duplicate_videos, uploaded_videos)
     """
-    has_duplicates = False
-    has_uploaded = False
-    duplicate_videos = []
-    uploaded_videos = []
-    
-    # Lấy danh sách video đã chọn
-    selected_videos = []
-    
-    for item_id, var in app.video_checkboxes.items():
-        if var.get():  # Nếu checkbox được chọn
-            # Lấy tên video
-            try:
-                video_name = app.video_tree.item(item_id, "values")[1]
-                video_path = app.videos.get(video_name)
+    try:
+        has_duplicates = False
+        has_uploaded = False
+        duplicate_videos = []
+        uploaded_videos = []
+        
+        # Lấy danh sách video đã chọn
+        selected_videos = []
+        
+        # Get all valid items
+        valid_items = [item for item in app.video_tree.get_children()]
+        
+        for item_id in list(app.video_checkboxes.keys()):
+            if item_id not in valid_items:
+                continue
                 
-                if video_path and os.path.exists(video_path):
-                    selected_videos.append((video_name, video_path))
+            try:
+                if app.video_checkboxes[item_id].get():  # Nếu checkbox được chọn
+                    # Lấy tên video
+                    video_values = app.video_tree.item(item_id, "values")
+                    if len(video_values) >= 2:
+                        video_name = video_values[1]
+                        video_path = app.videos.get(video_name)
+                        
+                        if video_path and os.path.exists(video_path):
+                            selected_videos.append((video_name, video_path, item_id))
             except Exception as e:
                 logger.error(f"Lỗi khi lấy thông tin video: {str(e)}")
                 continue
-    
-    # Kiểm tra từng video đã chọn
-    for video_name, video_path in selected_videos:
-        # Kiểm tra trạng thái và nhãn của video trong tree
-        for item in app.video_items:
-            if item["name"] == video_name:
+        
+        # Kiểm tra từng video đã chọn
+        for video_name, video_path, item_id in selected_videos:
+            try:
+                # Kiểm tra trạng thái và nhãn của video trong tree
+                video_values = app.video_tree.item(item_id, "values")
+                tags = app.video_tree.item(item_id, "tags")
+                status = video_values[2] if len(video_values) > 2 else ""
+                
                 # Kiểm tra video trùng lặp
-                if "duplicate" in item["tags"] or item["status"] == "Trùng lặp":
+                if "duplicate" in tags or status == "Trùng lặp":
                     has_duplicates = True
                     if video_name not in duplicate_videos:
                         duplicate_videos.append(video_name)
                 
                 # Kiểm tra video đã tải lên
-                if "uploaded" in item["tags"] or item["status"] == "Đã tải lên":
+                if "uploaded" in tags or status == "Đã tải lên":
                     has_uploaded = True
                     if video_name not in uploaded_videos:
                         uploaded_videos.append(video_name)
-                
-                break
+            except Exception as e:
+                logger.error(f"Error checking video status for {video_name}: {str(e)}")
         
-        # Kiểm tra trực tiếp với lịch sử tải lên
+        # Kiểm tra trực tiếp với lịch sử tải lên nếu chưa phát hiện qua UI
         if not has_uploaded:
-            video_hash = app.video_analyzer.calculate_video_hash(video_path)
-            if video_hash and app.upload_history.is_uploaded(video_hash):
-                has_uploaded = True
-                if video_name not in uploaded_videos:
-                    uploaded_videos.append(video_name)
-    
-    return has_duplicates, has_uploaded, duplicate_videos, uploaded_videos
-
+            for video_name, video_path, _ in selected_videos:
+                try:
+                    video_hash = app.video_analyzer.calculate_video_hash(video_path)
+                    if video_hash and app.upload_history.is_uploaded(video_hash):
+                        has_uploaded = True
+                        if video_name not in uploaded_videos:
+                            uploaded_videos.append(video_name)
+                except Exception as e:
+                    logger.error(f"Error checking upload history for {video_name}: {str(e)}")
+        
+        return has_duplicates, has_uploaded, duplicate_videos, uploaded_videos
+        
+    except Exception as e:
+        logger.error(f"Error in check_duplicates_and_uploaded: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # Return safe default values
+        return False, False, [], []
 def show_upload_confirmation(app, has_duplicates, has_uploaded, duplicate_videos, uploaded_videos):
     """
     Hiển thị modal xác nhận tải lên khi có video trùng lặp hoặc đã tải lên
@@ -116,72 +138,126 @@ def start_upload(app):
     Args:
         app: Đối tượng TelegramUploaderApp
     """
-    # Kiểm tra cấu hình Telegram
-    bot_token = app.config['TELEGRAM']['bot_token']
-    chat_id = app.config['TELEGRAM']['chat_id']
-    
-    if not bot_token or not chat_id:
-        messagebox.showerror("Lỗi", "Vui lòng cấu hình Bot Token và Chat ID trong tab Cài đặt!")
-        app.notebook.select(1)  # Chuyển đến tab Cài đặt
-        return
-    
-    # Kết nối lại với Telegram nếu cần
-    if not app.telegram_api.connected:
-        if not app.telegram_api.connect(bot_token):
-            messagebox.showerror("Lỗi", "Không thể kết nối với Telegram API. Vui lòng kiểm tra Bot Token và kết nối internet!")
+    try:
+        # Kiểm tra cấu hình Telegram
+        bot_token = app.config['TELEGRAM']['bot_token']
+        chat_id = app.config['TELEGRAM']['chat_id']
+        
+        if not bot_token or not chat_id:
+            messagebox.showerror("Lỗi", "Vui lòng cấu hình Bot Token và Chat ID trong tab Cài đặt!")
+            app.notebook.select(2)  # Chuyển đến tab Cài đặt
             return
-    
-    # Kiểm tra xem có video nào được chọn không
-    selected_videos = []
-    
-    for item_id, var in app.video_checkboxes.items():
-        if var.get():  # Nếu checkbox được chọn
-            # Lấy tên video
-            try:
-                video_name = app.video_tree.item(item_id, "values")[1]
-                video_path = app.videos.get(video_name)
-                
-                if video_path and os.path.exists(video_path):
-                    selected_videos.append((video_name, video_path))
-            except Exception as e:
-                logger.error(f"Lỗi khi lấy thông tin video: {str(e)}")
+        
+        # Kết nối lại với Telegram nếu cần
+        if not app.telegram_api.connected:
+            if not app.telegram_api.connect(bot_token):
+                messagebox.showerror("Lỗi", "Không thể kết nối với Telegram API. Vui lòng kiểm tra Bot Token và kết nối internet!")
+                return
+        
+        # Kiểm tra xem có video nào được chọn không
+        selected_videos = []
+        any_checkbox_checked = False
+        
+        # First check if any checkbox is actually checked
+        for var in app.video_checkboxes.values():
+            if var.get():
+                any_checkbox_checked = True
+                break
+        
+        # In debug log
+        logger.info(f"Any checkbox checked: {any_checkbox_checked}")
+        
+        # Get all valid tree items
+        valid_items = [item for item in app.video_tree.get_children()]
+        
+        # Lặp qua tất cả các checkboxes để tìm video được chọn
+        for item_id, var in app.video_checkboxes.items():
+            # Skip invalid items
+            if item_id not in valid_items:
                 continue
-    
-    if not selected_videos:
-        messagebox.showinfo("Thông báo", "Vui lòng chọn ít nhất một video để tải lên!")
-        return
-    
-    # Kiểm tra video trùng lặp hoặc đã tải lên
-    has_duplicates, has_uploaded, duplicate_videos, uploaded_videos = check_duplicates_and_uploaded(app)
-    
-    # LUÔN hiển thị modal xác nhận nếu có video trùng lặp hoặc đã tải lên
-    skip_duplicates_uploaded = False
-    
-    if has_duplicates or has_uploaded:
-        skip_duplicates_uploaded = show_upload_confirmation(app, has_duplicates, has_uploaded, duplicate_videos, uploaded_videos)
-    
-    # Lọc danh sách video sẽ tải lên dựa vào kết quả xác nhận
-    videos_to_upload = []
-    
-    for video_name, video_path in selected_videos:
-        should_skip = False
+                
+            if var.get():  # Nếu checkbox được chọn
+                try:
+                    # Lấy tên video (cột thứ 2)
+                    values = app.video_tree.item(item_id, "values")
+                    # In debug log
+                    logger.info(f"Item values: {values}")
+                    
+                    if len(values) >= 2:
+                        video_name = values[1]  # Index 1 là cột tên file
+                        video_path = app.videos.get(video_name)
+                        
+                        if video_path and os.path.exists(video_path):
+                            selected_videos.append((video_name, video_path))
+                            # In log để debug
+                            logger.info(f"Selected video: {video_name}")
+                except Exception as e:
+                    logger.error(f"Lỗi khi lấy thông tin video: {str(e)}")
+                    continue
         
-        # Nếu người dùng chọn bỏ qua video trùng lặp và đã tải lên
-        if skip_duplicates_uploaded:
-            if video_name in duplicate_videos or video_name in uploaded_videos:
-                should_skip = True
+        # In tổng số video được chọn để debug
+        logger.info(f"Total selected videos: {len(selected_videos)}")
         
-        if not should_skip:
-            videos_to_upload.append((video_name, video_path))
-    
-    # Kiểm tra nếu không còn video nào sau khi lọc
-    if not videos_to_upload:
-        messagebox.showinfo("Thông báo", "Không có video nào được tải lên sau khi lọc!")
-        return
-    
-    # Hiển thị modal tiến trình tải lên thay vì dùng progressbar
-    show_upload_progress_modal(app, videos_to_upload)
-
+        if not selected_videos:
+            # Print checkbox states for debug
+            for item_id, var in app.video_checkboxes.items():
+                if item_id in valid_items:
+                    try:
+                        values = app.video_tree.item(item_id, "values")
+                        video_name = values[1] if len(values) >= 2 else "Unknown"
+                        logger.info(f"Checkbox state for {video_name}: {var.get()}")
+                    except:
+                        pass
+            
+            # Show selection dialog when no videos are selected
+            messagebox.showinfo("Thông báo", "Vui lòng chọn ít nhất một video để tải lên!")
+            return
+        
+        # Kiểm tra video trùng lặp hoặc đã tải lên
+        # Chỉ hiển thị cảnh báo nếu chọn nhiều video
+        has_duplicates = False
+        has_uploaded = False
+        duplicate_videos = []
+        uploaded_videos = []
+        skip_duplicates_uploaded = False
+        
+        if len(selected_videos) > 1:
+            # Có nhiều video được chọn, kiểm tra trùng lặp
+            has_duplicates, has_uploaded, duplicate_videos, uploaded_videos = check_duplicates_and_uploaded(app)
+            
+            # LUÔN hiển thị modal xác nhận nếu có video trùng lặp hoặc đã tải lên
+            if has_duplicates or has_uploaded:
+                skip_duplicates_uploaded = show_upload_confirmation(app, has_duplicates, has_uploaded, duplicate_videos, uploaded_videos)
+        
+        # Lọc danh sách video sẽ tải lên dựa vào kết quả xác nhận
+        videos_to_upload = []
+        
+        for video_name, video_path in selected_videos:
+            should_skip = False
+            
+            # Nếu người dùng chọn bỏ qua video trùng lặp và đã tải lên
+            if skip_duplicates_uploaded:
+                if video_name in duplicate_videos or video_name in uploaded_videos:
+                    should_skip = True
+            
+            if not should_skip:
+                videos_to_upload.append((video_name, video_path))
+        
+        # Kiểm tra nếu không còn video nào sau khi lọc
+        if not videos_to_upload:
+            messagebox.showinfo("Thông báo", "Không có video nào được tải lên sau khi lọc!")
+            return
+        
+        # Hiển thị modal tiến trình tải lên thay vì dùng progressbar
+        show_upload_progress_modal(app, videos_to_upload)
+        
+    except Exception as e:
+        # Catch all exceptions to prevent the app from crashing
+        logger.error(f"Error in start_upload: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        messagebox.showerror("Lỗi không mong muốn", 
+                           f"Đã xảy ra lỗi khi bắt đầu tải lên: {str(e)}\n\nỨng dụng vẫn hoạt động bình thường.")
 def show_upload_progress_modal(app, videos_to_upload):
     """
     Hiển thị modal hiển thị tiến trình tải lên
@@ -478,15 +554,14 @@ def upload_videos_thread(app, videos_to_upload, tracker, is_cancelled):
         
         # Tải lên video
         try:
-            def progress_callback(current, total):
-                if is_cancelled[0]:
-                    return False  # Báo hiệu hủy tải lên
-                    
-                percent = (current / total) * 100
-                tracker.update_ui(i, "processing", percent, f"Đang tải lên... {current/1024/1024:.1f}/{total/1024/1024:.1f} MB ({percent:.1f}%)")
-                return True  # Tiếp tục tải lên
+            # Không sử dụng progress_callback nữa vì TelegramAPI.send_video() không hỗ trợ
+            tracker.update_ui(i, "processing", 50, f"Đang tải lên...")
             
-            success = app.telegram_api.send_video(chat_id, video_path, progress_callback=progress_callback)
+            # Chuẩn bị caption
+            caption = f"📹 {video_name}\n📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            # Gọi hàm send_video không có progress_callback
+            success = app.telegram_api.send_video(chat_id, video_path, caption=caption)
             
             if success:
                 # Thêm vào lịch sử
@@ -494,8 +569,8 @@ def upload_videos_thread(app, videos_to_upload, tracker, is_cancelled):
                 if video_hash:
                     file_size = os.path.getsize(video_path)
                     # Lưu thời gian tải lên
-                    now = datetime.datetime.now().isoformat()
-                    app.upload_history.add_upload(video_hash, video_name, video_path, file_size, upload_time=now)
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    app.upload_history.add_upload(video_hash, video_name, video_path, file_size, upload_date=now)
                     
                     # Cập nhật trạng thái
                     tracker.update_ui(i, "success", 100, "Tải lên thành công")
@@ -527,9 +602,8 @@ def upload_videos_thread(app, videos_to_upload, tracker, is_cancelled):
                                             f"Đã tải lên: {successful} thành công, {failed} thất bại"))
         
         # Làm mới danh sách video sau khi tải lên
-        from .main_tab_func import refresh_video_list
-        app.root.after(100, lambda: refresh_video_list(app))
-
+        # Delay a bit to ensure message box shows first
+        app.root.after(500, lambda: refresh_video_list(app))
 def update_video_status(app, video_name):
     """
     Cập nhật trạng thái video trong treeview sau khi tải lên
