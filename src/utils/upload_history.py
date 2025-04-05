@@ -67,7 +67,7 @@ class UploadHistory:
         except Exception as e:
             logger.error(f"Lỗi khi lưu lịch sử: {str(e)}")
     
-    def add_upload(self, video_hash, filename, file_path, file_size):
+    def add_upload(self, video_hash, filename, file_path, file_size, upload_date=None):
         """
         Thêm video vào lịch sử tải lên
         
@@ -76,8 +76,10 @@ class UploadHistory:
             filename (str): Tên file video
             file_path (str): Đường dẫn đến file video
             file_size (int): Kích thước file (bytes)
+            upload_date (str, optional): Thời gian tải lên, nếu None sẽ dùng thời gian hiện tại
         """
-        upload_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if upload_date is None:
+            upload_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         self.uploads[video_hash] = {
             'filename': filename,

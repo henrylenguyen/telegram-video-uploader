@@ -318,7 +318,10 @@ class TelegramUploaderApp:
             # Clear existing checkboxes
             if hasattr(self, 'checkbox_widgets'):
                 for checkbox in self.checkbox_widgets:
-                    checkbox.destroy()
+                    try:
+                        checkbox.destroy()
+                    except Exception:
+                        pass
             
             self.checkbox_widgets = []
             
@@ -395,17 +398,17 @@ class TelegramUploaderApp:
         
         for i, text in enumerate(tab_texts):
             # Use gradient colors for active tab and hover effects
-            if i == 0:  # Active tab
+            if i == 0:  # Active tab - use blue color
                 btn = tk.Button(
                     self.header_tab_frame, 
                     text=text,
                     font=("Arial", 11, "bold"),
                     padx=15, pady=8,
                     relief="flat",
-                    bg="#D4D4D4",  # Slightly darker for active tab
-                    fg="#2C3E50",
-                    activebackground="#C0C0C0",
-                    activeforeground="#2C3E50",
+                    bg="#2E86C1",  # Blue color for active tab
+                    fg="white",    # White text for better contrast
+                    activebackground="#2980b9",
+                    activeforeground="white",
                     bd=1,
                     highlightthickness=1,
                     highlightbackground="#BEBEBE",
@@ -419,7 +422,7 @@ class TelegramUploaderApp:
                     padx=15, pady=8,
                     relief="flat",
                     bg="#EDEDED",
-                    fg="#2C3E50",
+                    fg="#2C3E50",  # Dark blue text
                     activebackground="#D4D4D4",
                     activeforeground="#2C3E50",
                     bd=0,
@@ -492,14 +495,14 @@ class TelegramUploaderApp:
                             font=("Arial", 10))
         status_label.pack(side=tk.LEFT)
 
-
     def switch_tab(self, tab_index):
         """Chuyển đổi giữa các tab"""
         # Update button styling
         for i, btn in enumerate(self.tab_buttons):
             if i == tab_index:
                 btn.config(
-                    bg="#D4D4D4",
+                    bg="#2E86C1",  # Change to blue color
+                    fg="white",    # White text for better contrast
                     relief="flat",
                     bd=1,
                     highlightthickness=1,
@@ -512,6 +515,7 @@ class TelegramUploaderApp:
             else:
                 btn.config(
                     bg="#EDEDED",
+                    fg="#2C3E50",  # Dark blue text for inactive tabs
                     relief="flat",
                     bd=0,
                     highlightthickness=0,
@@ -528,7 +532,6 @@ class TelegramUploaderApp:
         # Show selected content
         self.content_frames[tab_index].pack(fill=tk.BOTH, expand=True)
         self.current_content = self.content_frames[tab_index]
-        
     def show_content(self, index):
         """Hiển thị nội dung của tab đã chọn"""
         # Hide current content if exists

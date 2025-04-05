@@ -9,11 +9,13 @@ import math
 
 from .main_tab_func import (
     refresh_video_list,
+    update_table_content,
     browse_folder,
     on_video_tree_click, 
     on_video_select,
     select_all_videos,
     deselect_all_videos,
+    select_unuploaded_videos,  
     change_page,
     play_selected_video,
     upload_selected_video
@@ -321,7 +323,7 @@ def create_manual_tab(app, parent):
     # Frame cho các nút chọn
     selection_frame = ttk.Frame(videos_frame)
     selection_frame.pack(fill=tk.X, pady=5)
-    
+
     # Nút chọn/bỏ chọn
     select_all_btn = tk.Button(selection_frame, text="Chọn tất cả", 
                             bg="#3498db", fg="white",
@@ -338,8 +340,16 @@ def create_manual_tab(app, parent):
                             relief="flat",
                             command=lambda: deselect_all_videos(app))
     deselect_all_btn.pack(side=tk.LEFT, padx=5)
-    
-    # Bỏ thanh tiến trình vì đã có modal progress
+
+    # Add new button for selecting all videos not yet uploaded
+    select_unuploaded_btn = tk.Button(selection_frame, text="Chọn video chưa tải lên", 
+                            bg="#3498db", fg="white",
+                            font=("Arial", 11),
+                            padx=10, pady=5,
+                            relief="flat",
+                            command=lambda: select_unuploaded_videos(app))
+    select_unuploaded_btn.pack(side=tk.LEFT, padx=5)
+        
     
     # Frame thông tin video
     info_frame = ttk.LabelFrame(parent, text="Thông tin video đã chọn")

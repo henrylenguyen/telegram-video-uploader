@@ -7,7 +7,7 @@ import os
 import threading
 import datetime
 import logging
-
+from ui.main_tab.main_tab_func import refresh_video_list
 logger = logging.getLogger("UploadButtonLogic")
 
 def check_duplicates_and_uploaded(app):
@@ -145,7 +145,7 @@ def start_upload(app):
         
         if not bot_token or not chat_id:
             messagebox.showerror("Lỗi", "Vui lòng cấu hình Bot Token và Chat ID trong tab Cài đặt!")
-            app.notebook.select(2)  # Chuyển đến tab Cài đặt
+            app.switch_tab(1)  # Chuyển đến tab Cài đặt (index 1)
             return
         
         # Kết nối lại với Telegram nếu cần
@@ -156,99 +156,156 @@ def start_upload(app):
         
         # Kiểm tra xem có video nào được chọn không
         selected_videos = []
-        any_checkbox_checked = False
-        
-        # First check if any checkbox is actually checked
-        for var in app.video_checkboxes.values():
-            if var.get():
-                any_checkbox_checked = True
-                break
-        
-        # In debug log
-        logger.info(f"Any checkbox checked: {any_checkbox_checked}")
         
         # Get all valid tree items
         valid_items = [item for item in app.video_tree.get_children()]
         
-        # Lặp qua tất cả các checkboxes để tìm video được chọn
-        for item_id, var in app.video_checkboxes.items():
-            # Skip invalid items
-            if item_id not in valid_items:
-                continue
+        # Debug log for checkboxes state
+        for item_id in valid_items:
+            if item_id in app.video_checkboxes:
+                state = app.video_checkboxes[item_id].get()
+                logger.info(f"Checkbox state for {item_id}: {state}")
                 
-            if var.get():  # Nếu checkbox được chọn
-                try:
-                    # Lấy tên video (cột thứ 2)
-                    values = app.video_tree.item(item_id, "values")
-                    # In debug log
-                    logger.info(f"Item values: {values}")
-                    
-                    if len(values) >= 2:
-                        video_name = values[1]  # Index 1 là cột tên file
-                        video_path = app.videos.get(video_name)
-                        
-                        if video_path and os.path.exists(video_path):
-                            selected_videos.append((video_name, video_path))
-                            # In log để debug
-                            logger.info(f"Selected video: {video_name}")
-                except Exception as e:
-                    logger.error(f"Lỗi khi lấy thông tin video: {str(e)}")
-                    continue
+                # Also check the widget's state directly if available
+                for checkbox in app.checkbox_widgets:
+                    if hasattr(checkbox, 'item_id') and checkbox.item_id == item_id:
+                        widget_state = checkbox.get()
+                        logger.info(f"Widget state for {item_id}: {widget_state}")
+                        # Update BooleanVar to match widget state
+                        app.video_checkboxes[item_id].set(widget_state)
+                        break
         
-        # In tổng số video được chọn để debug
+        # Use the widget state first, then fall back to stored variables
+        for checkbox in app.checkbox_widgets:
+            if hasattr(checkbox, 'item_id') and checkbox.item_id in valid_items:
+                if checkbox.get():  # Check widget directly
+                    item_id = checkbox.item_id
+                    try:
+                        # Update variable to match widget
+                        app.video_checkboxes[item_id].set(True)
+                        
+                        # Get video info
+                        values = app.video_tree.item(item_id, "values")
+                        if len(values) >= 2:
+                            video_name = values[1]  # Index 1 is the filename column
+                            video_path = app.videos.get(video_name)
+                            
+                            if video_path and os.path.exists(video_path):
+                                selected_videos.append((video_name, video_path))
+                                logger.info(f"Selected video from widget: {video_name}")
+                    except Exception as e:
+                        logger.error(f"Error processing selection for {item_id}: {str(e)}")
+        
+        # Fall back to checking BooleanVars if no videos were found
+        if not selected_videos:
+            for item_id in valid_items:
+                if item_id in app.video_checkboxes and app.video_checkboxes[item_id].get():
+                    try:
+                        values = app.video_tree.item(item_id, "values")
+                        if len(values) >= 2:
+                            video_name = values[1]
+                            video_path = app.videos.get(video_name)
+                            
+                            if video_path and os.path.exists(video_path):
+                                selected_videos.append((video_name, video_path))
+                                logger.info(f"Selected video from var: {video_name}")
+                    except Exception as e:
+                        logger.error(f"Error processing fallback selection for {item_id}: {str(e)}")
+        
+        # Log the final count of selected videos
         logger.info(f"Total selected videos: {len(selected_videos)}")
         
         if not selected_videos:
-            # Print checkbox states for debug
-            for item_id, var in app.video_checkboxes.items():
-                if item_id in valid_items:
-                    try:
-                        values = app.video_tree.item(item_id, "values")
-                        video_name = values[1] if len(values) >= 2 else "Unknown"
-                        logger.info(f"Checkbox state for {video_name}: {var.get()}")
-                    except:
-                        pass
-            
             # Show selection dialog when no videos are selected
             messagebox.showinfo("Thông báo", "Vui lòng chọn ít nhất một video để tải lên!")
+            # Attempt to reload checkboxes to ensure they're visible
+            app.render_checkboxes()
             return
         
-        # Kiểm tra video trùng lặp hoặc đã tải lên
-        # Chỉ hiển thị cảnh báo nếu chọn nhiều video
-        has_duplicates = False
-        has_uploaded = False
-        duplicate_videos = []
-        uploaded_videos = []
-        skip_duplicates_uploaded = False
+        # Changed logic for duplicate/uploaded checks:
+        # 1. If only one video is selected, just check if it's already uploaded
+        # 2. If multiple videos are selected, check both duplicates and already uploaded
         
-        if len(selected_videos) > 1:
-            # Có nhiều video được chọn, kiểm tra trùng lặp
-            has_duplicates, has_uploaded, duplicate_videos, uploaded_videos = check_duplicates_and_uploaded(app)
+        if len(selected_videos) == 1:
+            # Only one video selected - check if it's already uploaded
+            video_name, video_path = selected_videos[0]
+            video_hash = app.video_analyzer.calculate_video_hash(video_path)
             
-            # LUÔN hiển thị modal xác nhận nếu có video trùng lặp hoặc đã tải lên
+            if video_hash and app.upload_history.is_uploaded(video_hash):
+                # Video already uploaded - confirm re-upload
+                if not messagebox.askyesno(
+                    "Xác nhận tải lên lại", 
+                    f"Video này đã được tải lên trước đây. Bạn có muốn tải lên lại không?"
+                ):
+                    return
+            
+            # For single video, no need to check for duplicates
+            # Just proceed with upload
+            videos_to_upload = selected_videos
+            
+        else:
+            # Multiple videos - check for duplicates and already uploaded
+            has_duplicates = False
+            has_uploaded = False
+            duplicate_videos = []
+            uploaded_videos = []
+            
+            # Check each selected video
+            for video_name, video_path in selected_videos:
+                try:
+                    # Check status and tags in the tree
+                    for item_id in valid_items:
+                        values = app.video_tree.item(item_id, "values")
+                        if len(values) >= 2 and values[1] == video_name:
+                            tags = app.video_tree.item(item_id, "tags")
+                            status = values[2] if len(values) > 2 else ""
+                            
+                            if "duplicate" in tags or status == "Trùng lặp":
+                                has_duplicates = True
+                                if video_name not in duplicate_videos:
+                                    duplicate_videos.append(video_name)
+                            
+                            if "uploaded" in tags or status == "Đã tải lên":
+                                has_uploaded = True
+                                if video_name not in uploaded_videos:
+                                    uploaded_videos.append(video_name)
+                            
+                            break
+                    
+                    # Double-check directly with upload history
+                    if not has_uploaded:
+                        video_hash = app.video_analyzer.calculate_video_hash(video_path)
+                        if video_hash and app.upload_history.is_uploaded(video_hash):
+                            has_uploaded = True
+                            if video_name not in uploaded_videos:
+                                uploaded_videos.append(video_name)
+                                
+                except Exception as e:
+                    logger.error(f"Error checking video status for {video_name}: {str(e)}")
+            
+            # If there are duplicates or already uploaded videos, confirm with user
+            skip_duplicates_uploaded = False
             if has_duplicates or has_uploaded:
-                skip_duplicates_uploaded = show_upload_confirmation(app, has_duplicates, has_uploaded, duplicate_videos, uploaded_videos)
-        
-        # Lọc danh sách video sẽ tải lên dựa vào kết quả xác nhận
-        videos_to_upload = []
-        
-        for video_name, video_path in selected_videos:
-            should_skip = False
+                skip_duplicates_uploaded = show_upload_confirmation(
+                    app, has_duplicates, has_uploaded, duplicate_videos, uploaded_videos
+                )
             
-            # Nếu người dùng chọn bỏ qua video trùng lặp và đã tải lên
+            # Filter videos based on user confirmation
             if skip_duplicates_uploaded:
-                if video_name in duplicate_videos or video_name in uploaded_videos:
-                    should_skip = True
+                videos_to_upload = [
+                    (video_name, video_path) 
+                    for video_name, video_path in selected_videos
+                    if video_name not in duplicate_videos and video_name not in uploaded_videos
+                ]
+            else:
+                videos_to_upload = selected_videos
             
-            if not should_skip:
-                videos_to_upload.append((video_name, video_path))
+            # Check if any videos remain to be uploaded
+            if not videos_to_upload:
+                messagebox.showinfo("Thông báo", "Không có video nào được tải lên sau khi lọc!")
+                return
         
-        # Kiểm tra nếu không còn video nào sau khi lọc
-        if not videos_to_upload:
-            messagebox.showinfo("Thông báo", "Không có video nào được tải lên sau khi lọc!")
-            return
-        
-        # Hiển thị modal tiến trình tải lên thay vì dùng progressbar
+        # Hiển thị modal tiến trình tải lên
         show_upload_progress_modal(app, videos_to_upload)
         
     except Exception as e:
@@ -258,6 +315,28 @@ def start_upload(app):
         logger.error(traceback.format_exc())
         messagebox.showerror("Lỗi không mong muốn", 
                            f"Đã xảy ra lỗi khi bắt đầu tải lên: {str(e)}\n\nỨng dụng vẫn hoạt động bình thường.")
+def select_unuploaded_videos(app):
+    """Chọn tất cả các video chưa tải lên trong trang hiện tại"""
+    # Get current page items
+    items = app.video_tree.get_children()
+    
+    # Check each item on the current page
+    for item_id in items:
+        # Get status and tags
+        values = app.video_tree.item(item_id, "values")
+        tags = app.video_tree.item(item_id, "tags")
+        status = values[2] if len(values) > 2 else ""
+        
+        # Select if not uploaded (no "uploaded" tag and not "Đã tải lên" status)
+        is_uploaded = ("uploaded" in tags or status == "Đã tải lên")
+        
+        # Set checkbox state based on upload status
+        if item_id in app.video_checkboxes:
+            app.video_checkboxes[item_id].set(not is_uploaded)
+    
+    # Render checkboxes to update UI
+    app.render_checkboxes()
+
 def show_upload_progress_modal(app, videos_to_upload):
     """
     Hiển thị modal hiển thị tiến trình tải lên

@@ -32,6 +32,24 @@ class CustomCheckbox(tk.Checkbutton):
         
         # Add trace to catch any changes to the variable
         self._var.trace_add("write", self._on_var_change)
+        
+        # Bind to click events directly
+        self.bind("<Button-1>", self._on_click, add="+")
+    
+    def _on_click(self, event):
+        """Handle direct clicks to ensure UI and var state match"""
+        # Ensure the app's checkboxes dictionary is updated
+        app = self.winfo_toplevel()
+        if hasattr(app, 'video_checkboxes') and self.item_id in app.video_checkboxes:
+            # Toggle the state in the app's dictionary
+            current = app.video_checkboxes[self.item_id].get()
+            app.video_checkboxes[self.item_id].set(not current)
+            
+            # Log for debugging
+            logger.info(f"Checkbox clicked: {self.item_id}, new state: {not current}")
+        
+        # Let the default handler run
+        return
     
     def _on_var_change(self, *args):
         """Called when the variable changes value"""
@@ -39,6 +57,12 @@ class CustomCheckbox(tk.Checkbutton):
         if current_value != self._last_value:
             self._last_value = current_value
             logger.info(f"Checkbox for item {self.item_id} changed to {current_value}")
+            
+            # Update app's checkbox dict if available
+            app = self.winfo_toplevel()
+            if hasattr(app, 'video_checkboxes') and self.item_id in app.video_checkboxes:
+                app.video_checkboxes[self.item_id].set(current_value)
+            
             if self._original_command:
                 self._original_command()
     
@@ -49,6 +73,13 @@ class CustomCheckbox(tk.Checkbutton):
     def set(self, value):
         """Đặt giá trị checkbox"""
         self._last_value = value  # Update last value to avoid triggering callback
+        
+        # Also update the Tkinter widget's selected state
+        if value:
+            self.select()
+        else:
+            self.deselect()
+            
         return self._var.set(value)
     
     def config(self, **kwargs):

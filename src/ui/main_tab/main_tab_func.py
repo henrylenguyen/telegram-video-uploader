@@ -15,7 +15,27 @@ logger = logging.getLogger("MainTabFunc")
 
 # ----- Checkbox and Selection Logic -----
 
-
+def select_unuploaded_videos(app):
+    """Chọn tất cả các video chưa tải lên trong trang hiện tại"""
+    # Get current page items
+    items = app.video_tree.get_children()
+    
+    # Check each item on the current page
+    for item_id in items:
+        # Get status and tags
+        values = app.video_tree.item(item_id, "values")
+        tags = app.video_tree.item(item_id, "tags")
+        status = values[2] if len(values) > 2 else ""
+        
+        # Select if not uploaded (no "uploaded" tag and not "Đã tải lên" status)
+        is_uploaded = ("uploaded" in tags or status == "Đã tải lên")
+        
+        # Set checkbox state based on upload status
+        if item_id in app.video_checkboxes:
+            app.video_checkboxes[item_id].set(not is_uploaded)
+    
+    # Render checkboxes to update UI
+    app.render_checkboxes()
 
 def refresh_video_list(app):
     """
@@ -25,7 +45,11 @@ def refresh_video_list(app):
         app: Đối tượng TelegramUploaderApp
     """
     try:
-        folder_path = app.folder_path.get()
+        # Get and sanitize folder path
+        folder_path = app.folder_path.get().strip()
+        
+        # Update the UI with the sanitized path
+        app.folder_path.set(folder_path)
         
         if not folder_path or not os.path.exists(folder_path) or not os.path.isdir(folder_path):
             messagebox.showerror("Lỗi", "Thư mục không hợp lệ hoặc không tồn tại!")
@@ -227,7 +251,6 @@ def refresh_video_list(app):
         # Do not show error message box here to prevent double errors
         if hasattr(app, 'status_var'):
             app.status_var.set(f"Lỗi làm mới danh sách: {str(e)}")
-
 def safely_render_checkboxes(app):
     """Vẽ lại checkbox với xử lý lỗi cẩn thận hơn"""
     try:
@@ -692,9 +715,9 @@ def upload_selected_video(app):
     chat_id = app.config['TELEGRAM']['chat_id']
     
     if not bot_token or not chat_id:
-        messagebox.showerror("Lỗi", "Vui lòng cấu hình Bot Token và Chat ID trong tab Cài đặt!")
-        app.notebook.select(1)  # Chuyển đến tab Cài đặt
-        return
+      messagebox.showerror("Lỗi", "Vui lòng cấu hình Bot Token và Chat ID trong tab Cài đặt!")
+      app.switch_tab(1)  # Chuyển đến tab Cài đặt (index 1)
+      return
     
     # Kết nối lại với Telegram nếu cần
     if not app.telegram_api.connected:
