@@ -42,22 +42,12 @@ class TelegramConnector:
             # Sử dụng TelegramAPI để kết nối
             if self.telegram_api.connect(bot_token):
                 logger.info("Đã kết nối với bot Telegram thành công")
-                
-                # Gửi thông báo đã kết nối
-                notification_chat_id = app.config['TELEGRAM']['notification_chat_id']
-                if notification_chat_id:
-                    try:
-                        self.telegram_api.send_message(
-                            notification_chat_id, 
-                            "✅ Ứng dụng đã kết nối thành công!"
-                        )
-                    except Exception as e:
-                        logger.error(f"Không thể gửi thông báo: {e}")
+                # Không gửi thông báo kết nối theo yêu cầu
             else:
                 logger.error("Không thể kết nối với bot Telegram")
                 
                 # Nếu không thể kết nối, kiểm tra xem có phải là lần đầu chạy hay không
-                if not app.config['TELEGRAM']['notification_chat_id'] and not app.config['TELEGRAM']['chat_id']:
+                if not app.config['TELEGRAM']['chat_id']:
                     # Hiển thị hộp thoại yêu cầu cấu hình
                     messagebox.showwarning(
                         "Cấu hình chưa hoàn tất", 
@@ -78,51 +68,46 @@ class TelegramConnector:
                         logger.info("Đã kết nối với Telegram API (Telethon) thành công")
                 except Exception as e:
                     logger.error(f"Lỗi khi kết nối Telethon: {str(e)}")
-    
     def test_telegram_connection(self, app):
-      """
-      Kiểm tra kết nối Telegram
-      
-      Args:
-          app: Đối tượng TelegramUploaderApp
-      """
-      bot_token = app.bot_token_var.get()
-      notification_chat_id = app.notification_chat_id_var.get()
-      
-      if not bot_token:
-          messagebox.showerror("Lỗi", "Vui lòng nhập Bot Token!")
-          return
-          
-      if not notification_chat_id:
-          # Nếu không có chat ID thông báo, thử dùng chat ID đích
-          notification_chat_id = app.chat_id_var.get()
-          if not notification_chat_id:
-              messagebox.showerror("Lỗi", "Vui lòng nhập Chat ID thông báo hoặc Chat ID đích!")
-              return
-      
-      # Hiển thị thông báo đang kiểm tra
-      app.status_var.set("Đang kiểm tra kết nối Telegram...")
-      app.root.update_idletasks()
-      
-      try:
-          # Vì phần telegram_api có thể chưa được khởi tạo đúng,
-          # tạo một instance mới để kiểm tra kết nối
-          from utils.telegram_api import TelegramAPI
-          temp_api = TelegramAPI()  # Esta línea tenía un problema de indentación
-          success, message = temp_api.test_connection(bot_token, notification_chat_id)
-          
-          if success:
-              # Nếu thành công, lưu lại instance
-              self.telegram_api = temp_api
-              messagebox.showinfo("Thành công", message)
-          else:
-              messagebox.showerror("Lỗi", message)
-      except Exception as e:
-          messagebox.showerror("Lỗi kết nối", f"Không thể kiểm tra kết nối: {str(e)}")
-      
-      # Khôi phục trạng thái
-      app.status_var.set("Sẵn sàng")
-    
+        """
+        Kiểm tra kết nối Telegram
+        
+        Args:
+            app: Đối tượng TelegramUploaderApp
+        """
+        bot_token = app.bot_token_var.get()
+        chat_id = app.chat_id_var.get()
+        
+        if not bot_token:
+            messagebox.showerror("Lỗi", "Vui lòng nhập Bot Token!")
+            return
+            
+        if not chat_id:
+            messagebox.showerror("Lỗi", "Vui lòng nhập Chat ID!")
+            return
+        
+        # Hiển thị thông báo đang kiểm tra
+        app.status_var.set("Đang kiểm tra kết nối Telegram...")
+        app.root.update_idletasks()
+        
+        try:
+            # Vì phần telegram_api có thể chưa được khởi tạo đúng,
+            # tạo một instance mới để kiểm tra kết nối
+            from utils.telegram_api import TelegramAPI
+            temp_api = TelegramAPI()
+            success, message = temp_api.test_connection(bot_token, chat_id)
+            
+            if success:
+                # Nếu thành công, lưu lại instance
+                self.telegram_api = temp_api
+                messagebox.showinfo("Thành công", message)
+            else:
+                messagebox.showerror("Lỗi", message)
+        except Exception as e:
+            messagebox.showerror("Lỗi kết nối", f"Không thể kiểm tra kết nối: {str(e)}")
+        
+        # Khôi phục trạng thái
+        app.status_var.set("Sẵn sàng")
     def login_telethon(self, app):
         """
         Đăng nhập vào Telethon API để tải lên file lớn
@@ -174,12 +159,11 @@ class TelegramConnector:
         # Lấy giá trị từ giao diện
         bot_token = app.bot_token_var.get()
         chat_id = app.chat_id_var.get()
-        notification_chat_id = app.notification_chat_id_var.get()
         
         # Lưu vào cấu hình
         app.config['TELEGRAM']['bot_token'] = bot_token
         app.config['TELEGRAM']['chat_id'] = chat_id
-        app.config['TELEGRAM']['notification_chat_id'] = notification_chat_id
+        app.config['TELEGRAM']['notification_chat_id'] = chat_id  # Sử dụng cùng chat_id cho thông báo
         
         # Ghi file
         app.config_manager.save_config(app.config)
@@ -191,7 +175,6 @@ class TelegramConnector:
         if bot_token != self.telegram_api.bot_token:
             self.telegram_api.disconnect()
             self.connect_telegram(app)
-    
     def save_telethon_settings(self, app):
         """
         Lưu cài đặt Telethon từ giao diện vào file cấu hình

@@ -205,6 +205,16 @@ class TelegramUploaderApp:
         self.bulk_uploader = None
         self.watcher_thread = None
     
+    def check_telegram_config(self):
+        """Check if Telegram configuration exists and show config modal if not"""
+        # Check if bot token and chat ID are configured
+        bot_token = self.config['TELEGRAM']['bot_token']
+        chat_id = self.config['TELEGRAM']['chat_id']
+        
+        if not bot_token or not chat_id:
+            # Import and show configuration modal
+            from ui.config_modal import TelegramConfigModal
+            self.root.after(500, lambda: TelegramConfigModal(self))
     def _setup_ffmpeg(self):
         """Thiết lập FFmpeg"""
         # Hiển thị thông báo cho người dùng
@@ -494,6 +504,8 @@ class TelegramUploaderApp:
                             fg="#555555",
                             font=("Arial", 10))
         status_label.pack(side=tk.LEFT)
+        # Check if Telegram is configured, and show config modal if not
+        self.check_telegram_config()
 
     def switch_tab(self, tab_index):
         """Chuyển đổi giữa các tab"""

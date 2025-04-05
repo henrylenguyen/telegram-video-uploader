@@ -58,7 +58,7 @@ def create_bot_settings_tab(app, parent):
     token_entry.grid(row=0, column=1, sticky=tk.W+tk.E, padx=5, pady=10)  # Use more padding
     
     # Chat ID đích
-    ttk.Label(telegram_frame, text="Chat ID đích:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+    ttk.Label(telegram_frame, text="Chat ID:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
     
     app.chat_id_var = tk.StringVar()
     app.chat_id_var.set(app.config['TELEGRAM']['chat_id'])
@@ -71,21 +71,6 @@ def create_bot_settings_tab(app, parent):
                             highlightbackground="#cccccc",
                             width=60)
     chat_id_entry.grid(row=1, column=1, sticky=tk.W+tk.E, padx=5, pady=10)  # Use more padding
-    
-    # Chat ID thông báo
-    ttk.Label(telegram_frame, text="Chat ID thông báo:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-    
-    app.notification_chat_id_var = tk.StringVar()
-    app.notification_chat_id_var.set(app.config['TELEGRAM']['notification_chat_id'])
-    
-    # Use larger font size instead of height property
-    notif_id_entry = tk.Entry(telegram_frame, textvariable=app.notification_chat_id_var, 
-                             font=("Arial", 14),  # Larger font makes the entry field taller
-                             relief="groove", bg="white", 
-                             highlightthickness=1,
-                             highlightbackground="#cccccc",
-                             width=60)
-    notif_id_entry.grid(row=2, column=1, sticky=tk.W+tk.E, padx=5, pady=10)  # Use more padding
     
     # Frame điều khiển
     control_frame = ttk.Frame(parent)
@@ -138,7 +123,6 @@ def create_bot_settings_tab(app, parent):
     # Chèn văn bản vào widget
     info_text.insert(tk.END, info_content)
     info_text.config(state=tk.DISABLED)  # Đặt thành chỉ đọc
-
 def create_telethon_settings_tab(app, parent):
     """Tạo giao diện cài đặt Telethon API (cho video lớn)"""
     # Frame thông tin Telethon API

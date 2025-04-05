@@ -311,8 +311,6 @@ class TelegramAPI:
             # Update progress to 15% (processing video)
             if progress_callback:
                 progress_callback(15)
-                
-            self.send_message(chat_id, start_message)
             
             # Chia nhỏ video
             video_parts = self.video_splitter.split_video(video_path)
@@ -341,10 +339,7 @@ class TelegramAPI:
                     
                     if compressed_size <= 49:
                         # Nếu đã nén xuống dưới 50MB, gửi bình thường
-                        self.send_message(
-                            chat_id,
-                            f"Video đã được nén: {file_name} ({file_size:.2f}MB → {compressed_size:.2f}MB)"
-                        )
+                        logger.info(f"Video đã được nén: {file_name} ({file_size:.2f}MB → {compressed_size:.2f}MB)")
                         
                         # Update progress to 60% (starting upload of compressed video)
                         if progress_callback:
@@ -364,10 +359,7 @@ class TelegramAPI:
                         return result
                     else:
                         # Nếu vẫn lớn hơn 50MB sau khi nén
-                        self.send_message(
-                            chat_id,
-                            f"❌ Không thể xử lý video: {file_name} (vẫn lớn hơn 50MB sau khi nén)"
-                        )
+                        logger.exception(f"❌ Không thể xử lý video: {file_name} (vẫn lớn hơn 50MB sau khi nén)")
                         return False
                 else:
                     # Không thể nén
@@ -380,7 +372,6 @@ class TelegramAPI:
             # Thông báo số lượng phần
             part_message = f"Video {file_name} ({file_size:.2f} MB) sẽ được gửi thành {len(video_parts)} phần"
             logger.info(part_message)
-            self.send_message(chat_id, part_message)
             
             # Gửi từng phần
             total_parts = len(video_parts)
@@ -411,7 +402,6 @@ class TelegramAPI:
             # Thông báo hoàn tất
             complete_message = f"✅ Đã gửi xong video: {file_name} ({len(video_parts)} phần)"
             logger.info(complete_message)
-            self.send_message(chat_id, complete_message)
             
             # Update progress to 100%
             if progress_callback:
@@ -423,10 +413,6 @@ class TelegramAPI:
             logger.error(f"Lỗi khi gửi video chia nhỏ {os.path.basename(video_path)}: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            
-            # Thông báo lỗi
-            error_message = f"❌ Lỗi khi gửi video: {os.path.basename(video_path)}\n{str(e)}"
-            self.send_message(chat_id, error_message)
             
             return False
         
@@ -454,7 +440,6 @@ class TelegramAPI:
                     self.bot.send_video(
                         chat_id=chat_id,
                         video=video_file,
-                        caption=caption,
                         width=width,
                         height=height,
                         duration=duration,
@@ -470,7 +455,7 @@ class TelegramAPI:
 
     def send_notification(self, notification_chat_id, text, disable_notification=False):
         """
-        Gửi thông báo đến chat ID nhận thông báo
+        Gửi thông báo đến chat ID nhận thông báo 
         
         Args:
             notification_chat_id (str/int): ID chat nhận thông báo
@@ -480,10 +465,9 @@ class TelegramAPI:
         Returns:
             bool: True nếu gửi thành công
         """
-        if not notification_chat_id:
-            return False
-            
-        return self.send_message(notification_chat_id, text, disable_notification)
+        # Không gửi thông báo theo yêu cầu, chỉ ghi log
+        logger.info(f"Thông báo (không gửi): {text}")
+        return True
     
     def test_connection(self, bot_token, chat_id):
         """

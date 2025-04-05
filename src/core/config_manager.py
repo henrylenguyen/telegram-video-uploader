@@ -37,7 +37,7 @@ class ConfigManager:
             config['TELEGRAM'] = {
                 'bot_token': '',
                 'chat_id': '',
-                'notification_chat_id': ''
+                'notification_chat_id': ''  # Giữ lại để tương thích ngược
             }
             config['SETTINGS'] = {
                 'video_folder': '',
@@ -70,11 +70,12 @@ class ConfigManager:
                 'phone': '',
                 'use_telethon': 'false'
             }
-            with open(self.config_file, 'w', encoding='utf-8') as configfile:
-                config.write(configfile)
+        
+        # Đảm bảo notification_chat_id luôn giống chat_id để đơn giản hóa
+        if 'TELEGRAM' in config and 'chat_id' in config['TELEGRAM']:
+            config['TELEGRAM']['notification_chat_id'] = config['TELEGRAM']['chat_id']
         
         return config
-    
     def save_config(self, config):
         """
         Lưu cấu hình vào file
