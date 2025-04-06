@@ -7,7 +7,13 @@ import os
 import threading
 import datetime
 import logging
+import time
 from ui.main_tab.main_tab_func import refresh_video_list
+from ui.components.progress_animation import (
+    create_animation_for_progress_bar,
+    ICON_PENDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR
+)
+
 logger = logging.getLogger("UploadButtonLogic")
 
 def check_duplicates_and_uploaded(app):
@@ -92,6 +98,7 @@ def check_duplicates_and_uploaded(app):
         logger.error(traceback.format_exc())
         # Return safe default values
         return False, False, [], []
+
 def show_upload_confirmation(app, has_duplicates, has_uploaded, duplicate_videos, uploaded_videos):
     """
     Hiển thị modal xác nhận tải lên khi có video trùng lặp hoặc đã tải lên
@@ -315,6 +322,7 @@ def start_upload(app):
         logger.error(traceback.format_exc())
         messagebox.showerror("Lỗi không mong muốn", 
                            f"Đã xảy ra lỗi khi bắt đầu tải lên: {str(e)}\n\nỨng dụng vẫn hoạt động bình thường.")
+
 def select_unuploaded_videos(app):
     """Chọn tất cả các video chưa tải lên trong trang hiện tại"""
     # Get current page items
@@ -339,7 +347,7 @@ def select_unuploaded_videos(app):
 
 def show_upload_progress_modal(app, videos_to_upload):
     """
-    Hiển thị modal hiển thị tiến trình tải lên
+    Hiển thị modal hiển thị tiến trình tải lên (phiên bản cải tiến)
     
     Args:
         app: Đối tượng TelegramUploaderApp
@@ -352,7 +360,7 @@ def show_upload_progress_modal(app, videos_to_upload):
     modal.grab_set()
     
     # Đặt kích thước và vị trí
-    window_width = 500
+    window_width = 600  # Rộng hơn để hiển thị đủ nội dung
     window_height = 450
     screen_width = modal.winfo_screenwidth()
     screen_height = modal.winfo_screenheight()
@@ -386,7 +394,14 @@ def show_upload_progress_modal(app, videos_to_upload):
     total_progress_frame = tk.Frame(main_frame)
     total_progress_frame.pack(fill=tk.X, pady=(0, 10))
     
-    total_progress = ttk.Progressbar(total_progress_frame, orient=tk.HORIZONTAL, length=460, mode='determinate')
+    total_progress_var = tk.DoubleVar(value=0)
+    total_progress = ttk.Progressbar(
+        total_progress_frame, 
+        orient=tk.HORIZONTAL, 
+        length=500, 
+        mode='determinate',
+        variable=total_progress_var
+    )
     total_progress.pack(fill=tk.X, side=tk.LEFT, expand=True)
     
     # Label hiển thị phần trăm
@@ -430,12 +445,14 @@ def show_upload_progress_modal(app, videos_to_upload):
     icon_labels = []
     progress_bars = []
     progress_labels = []
+    progress_vars = []  # Thêm để lưu trữ biến DoubleVar
+    progress_animations = []  # Đối tượng quản lý animation
     
     # Các biểu tượng trạng thái
-    icon_pending = "⏳"
-    icon_processing = "🔄"
-    icon_success = "✅"
-    icon_error = "❌"
+    icon_pending = ICON_PENDING
+    icon_processing = ICON_PROCESSING
+    icon_success = ICON_SUCCESS
+    icon_error = ICON_ERROR
     
     # Tạo widget cho từng video
     for i, (video_name, _) in enumerate(videos_to_upload):
@@ -490,8 +507,13 @@ def show_upload_progress_modal(app, videos_to_upload):
         progress_frame = tk.Frame(info_frame)
         progress_frame.pack(fill=tk.X)
         
+        # Progress bar với biến theo dõi
+        progress_var = tk.DoubleVar(value=0)
+        progress_vars.append(progress_var)
+        
         # Progress bar
-        progress_bar = ttk.Progressbar(progress_frame, orient=tk.HORIZONTAL, length=400, mode='determinate')
+        progress_bar = ttk.Progressbar(progress_frame, orient=tk.HORIZONTAL, length=450, mode='determinate',
+                                     variable=progress_var)
         progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
         progress_bars.append(progress_bar)
         
@@ -504,16 +526,27 @@ def show_upload_progress_modal(app, videos_to_upload):
         progress_label.pack(anchor=tk.W, fill=tk.X)
         progress_labels.append(progress_label)
         
-        # Lưu label phần trăm
-        progress_bar.percent_label = progress_percent
+        # Tạo đối tượng animation manager
+        animation = create_animation_for_progress_bar(
+            parent=modal, 
+            progress_var=progress_var, 
+            status_label=progress_label,
+            percent_label=progress_percent
+        )
+        progress_animations.append(animation)
     
-    # Frame cho các nút
+    # Frame cho nút - Đảm bảo nút đủ lớn để hiển thị text đầy đủ
     button_frame = tk.Frame(main_frame)
     button_frame.pack(fill=tk.X, pady=(10, 0))
     
+    # Container cho nút với kích thước cố định
+    button_container = tk.Frame(button_frame, height=40, width=150)  # Lớn hơn nhiều để đảm bảo đủ chỗ
+    button_container.pack_propagate(False)  # Giữ kích thước
+    button_container.pack(side=tk.RIGHT)
+    
     # Nút hủy/đóng
-    cancel_btn = tk.Button(button_frame, text="Hủy", width=15, height=2)
-    cancel_btn.pack(side=tk.RIGHT, padx=5)
+    cancel_btn = tk.Button(button_container, text="Hủy tải lên", font=("Arial", 11))
+    cancel_btn.pack(fill=tk.BOTH, expand=True)
     
     # Biến theo dõi đã hủy chưa
     is_cancelled = [False]
@@ -522,10 +555,18 @@ def show_upload_progress_modal(app, videos_to_upload):
     # Thiết lập callback cho nút hủy
     def cancel_upload():
         if upload_completed[0]:
+            # Hủy tất cả animation trước khi đóng
+            for animation in progress_animations:
+                animation.cleanup()
+            
             modal.destroy()
         else:
             is_cancelled[0] = True
             cancel_btn.config(text="Đang hủy...", state=tk.DISABLED)
+            
+            # Dừng tất cả animation
+            for animation in progress_animations:
+                animation.cancel()
     
     cancel_btn.config(command=cancel_upload)
     
@@ -540,52 +581,72 @@ def show_upload_progress_modal(app, videos_to_upload):
             self.total_videos = video_count
             self.successful_uploads = 0
             self.failed_uploads = 0
+            self.current_video_index = -1
             
+        def start_new_video(self, index):
+            """Bắt đầu tải lên video mới với index cụ thể"""
+            try:
+                if not self.is_valid or not self.modal.winfo_exists():
+                    self.is_valid = False
+                    return
+                
+                # Lưu index video hiện tại
+                self.current_video_index = index
+                
+                if 0 <= index < len(icon_labels):
+                    # Cập nhật icon
+                    icon_labels[index].config(text=icon_processing)
+                    
+                    # Bắt đầu animation
+                    progress_animations[index].start_animation(0, "Đang tải lên... ")
+                    
+                # Cập nhật UI
+                self.modal.update_idletasks()
+            except Exception as e:
+                logger.error(f"Error in start_new_video: {str(e)}")
+                
         def update_ui(self, index, status, progress_value=None, text=None):
+            """Cập nhật UI cho một video cụ thể"""
             # Check if modal still exists
             if not self.is_valid or not self.modal.winfo_exists():
                 self.is_valid = False
                 return
                 
             try:
-                # Update video progress
-                if progress_value is not None and index < len(progress_bars):
-                    progress_bars[index]['value'] = progress_value
-                    # Update percent label
-                    percent_text = f"{int(progress_value)}%"
-                    progress_bars[index].percent_label.config(text=percent_text)
-                
-                # Update text
-                if text is not None and index < len(progress_labels):
-                    progress_labels[index].config(text=text)
-                
-                # Update status icon
-                if status == "pending" and index < len(icon_labels):
-                    icon_labels[index].config(text=icon_pending)
-                elif status == "processing" and index < len(icon_labels):
-                    icon_labels[index].config(text=icon_processing)
-                elif status == "success" and index < len(icon_labels):
+                # Nếu là kết thúc thành công, đặt progress = 100%
+                if status == "success" and 0 <= index < len(progress_animations):
+                    # Đánh dấu hoàn thành đối tượng animation
+                    progress_animations[index].set_completed(True, "Tải lên thành công")
+                    
+                    # Cập nhật icon
                     icon_labels[index].config(text=icon_success)
                     self.successful_uploads += 1
-                elif status == "error" and index < len(icon_labels):
+                
+                # Nếu là kết thúc lỗi
+                elif status == "error" and 0 <= index < len(progress_animations):
+                    # Đánh dấu lỗi đối tượng animation
+                    error_text = text or "Tải lên thất bại"
+                    progress_animations[index].set_completed(False, error_text)
+                    
+                    # Cập nhật icon
                     icon_labels[index].config(text=icon_error)
                     self.failed_uploads += 1
                     
-                # Update total progress
+                # Cập nhật tổng thể
                 completed = self.successful_uploads + self.failed_uploads
                 progress_percent = (completed / self.total_videos) * 100
-                total_progress['value'] = progress_percent
+                total_progress_var.set(progress_percent)
                 percent_var.set(f"{int(progress_percent)}%")
                 total_info_var.set(f"{completed}/{self.total_videos} video hoàn thành " +
                               f"({self.successful_uploads} thành công, {self.failed_uploads} thất bại)")
                 
-                # Update UI
+                # Cập nhật UI
                 self.modal.update_idletasks()
                 
-                # If all uploads finished, change button to "Close"
+                # Nếu tất cả đã hoàn thành, đổi nút thành "Đóng"
                 if completed == self.total_videos:
                     upload_completed[0] = True
-                    cancel_btn.config(text="Đóng", state=tk.NORMAL, command=self.modal.destroy)
+                    cancel_btn.config(text="Đóng cửa sổ", state=tk.NORMAL, command=self.modal.destroy)
             except Exception as e:
                 logger.error(f"Error updating UI: {str(e)}")
                 self.is_valid = False
@@ -601,7 +662,7 @@ def show_upload_progress_modal(app, videos_to_upload):
 
 def upload_videos_thread(app, videos_to_upload, tracker, is_cancelled):
     """
-    Luồng thực hiện việc tải lên video
+    Luồng thực hiện việc tải lên video (phiên bản cải tiến)
     
     Args:
         app: Đối tượng TelegramUploaderApp
@@ -613,13 +674,20 @@ def upload_videos_thread(app, videos_to_upload, tracker, is_cancelled):
     bot_token = app.config['TELEGRAM']['bot_token']
     chat_id = app.config['TELEGRAM']['chat_id']
     
-    # Kết nối lại với Telegram nếu cần
+    # Thiết lập thời gian chờ giữa các video
+    upload_delay = int(app.config['SETTINGS'].get('delay_between_uploads', '5'))
+    rate_limit_delay = max(8, upload_delay)  # Tối thiểu 8 giây
+    
+    # Kết nối lại với Telegram API nếu cần
     if not app.telegram_api.connected:
         if not app.telegram_api.connect(bot_token):
             # Không thể kết nối với Telegram API
             for i in range(len(videos_to_upload)):
                 tracker.update_ui(i, "error", 0, "Không thể kết nối với Telegram API!")
             return
+    
+    # Kiểm tra cấu hình Telethon
+    use_telethon = app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
     
     # Tải lên từng video
     for i, (video_name, video_path) in enumerate(videos_to_upload):
@@ -628,61 +696,88 @@ def upload_videos_thread(app, videos_to_upload, tracker, is_cancelled):
             tracker.update_ui(i, "error", 0, "Đã hủy tải lên")
             continue
         
-        # Cập nhật trạng thái
-        tracker.update_ui(i, "processing", 0, "Đang chuẩn bị tải lên...")
+        # Báo hiệu bắt đầu tải video mới
+        tracker.start_new_video(i)
         
-        # Tải lên video
-        try:
-            # Không sử dụng progress_callback nữa vì TelegramAPI.send_video() không hỗ trợ
-            tracker.update_ui(i, "processing", 50, f"Đang tải lên...")
+        # Kiểm tra video có tồn tại không
+        if not os.path.exists(video_path) or not os.path.isfile(video_path):
+            tracker.update_ui(i, "error", 0, "File không tồn tại")
+            continue
             
-            # Chuẩn bị caption
-            caption = f"📹 {video_name}\n📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            
-            # Gọi hàm send_video không có progress_callback
-            success = app.telegram_api.send_video(chat_id, video_path, caption=caption)
-            
-            if success:
-                # Thêm vào lịch sử
-                video_hash = app.video_analyzer.calculate_video_hash(video_path)
-                if video_hash:
-                    file_size = os.path.getsize(video_path)
-                    # Lưu thời gian tải lên
-                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    app.upload_history.add_upload(video_hash, video_name, video_path, file_size, upload_date=now)
-                    
-                    # Cập nhật trạng thái
-                    tracker.update_ui(i, "success", 100, "Tải lên thành công")
-                    
-                    # Cập nhật trạng thái trong treeview
-                    if app.root.winfo_exists():
-                        app.root.after(0, lambda name=video_name: update_video_status(app, name))
-            else:
-                # Tải lên thất bại
-                tracker.update_ui(i, "error", 0, "Tải lên thất bại")
+        # Tính kích thước video
+        video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+        
+        # Chuẩn bị caption
+        caption = f"📹 {video_name}\n📅 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        # THÊM MỚI: Retry logic
+        max_retries = 5
+        retry_count = 0
+        upload_success = False
+        
+        while retry_count < max_retries and not upload_success and not is_cancelled[0]:
+            if retry_count > 0:
+                # Nếu là lần retry, hiển thị thông báo và đợi
+                tracker.update_ui(i, "processing", 0, f"Đang thử lại... (lần {retry_count}/{max_retries})")
                 
-        except Exception as e:
-            # Hiển thị thông báo lỗi
-            error_msg = f"Lỗi: {str(e)[:50]}"
-            tracker.update_ui(i, "error", 0, error_msg)
-            logger.error(f"Lỗi khi tải lên video {video_name}: {str(e)}")
+                # Chờ trước khi thử lại (tăng dần thời gian chờ)
+                retry_delay = rate_limit_delay * (1 + retry_count * 0.5)
+                time.sleep(retry_delay)
+            
+            try:
+                # Sử dụng phương thức tải lên phù hợp dựa trên kích thước và cấu hình
+                if use_telethon and video_size_mb > 50:
+                    # Sử dụng Telethon cho video lớn
+                    success = app.telegram_api.send_video_with_telethon(
+                        chat_id, 
+                        video_path,
+                        caption=caption
+                    )
+                else:
+                    # Sử dụng Bot API
+                    success = app.telegram_api.send_video(
+                        chat_id, 
+                        video_path,
+                        caption=caption
+                    )
+                
+                if success:
+                    # Tải lên thành công
+                    upload_success = True
+                    
+                    # Thêm vào lịch sử
+                    video_hash = app.video_analyzer.calculate_video_hash(video_path)
+                    if video_hash:
+                        file_size = os.path.getsize(video_path)
+                        # Lưu thời gian tải lên
+                        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        app.upload_history.add_upload(video_hash, video_name, video_path, file_size, upload_date=now)
+                    
+                    # Cập nhật UI
+                    tracker.update_ui(i, "success")
+                    
+                    # Cập nhật trạng thái video trong tree nếu có
+                    app.root.after(0, lambda name=video_name: update_video_status(app, name))
+                else:
+                    # Tải lên thất bại
+                    retry_count += 1
+                    if retry_count >= max_retries:
+                        tracker.update_ui(i, "error", 0, "Tất cả các lần thử đều thất bại")
+            except Exception as e:
+                # Xử lý lỗi
+                retry_count += 1
+                if retry_count >= max_retries:
+                    tracker.update_ui(i, "error", 0, f"Lỗi: {str(e)[:50]}")
+                    logger.error(f"Lỗi khi tải lên video {video_name}: {str(e)}")
+        
+        # Đợi giữa các video (nếu không phải video cuối cùng)
+        if i < len(videos_to_upload) - 1 and not is_cancelled[0] and upload_success:
+            time.sleep(rate_limit_delay)
     
-    # Cập nhật trạng thái kết thúc
-    if tracker.is_valid:
-        # Đổi nút Hủy thành Đóng
-        successful = tracker.successful_uploads
-        failed = tracker.failed_uploads
-        
-        if is_cancelled[0]:
-            app.root.after(0, lambda: messagebox.showinfo("Tải lên đã hủy", 
-                                            f"Đã hủy tải lên. Kết quả: {successful} thành công, {failed} thất bại"))
-        else:
-            app.root.after(0, lambda: messagebox.showinfo("Tải lên hoàn tất", 
-                                            f"Đã tải lên: {successful} thành công, {failed} thất bại"))
-        
-        # Làm mới danh sách video sau khi tải lên
-        # Delay a bit to ensure message box shows first
-        app.root.after(500, lambda: refresh_video_list(app))
+    # Làm mới danh sách video sau khi tải lên
+    app.root.after(500, lambda: refresh_video_list(app))
+
+
 def update_video_status(app, video_name):
     """
     Cập nhật trạng thái video trong treeview sau khi tải lên
@@ -705,6 +800,10 @@ def update_video_status(app, video_name):
                 tree_video_name = app.video_tree.item(item_id, "values")[1]
                 if tree_video_name == video_name:
                     app.video_tree.item(item_id, values=(" ", video_name, "Đã tải lên", ""), tags=("uploaded",))
+                    
+                    # Cập nhật trạng thái checkbox nếu có
+                    if item_id in app.video_checkboxes:
+                        app.video_checkboxes[item_id].set(False)
                     break
             except Exception:
                 continue

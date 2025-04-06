@@ -406,7 +406,7 @@ class TelethonUploader:
             progress_callback (function): Callback cho tiến trình tải lên
             force (bool): Bỏ qua kiểm tra kết nối nếu True
             skip_caption (bool): Không gửi caption nếu True
-            
+                
         Returns:
             bool: True nếu tải lên thành công
         """
@@ -414,8 +414,11 @@ class TelethonUploader:
         video_size_mb = 0
         if os.path.exists(video_path) and os.path.isfile(video_path):
             video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-            
+                
         logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 1] Bắt đầu tải lên video {video_name} ({video_size_mb:.2f} MB), force={force}, skip_caption={skip_caption}")
+        
+        # THAY ĐỔI: Bỏ thông báo "video ... sẽ tải qua telethon api" cho mỗi video
+        # Không hiển thị messagebox khi bắt đầu tải lên
         
         # Kiểm tra chat_id
         if not chat_id:
@@ -435,10 +438,10 @@ class TelethonUploader:
         if not os.path.exists(video_path) or not os.path.isfile(video_path):
             logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 2] File video không tồn tại: {video_path}")
             return False
-            
+                
         # Log chi tiết state
         logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 3] Trạng thái hiện tại - client exists: {self.client is not None}, connected: {self.connected}, api_id: {self.api_id is not None}, api_hash: {self.api_hash is not None}, phone: {self.phone is not None}")
-            
+                
         # Nếu force=True, bỏ qua kiểm tra kết nối
         if force:
             logger.info("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 4] Force=True, ưu tiên dùng Telethon bất kể trạng thái kết nối")
@@ -466,8 +469,8 @@ class TelethonUploader:
                             self.loop.run_until_complete(self.client.connect())
                         else:
                             self.client.connect()
-                            
-                    logger.info("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 9] Đã kết nối lại Telethon khi force=True")
+                                
+                        logger.info("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 9] Đã kết nối lại Telethon khi force=True")
                 except Exception as e:
                     logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 10] Không thể kết nối lại Telethon dù force=True: {str(e)}")
                     import traceback
@@ -477,7 +480,7 @@ class TelethonUploader:
             else:
                 logger.error("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 12] Chưa kết nối Telethon API và không có force=True")
                 return False
-                
+                    
         try:
             # Chuẩn bị biến
             video_size = os.path.getsize(video_path)
@@ -509,24 +512,36 @@ class TelethonUploader:
             processed_chat_id = self.process_chat_id_for_telethon(chat_id)
             logger.info(f"TELETHON_UPLOADER: [CHAT_ID] Đã xử lý chat_id: {processed_chat_id}")
             
+            # Khởi tạo bộ đếm thời gian và biến theo dõi tiến trình giả
+            last_update_time = time.time()
+            current_fake_progress = 0
+            
             # Tạo wrapper cho progress_callback nếu được cung cấp
             if progress_callback:
-                # Bắt đầu từ 20% vì quá trình chuẩn bị đã hoàn tất
-                last_update = time.time()
-                last_percent = 20
-                
                 def progress(current, total):
-                    nonlocal last_update, last_percent
+                    nonlocal last_update_time, current_fake_progress
                     
-                    # Tính phần trăm (từ 20% đến 90%)
-                    percent = 20 + int(70.0 * current / total)
+                    # Tính phần trăm thực tế từ cập nhật của Telethon
+                    real_percent = int(100.0 * current / total) if total > 0 else 0
                     
-                    # Chỉ cập nhật mỗi 1% thay đổi và không thường xuyên hơn mỗi 0.5 giây
+                    # Cập nhật giá trị tiến trình theo thời gian (cứ 2s tăng 10%)
                     current_time = time.time()
-                    if (percent > last_percent or current == total) and current_time - last_update > 0.5:
-                        progress_callback(percent)
-                        last_percent = percent
-                        last_update = current_time
+                    if current_time - last_update_time > 2:
+                        current_fake_progress += 10
+                        if current_fake_progress > 90:
+                            current_fake_progress = 90  # Giữ ở 90% cho đến khi hoàn thành
+                        
+                        # Sử dụng giá trị cao hơn giữa tiến trình thực tế và tiến trình giả
+                        display_percent = max(current_fake_progress, real_percent)
+                        if display_percent > 90 and real_percent < 100:
+                            display_percent = 90  # Giữ ở 90% cho đến khi thực sự hoàn thành
+                        
+                        progress_callback(display_percent)
+                        last_update_time = current_time
+                    
+                    # Nếu đã hoàn thành thực sự (real_percent = 100), đặt thành 100%
+                    if real_percent >= 100:
+                        progress_callback(100)
             else:
                 progress = None
             
@@ -628,42 +643,89 @@ class TelethonUploader:
                         logger.info("TELETHON_UPLOADER: Kết nối lại lần cuối cùng trước khi gửi...")
                         await self.client.connect()
                     
-                    try:
-                        result = await self.client.send_file(
-                            entity,
-                            video_path,
-                            caption=final_caption,  # Sử dụng final_caption đã xử lý
-                            progress_callback=progress,
-                            supports_streaming=True,
-                            silent=disable_notification,
-                            attributes=[DocumentAttributeVideo(
-                                duration=duration,  # Thời lượng video tính bằng giây
-                                w=width,            # Chiều rộng video
-                                h=height,           # Chiều cao video
-                                supports_streaming=True
-                            )]
-                        )
-                        
-                        # Đặt tiến trình thành 100% nếu thành công
-                        if progress_callback:
-                            progress_callback(100)
-                        
-                        logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 22] Tải lên thành công: {result is not None}")
-                        return result is not None
-                    except ValueError as e:
-                        if 'Cannot find any entity' in str(e):
-                            logger.error(f"TELETHON_UPLOADER: [LỖI CHAT] Chat/Channel không tồn tại hoặc bạn không phải thành viên")
-                            error_msg = (f"Không thể gửi tin nhắn đến chat_id={chat_id}.\n"
-                                        f"Hãy đảm bảo ID hợp lệ và bạn là thành viên của chat/channel này.\n"
-                                        f"Lỗi: {str(e)}")
-                            raise ValueError(error_msg)
-                        raise
+                    # THÊM MỚI: Logic tự động thử lại khi gặp giới hạn tốc độ
+                    max_retries = 5  # Tối đa 5 lần thử
+                    retry_count = 0
+                    retry_delay = 8  # Bắt đầu với 8 giây
+                    
+                    while retry_count < max_retries:
+                        try:
+                            result = await self.client.send_file(
+                                entity,
+                                video_path,
+                                caption=final_caption,  # Sử dụng final_caption đã xử lý
+                                progress_callback=progress,
+                                supports_streaming=True,
+                                silent=disable_notification,
+                                attributes=[DocumentAttributeVideo(
+                                    duration=duration,  # Thời lượng video tính bằng giây
+                                    w=width,            # Chiều rộng video
+                                    h=height,           # Chiều cao video
+                                    supports_streaming=True
+                                )]
+                            )
+                            
+                            # Đặt tiến trình thành 100% nếu thành công
+                            if progress_callback:
+                                progress_callback(100)
+                            
+                            logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 22] Tải lên thành công: {result is not None}")
+                            return result is not None
+                            
+                        except Exception as e:
+                            retry_count += 1
+                            error_msg = str(e)
+                            
+                            # Xử lý lỗi rate limit
+                            if "FloodWaitError" in error_msg or "Too many requests" in error_msg:
+                                wait_time = retry_delay
+                                
+                                # Trích xuất thời gian chờ từ lỗi nếu có
+                                try:
+                                    import re
+                                    time_match = re.search(r'(\d+)', error_msg)
+                                    if time_match:
+                                        wait_time = int(time_match.group(1))
+                                except:
+                                    pass
+                                    
+                                logger.warning(f"TELETHON_UPLOADER: Rate limited, chờ {wait_time}s trước khi thử lại (lần {retry_count}/{max_retries})")
+                                
+                                # Đợi thời gian chỉ định
+                                await asyncio.sleep(wait_time)
+                                
+                                # Tăng thời gian chờ cho lần sau
+                                retry_delay = min(retry_delay * 1.5, 60)  # Tối đa 60 giây
+                            else:
+                                # Lỗi khác, không phải rate limit
+                                logger.error(f"TELETHON_UPLOADER: Lỗi khi tải lên (lần {retry_count}/{max_retries}): {error_msg}")
+                                
+                                if retry_count < max_retries:
+                                    # Đợi trước khi thử lại
+                                    await asyncio.sleep(retry_delay)
+                                    retry_delay = min(retry_delay * 1.5, 60)
+                                else:
+                                    # Hết số lần thử
+                                    logger.error(f"TELETHON_UPLOADER: Đã thử {max_retries} lần nhưng vẫn thất bại")
+                                    raise
+                    
+                    # Nếu đến đây tức là đã thử hết số lần nhưng vẫn thất bại
+                    return False
+                            
+                except ValueError as e:
+                    if 'Cannot find any entity' in str(e):
+                        logger.error(f"TELETHON_UPLOADER: [LỖI CHAT] Chat/Channel không tồn tại hoặc bạn không phải thành viên")
+                        error_msg = (f"Không thể gửi tin nhắn đến chat_id={chat_id}.\n"
+                                    f"Hãy đảm bảo ID hợp lệ và bạn là thành viên của chat/channel này.\n"
+                                    f"Lỗi: {str(e)}")
+                        raise ValueError(error_msg)
+                    raise
                 except Exception as e:
                     logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 23] Lỗi khi tải lên video qua Telethon: {str(e)}")
                     import traceback
                     logger.error(f"TELETHON_UPLOADER: [STACK TRACE] {traceback.format_exc()}")
                     return False
-            
+                
             async def _find_in_dialogs(search_id):
                 """Tìm kiếm entity trong danh sách dialogs"""
                 logger.info(f"TELETHON_UPLOADER: [TÌM TRONG DIALOGS] Bắt đầu tìm kiếm: {search_id}")
@@ -743,7 +805,7 @@ class TelethonUploader:
                 else:
                     # Các lỗi khác
                     raise e
-                
+                    
         except Exception as e:
             logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 27] ❌ Lỗi khi tải lên video qua Telethon: {str(e)}")
             import traceback
@@ -762,7 +824,7 @@ class TelethonUploader:
                 pass
             
             return False
-            
+
     def is_connected(self):
         """Kiểm tra xem client có kết nối và được ủy quyền không"""
         if not self.client:

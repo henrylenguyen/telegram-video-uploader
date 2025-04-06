@@ -7,13 +7,17 @@ import time
 import threading
 import logging
 from PIL import Image, ImageTk
+from ui.components.progress_animation import (
+    create_animation_for_progress_bar,
+    ICON_PENDING, ICON_PROCESSING, ICON_SUCCESS, ICON_ERROR
+)
 
 logger = logging.getLogger("UploadProgressDialog")
 
 class UploadProgressDialog:
     """
     Cửa sổ modal hiển thị tiến trình tải lên video lên Telegram.
-    Hỗ trợ hiển thị tiến trình tải từng phần khi video được chia nhỏ.
+    Phiên bản cải tiến với thanh tiến trình sinh động.
     """
     
     def __init__(self, parent, title="Đang tải lên", total_videos=1):
@@ -39,28 +43,27 @@ class UploadProgressDialog:
         self.icon_labels = []
         self.status_vars = []
         self.video_names = []
+        self.animations = []  # Lưu các đối tượng animation
         
         # Biểu tượng
-        self.icon_pending = "⏳"
-        self.icon_loading = "⌛"
-        self.icon_success = "✅"
-        self.icon_error = "❌"
+        self.icon_pending = ICON_PENDING
+        self.icon_loading = ICON_PROCESSING
+        self.icon_success = ICON_SUCCESS
+        self.icon_error = ICON_ERROR
         
         # Khởi tạo modal
         self.create_dialog()
     
     def create_dialog(self):
-        """Tạo dialog tiến trình"""
+        """Tạo dialog tiến trình với kích thước lớn hơn cho các button"""
         # Tạo top level window
         self.dialog = tk.Toplevel(self.parent)
         self.dialog.title(self.title)
-        
-        # Thiết lập thuộc tính modal
         self.dialog.transient(self.parent)
         self.dialog.grab_set()
         
         # Đặt kích thước và vị trí
-        window_width = 600
+        window_width = 650  # Rộng hơn một chút
         window_height = 300 + min(self.total_videos * 40, 300)
         
         # Đặt vị trí giữa màn hình
@@ -99,7 +102,7 @@ class UploadProgressDialog:
         self.overall_progress = ttk.Progressbar(
             main_frame,
             variable=self.overall_var,
-            length=550,
+            length=600,  # Dài hơn một chút
             mode="determinate"
         )
         self.overall_progress.pack(fill=tk.X, pady=(0, 15))
@@ -119,7 +122,7 @@ class UploadProgressDialog:
         canvas.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         
         # Đặt videos_frame vào canvas
-        canvas_window = canvas.create_window((0, 0), window=self.videos_frame, anchor="nw", width=550)
+        canvas_window = canvas.create_window((0, 0), window=self.videos_frame, anchor="nw", width=600)
         
         # Đặt canvas và scrollbar
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -157,7 +160,7 @@ class UploadProgressDialog:
             progress_bar = ttk.Progressbar(
                 info_frame,
                 variable=progress_var,
-                length=450,
+                length=480,  # Dài hơn một chút
                 mode="determinate"
             )
             progress_bar.pack(fill=tk.X, pady=(0, 2))
@@ -170,18 +173,36 @@ class UploadProgressDialog:
             status_label = ttk.Label(info_frame, textvariable=status_var, font=("Arial", 8))
             status_label.pack(anchor=tk.W)
             self.status_labels.append(status_label)
+            
+            # Tạo animation manager cho từng video
+            animation = create_animation_for_progress_bar(
+                parent=self.dialog,
+                progress_var=progress_var,
+                status_label=status_var,
+                callback=self._on_progress_update
+            )
+            self.animations.append(animation)
         
-        # Nút hủy/đóng
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(pady=15)
+        # Frame nút
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=15)
         
+        # Container cho nút với kích thước cố định
+        btn_container = ttk.Frame(btn_frame, width=150, height=40)  # Kích thước lớn hơn cho nút
+        btn_container.pack_propagate(False)  # Giữ kích thước
+        btn_container.pack()
+        
+        # Nút hủy/đóng (đảm bảo luôn hiển thị đầy đủ chữ)
         self.cancel_btn = ttk.Button(
-            button_frame,
-            text="Hủy",
-            command=self.cancel_upload,
-            width=15
+            btn_container,
+            text="Hủy tải lên",  # Tên dài hơn, rõ ràng hơn
+            command=self.cancel_upload
         )
-        self.cancel_btn.pack()
+        self.cancel_btn.pack(fill=tk.BOTH, expand=True)
+    
+    def _on_progress_update(self, progress):
+        """Callback khi tiến trình thay đổi, cập nhật tiến trình tổng thể"""
+        self.update_overall_progress()
     
     def on_close(self):
         """Xử lý khi đóng cửa sổ"""
@@ -190,17 +211,28 @@ class UploadProgressDialog:
                 self.cancel_upload()
                 self.dialog.destroy()
         else:
+            # Hủy tất cả animation
+            for animation in self.animations:
+                animation.cleanup()
+            
             self.dialog.destroy()
     
     def cancel_upload(self):
         """Hủy quá trình tải lên"""
         self.is_cancelled = True
-        self.cancel_btn.config(state=tk.DISABLED)
+        self.cancel_btn.config(text="Đang hủy...", state=tk.DISABLED)
+        
+        # Hủy tất cả animation
+        for animation in self.animations:
+            animation.cancel()
         
         # Cập nhật trạng thái các video chưa tải
         for i in range(self.current_video, self.total_videos):
             self.status_vars[i].set("Đã hủy")
             self.icon_labels[i].config(text=self.icon_error)
+        
+        # Thay đổi nút
+        self.cancel_btn.config(text="Đóng cửa sổ", state=tk.NORMAL, command=self.dialog.destroy)
             
         # Thông báo hủy tải
         logger.info("Người dùng đã hủy quá trình tải lên video")
@@ -219,6 +251,10 @@ class UploadProgressDialog:
         self.dialog.after(0, lambda: self.status_vars[index].set("Đang tải lên..."))
         self.dialog.after(0, lambda: self.icon_labels[index].config(text=self.icon_loading))
         self.dialog.after(0, self.update_overall_progress)
+        
+        # Bắt đầu animation tiến trình
+        if 0 <= index < len(self.animations):
+            self.animations[index].start_animation(0, "Đang tải lên... ")
     
     def set_video_parts(self, total_parts):
         """Đặt tổng số phần của video hiện tại"""
@@ -226,7 +262,13 @@ class UploadProgressDialog:
         self.current_part = 0
     
     def update_part_progress(self, part_index, progress):
-        """Cập nhật tiến trình của phần hiện tại"""
+        """
+        Cập nhật tiến trình của phần hiện tại
+        
+        Args:
+            part_index: Chỉ số phần hiện tại (1-based)
+            progress: Giá trị tiến trình (0-100)
+        """
         self.current_part = part_index
         
         # Tính toán tiến trình tổng thể của video hiện tại
@@ -249,19 +291,19 @@ class UploadProgressDialog:
     
     def complete_video(self, index, success=True):
         """Đánh dấu video đã hoàn tất"""
-        def update_ui():
-            if 0 <= index < len(self.status_vars):
-                if success:
-                    self.status_vars[index].set("Hoàn tất")
-                    self.icon_labels[index].config(text=self.icon_success)
-                    self.progress_vars[index].set(100)
-                else:
-                    self.status_vars[index].set("Lỗi")
-                    self.icon_labels[index].config(text=self.icon_error)
+        if 0 <= index < len(self.animations):
+            # Dừng animation và đặt trạng thái hoàn tất
+            completion_text = "Hoàn tất" if success else "Lỗi"
+            self.animations[index].set_completed(success, completion_text)
             
-            self.update_overall_progress()
-        
-        self.dialog.after(0, update_ui)
+            # Cập nhật icon và UI khác
+            def update_ui():
+                if 0 <= index < len(self.icon_labels):
+                    icon = self.icon_success if success else self.icon_error
+                    self.icon_labels[index].config(text=icon)
+                self.update_overall_progress()
+            
+            self.dialog.after(0, update_ui)
     
     def update_overall_progress(self):
         """Cập nhật tiến trình tổng thể"""
@@ -278,10 +320,17 @@ class UploadProgressDialog:
     
     def complete_all(self):
         """Đánh dấu tất cả quá trình đã hoàn tất"""
+        # Dừng tất cả animation
+        for animation in self.animations:
+            animation.cleanup()
+        
         def update_ui():
             self.current_video = self.total_videos
             self.overall_var.set(100)
-            self.cancel_btn.config(text="Đóng", command=self.dialog.destroy)
+            
+            # Đảm bảo nút hiển thị đầy đủ chữ
+            button_text = "Đóng cửa sổ"  # Dài hơn để đảm bảo button đủ rộng
+            self.cancel_btn.config(text=button_text, command=self.dialog.destroy)
             self.dialog.title("Hoàn tất tải lên")
         
         self.dialog.after(0, update_ui)
