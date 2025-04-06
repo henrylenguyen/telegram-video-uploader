@@ -48,13 +48,13 @@ class TelegramEditModal:
         self.modal.transient(self.app.root)
         self.modal.grab_set()
         
-        # Set fullscreen size
+        # Set window size
         screen_width = self.modal.winfo_screenwidth()
         screen_height = self.modal.winfo_screenheight()
         
         # Adjust to keep some margin
-        window_width = screen_width - 100
-        window_height = screen_height - 100
+        window_width = min(800, screen_width - 100)
+        window_height = min(600, screen_height - 100)
         
         x = (screen_width - window_width) // 2
         y = (screen_height - window_height) // 2
@@ -85,7 +85,8 @@ class TelegramEditModal:
         test_btn = ttk.Button(
             btn_frame, 
             text="Kiểm tra kết nối", 
-            command=self.test_connection
+            command=self.test_connection,
+            width=20  # Wider button
         )
         test_btn.pack(side=tk.LEFT)
         
@@ -93,7 +94,8 @@ class TelegramEditModal:
         cancel_btn = ttk.Button(
             btn_frame, 
             text="Hủy", 
-            command=self.modal.destroy
+            command=self.modal.destroy,
+            width=15  # Wider button
         )
         cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
         
@@ -101,7 +103,8 @@ class TelegramEditModal:
         save_btn = ttk.Button(
             btn_frame, 
             text="Lưu cài đặt", 
-            command=self.save_settings
+            command=self.save_settings,
+            width=15  # Wider button
         )
         save_btn.pack(side=tk.RIGHT)
         
@@ -186,8 +189,17 @@ class TelegramEditModal:
         # Close modal
         self.modal.destroy()
         
-        # Refresh settings tab
-        self.app.notebook.select(self.app.notebook.index("current"))
+        # Refresh current tab - Compatible with custom tab navigation
+        if hasattr(self.app, 'switch_tab') and hasattr(self.app, 'tab_buttons'):
+            # Find which tab is currently active by checking button colors
+            current_tab = 0  # Default to first tab
+            for i, btn in enumerate(self.app.tab_buttons):
+                if btn.cget("bg") == "#2E86C1" or btn.cget("bg") == "#4a7ebb":  # Active tab color
+                    current_tab = i
+                    break
+            
+            # Refresh the current tab
+            self.app.switch_tab(current_tab)
 
 
 class TelethonEditModal:
@@ -229,13 +241,13 @@ class TelethonEditModal:
         self.modal.transient(self.app.root)
         self.modal.grab_set()
         
-        # Set fullscreen size
+        # Set window size
         screen_width = self.modal.winfo_screenwidth()
         screen_height = self.modal.winfo_screenheight()
         
         # Adjust to keep some margin
-        window_width = screen_width - 100
-        window_height = screen_height - 100
+        window_width = min(800, screen_width - 100)
+        window_height = min(700, screen_height - 100)
         
         x = (screen_width - window_width) // 2
         y = (screen_height - window_height) // 2
@@ -280,12 +292,13 @@ class TelethonEditModal:
         otp_entry_container, otp_entry = self.create_fixed_height_entry(otp_container, self.otp_var)
         otp_entry_container.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
         
-        # OTP button with fixed height
-        btn_container = ttk.Frame(otp_container, height=40, width=80)
+        # OTP button with fixed height and increased width
+        btn_container = ttk.Frame(otp_container, height=40, width=150)  # Increased width
         btn_container.pack_propagate(False)
         btn_container.pack(side=tk.RIGHT)
         
-        self.otp_button = ttk.Button(btn_container, text="Lấy", command=self.request_otp)
+        self.otp_button = ttk.Button(btn_container, text="Lấy mã xác thực", width=20)  # Wider button with clearer text
+        self.otp_button.config(command=self.request_otp)
         self.otp_button.pack(fill=tk.BOTH, expand=True)
         
         # Footer with buttons
@@ -296,7 +309,8 @@ class TelethonEditModal:
         cancel_btn = ttk.Button(
             btn_frame, 
             text="Hủy", 
-            command=self.modal.destroy
+            command=self.modal.destroy,
+            width=15  # Wider button
         )
         cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
         
@@ -304,7 +318,8 @@ class TelethonEditModal:
         self.save_button = ttk.Button(
             btn_frame, 
             text="Lưu cài đặt", 
-            command=self.save_settings
+            command=self.save_settings,
+            width=15  # Wider button
         )
         self.save_button.pack(side=tk.RIGHT)
         
@@ -314,7 +329,7 @@ class TelethonEditModal:
     def request_otp(self):
         """Request OTP for Telethon verification or verify OTP"""
         # Nếu nút đang ở trạng thái "Xác thực", thực hiện xác thực OTP
-        if self.otp_button.cget("text") == "Xác thực":
+        if self.otp_button.cget("text") == "Xác thực mã OTP":
             self.verify_otp_directly()
             return
             
@@ -405,10 +420,11 @@ if __name__ == "__main__":
                                 if 'phone_code_hash' in response:
                                     self.phone_code_hash = response['phone_code_hash']
                                 
-                                # Đổi nút "Lấy" thành "Xác thực"
+                                # Đổi nút "Lấy mã xác thực" thành "Xác thực mã OTP"
                                 self.app.root.after(0, lambda: self.otp_button.config(
-                                    text="Xác thực", 
-                                    state=tk.NORMAL
+                                    text="Xác thực mã OTP", 
+                                    state=tk.NORMAL,
+                                    width=20  # Maintain wider button
                                 ))
                                 
                                 # Vô hiệu hóa nút Lưu cài đặt cho đến khi xác thực xong
@@ -416,7 +432,7 @@ if __name__ == "__main__":
                                 
                                 self.app.root.after(0, lambda: messagebox.showinfo(
                                     "Mã xác thực", 
-                                    f"Mã xác thực đã được gửi đến {phone}. Vui lòng nhập mã vào ô OTP và nhấn 'Xác thực'."
+                                    f"Mã xác thực đã được gửi đến {phone}. Vui lòng nhập mã vào ô OTP và nhấn 'Xác thực mã OTP'."
                                 ))
                                 return
                         except json.JSONDecodeError:
@@ -428,16 +444,24 @@ if __name__ == "__main__":
                         "Lỗi", 
                         f"Không thể gửi mã xác thực: {error_msg}"
                     ))
-                    # Nút trở lại là "Lấy"
-                    self.app.root.after(0, lambda: self.otp_button.config(text="Lấy", state=tk.NORMAL))
+                    # Nút trở lại là "Lấy mã xác thực"
+                    self.app.root.after(0, lambda: self.otp_button.config(
+                        text="Lấy mã xác thực", 
+                        state=tk.NORMAL, 
+                        width=20  # Maintain wider button
+                    ))
                     
                 except Exception as e:
                     self.app.root.after(0, lambda: messagebox.showerror(
                         "Lỗi", 
                         f"Không thể gửi mã xác thực: {str(e)}"
                     ))
-                    # Nút trở lại là "Lấy"
-                    self.app.root.after(0, lambda: self.otp_button.config(text="Lấy", state=tk.NORMAL))
+                    # Nút trở lại là "Lấy mã xác thực"
+                    self.app.root.after(0, lambda: self.otp_button.config(
+                        text="Lấy mã xác thực", 
+                        state=tk.NORMAL, 
+                        width=20  # Maintain wider button
+                    ))
             
             # Run in a separate thread to avoid blocking UI
             threading.Thread(target=request_telethon_code, daemon=True).start()
@@ -446,7 +470,7 @@ if __name__ == "__main__":
             messagebox.showerror("Lỗi", "API ID phải là một số nguyên!")
         except Exception as e:
             messagebox.showerror("Lỗi", f"Lỗi khi yêu cầu mã OTP: {str(e)}")
-            self.otp_button.config(text="Lấy", state=tk.NORMAL)
+            self.otp_button.config(text="Lấy mã xác thực", state=tk.NORMAL, width=20)
     
     def verify_otp_directly(self):
         """Xác thực OTP được gọi trực tiếp từ nút"""
@@ -470,8 +494,9 @@ if __name__ == "__main__":
             self.app.root.after(0, lambda: self.save_button.config(state=tk.NORMAL))
             # Change button text to show completion
             self.app.root.after(0, lambda: self.otp_button.config(
-                text="✓ Đã xác thực", 
-                state=tk.DISABLED
+                text="✓ Đã xác thực thành công", 
+                state=tk.DISABLED,
+                width=25  # Wider for longer text
             ))
             # Show success message
             self.app.root.after(0, lambda: messagebox.showinfo(
@@ -481,8 +506,9 @@ if __name__ == "__main__":
         else:
             # Reset button
             self.app.root.after(0, lambda: self.otp_button.config(
-                text="Xác thực", 
-                state=tk.NORMAL
+                text="Xác thực mã OTP", 
+                state=tk.NORMAL,
+                width=20  # Maintain wider button
             ))
     
     def verify_otp(self):
@@ -591,7 +617,7 @@ if __name__ == "__main__":
         
         # If Telethon verification is in progress, check if it's completed
         if self.telethon_verification_in_progress:
-            if self.otp_button.cget("text") != "✓ Đã xác thực":
+            if self.otp_button.cget("text") != "✓ Đã xác thực thành công":
                 messagebox.showerror("Lỗi", "Vui lòng hoàn thành xác thực OTP trước khi lưu cài đặt!")
                 return
         
@@ -623,5 +649,14 @@ if __name__ == "__main__":
         # Close modal
         self.modal.destroy()
         
-        # Refresh settings tab
-        self.app.notebook.select(self.app.notebook.index("current"))
+        # Refresh current tab - Compatible with custom tab navigation
+        if hasattr(self.app, 'switch_tab') and hasattr(self.app, 'tab_buttons'):
+            # Find which tab is currently active by checking button colors
+            current_tab = 0  # Default to first tab
+            for i, btn in enumerate(self.app.tab_buttons):
+                if btn.cget("bg") == "#2E86C1" or btn.cget("bg") == "#4a7ebb":  # Active tab color
+                    current_tab = i
+                    break
+            
+            # Refresh the current tab
+            self.app.switch_tab(current_tab)

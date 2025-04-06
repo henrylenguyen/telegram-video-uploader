@@ -166,55 +166,85 @@ class TelegramUploaderApp:
         """
         self.root.after(0, lambda: stringvar.set(value))
         
+
     def _initialize_components(self):
-        """Khởi tạo các thành phần của ứng dụng"""
-        # Biến trạng thái
+        """Enhanced component initialization with better error handling"""
+        # Status variables
         self.is_uploading = False
         self.should_stop = False
-        self.current_frames = []  # Lưu trữ các frame hiện tại
+        self.current_frames = []  # Store current frames
         self.auto_upload_active = False
         
-        # Khởi tạo quản lý cấu hình
+        # Initialize configuration manager
         self.config_manager = ConfigManager()
         self.config = self.config_manager.load_config()
         
-        # Khởi tạo các thành phần khác
+        # Initialize other components
         self.ffmpeg_manager = FFmpegManager()
-        # Thiết lập FFmpeg
-        self._setup_ffmpeg()
+        # Setup FFmpeg with error handling
+        try:
+            self._setup_ffmpeg()
+        except Exception as e:
+            logger.error(f"Error setting up FFmpeg: {str(e)}")
+            # Continue anyway - FFmpeg errors will be handled when needed
         
-        history_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'upload_history.json')
-        self.upload_history = UploadHistory(history_file)
+        # Initialize history
+        try:
+            history_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'upload_history.json')
+            self.upload_history = UploadHistory(history_file)
+        except Exception as e:
+            logger.error(f"Error initializing upload history: {str(e)}")
+            # Create empty history as fallback
+            self.upload_history = UploadHistory()
         
+        # Initialize video analyzer
         self.video_analyzer = VideoAnalyzer()
-        self.videos = {}  # Dict lưu thông tin video
-        self.duplicate_groups = []  # Danh sách các nhóm video trùng lặp
+        self.videos = {}  # Dict to store video info
+        self.duplicate_groups = []  # List of duplicate video groups
         
-        # Khởi tạo kết nối Telegram
-        self.telegram_connector = TelegramConnector(self)
-        self.telegram_api = self.telegram_connector.telegram_api
-        self.telethon_uploader = self.telegram_connector.telethon_uploader
+        # Initialize Telegram connection with error handling
+        try:
+            self.telegram_connector = TelegramConnector(self)
+            self.telegram_api = self.telegram_connector.telegram_api
+            self.telethon_uploader = self.telegram_connector.telethon_uploader
+        except Exception as e:
+            logger.error(f"Error initializing Telegram connection: {str(e)}")
+            # Create minimal instances as fallback
+            from utils.telegram_api import TelegramAPI
+            from utils.telethon_uploader import TelethonUploader
+            self.telegram_api = TelegramAPI()
+            self.telethon_uploader = TelethonUploader()
         
-        # Khởi tạo quản lý tải lên
+        # Initialize upload manager
         self.uploader = Uploader(self)
         self.upload_queue = Queue()
         
-        # Khởi tạo quản lý tải lên tự động
+        # Initialize auto upload manager
         self.auto_uploader_manager = AutoUploaderManager(self)
         self.auto_uploader = None
         self.bulk_uploader = None
         self.watcher_thread = None
-    
+
+
     def check_telegram_config(self):
-        """Check if Telegram configuration exists and show config modal if not"""
+        """Enhanced Telegram configuration check with improved dialog handling"""
         # Check if bot token and chat ID are configured
         bot_token = self.config['TELEGRAM']['bot_token']
         chat_id = self.config['TELEGRAM']['chat_id']
         
         if not bot_token or not chat_id:
             # Import and show configuration modal
-            from ui.config_modal import TelegramConfigModal
-            self.root.after(500, lambda: TelegramConfigModal(self))
+            try:
+                from ui.config_modal import TelegramConfigModal
+                # Use after() to ensure the UI is fully loaded first
+                self.root.after(1000, lambda: TelegramConfigModal(self))
+            except Exception as e:
+                logger.error(f"Error showing config modal: {str(e)}")
+                # Fallback to simple message
+                messagebox.showwarning(
+                    "Cấu hình chưa hoàn tất", 
+                    "Bạn cần cấu hình thông tin Telegram trong tab Cài đặt."
+                )
     def _setup_ffmpeg(self):
         """Thiết lập FFmpeg"""
         # Hiển thị thông báo cho người dùng
@@ -508,12 +538,12 @@ class TelegramUploaderApp:
         self.check_telegram_config()
 
     def switch_tab(self, tab_index):
-        """Chuyển đổi giữa các tab"""
-        # Update button styling
+        """Improved tab switching with proper visual feedback"""
+        # Update button styling for main tabs
         for i, btn in enumerate(self.tab_buttons):
             if i == tab_index:
                 btn.config(
-                    bg="#2E86C1",  # Change to blue color
+                    bg="#2E86C1",  # Blue color for active tab
                     fg="white",    # White text for better contrast
                     relief="flat",
                     bd=1,
@@ -533,7 +563,7 @@ class TelegramUploaderApp:
                     highlightthickness=0,
                     font=("Arial", 11)
                 )
-                # Add hover effect back for inactive tabs
+                # Re-add hover effect for inactive tabs
                 btn.bind("<Enter>", lambda e, b=btn: b.config(bg="#E5E5E5"))
                 btn.bind("<Leave>", lambda e, b=btn: b.config(bg="#EDEDED"))
         
@@ -544,6 +574,12 @@ class TelegramUploaderApp:
         # Show selected content
         self.content_frames[tab_index].pack(fill=tk.BOTH, expand=True)
         self.current_content = self.content_frames[tab_index]
+        
+        # Reset any sub-tabs if present
+        # This ensures sub-tabs are reset when switching main tabs
+        if hasattr(self, 'show_tab') and tab_index == 1:  # If switching to Settings tab
+            # Reset to first sub-tab
+            self.show_tab(0)
     def show_content(self, index):
         """Hiển thị nội dung của tab đã chọn"""
         # Hide current content if exists

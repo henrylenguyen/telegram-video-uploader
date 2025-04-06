@@ -1,209 +1,119 @@
 """
-Module quản lý kết nối với Telegram API.
+Module for connecting to Telegram services
 """
+
 import logging
-import tkinter as tk
 from tkinter import messagebox
-from datetime import datetime
+from utils.telegram_api import TelegramAPI
+from utils.telethon_uploader import TelethonUploader
 
 logger = logging.getLogger("TelegramConnector")
 
 class TelegramConnector:
     """
-    Quản lý việc kết nối và tương tác với Telegram API.
+    Class để kết nối với Telegram sử dụng cả Bot API và Telethon API
     """
     
     def __init__(self, app):
         """
-        Khởi tạo TelegramConnector.
+        Khởi tạo Telegram connector
         
         Args:
-            app: Đối tượng TelegramUploaderApp
+            app: TelegramUploaderApp instance
         """
-        from utils.telegram_api import TelegramAPI
-        from utils.telethon_uploader import TelethonUploader
-        
+        self.app = app
         self.telegram_api = TelegramAPI()
         self.telethon_uploader = TelethonUploader()
         
-        # Kết nối ban đầu
+        # Kết nối với Telegram
         self.connect_telegram(app)
     
     def connect_telegram(self, app):
         """
-        Kết nối với bot Telegram
+        Kết nối với Telegram sử dụng cả Bot API và Telethon API
         
         Args:
-            app: Đối tượng TelegramUploaderApp
+            app: TelegramUploaderApp instance
         """
+        # Kết nối với Telegram Bot API
         bot_token = app.config['TELEGRAM']['bot_token']
         
         if bot_token:
-            # Sử dụng TelegramAPI để kết nối
+            # Kết nối với Telegram Bot API
             if self.telegram_api.connect(bot_token):
                 logger.info("Đã kết nối với bot Telegram thành công")
-                # Không gửi thông báo kết nối theo yêu cầu
             else:
                 logger.error("Không thể kết nối với bot Telegram")
                 
-                # Nếu không thể kết nối, kiểm tra xem có phải là lần đầu chạy hay không
+                # Hiển thị hộp thoại cấu hình nếu đây là lần chạy đầu tiên
                 if not app.config['TELEGRAM']['chat_id']:
-                    # Hiển thị hộp thoại yêu cầu cấu hình
                     messagebox.showwarning(
                         "Cấu hình chưa hoàn tất", 
                         "Bạn cần cấu hình thông tin Telegram. Vui lòng nhập thông tin trong tab Cài đặt."
                     )
         
-        # Kết nối Telethon nếu có thông tin cấu hình
+        # Kết nối với Telethon API nếu được cấu hình
+        self._connect_telethon(app)
+        
+    def _connect_telethon(self, app):
+        """
+        Kết nối với Telethon API với xử lý lỗi tốt hơn và ghi log gỡ lỗi
+        
+        Args:
+            app: TelegramUploaderApp instance
+        """
         use_telethon = app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+        logger.info(f"Cấu hình Telethon: use_telethon={use_telethon}")
+        
         if use_telethon:
+            # Kiểm tra xem cấu hình Telethon có đầy đủ không
             api_id = app.config.get('TELETHON', 'api_id', fallback='')
             api_hash = app.config.get('TELETHON', 'api_hash', fallback='')
             phone = app.config.get('TELETHON', 'phone', fallback='')
             
             if api_id and api_hash and phone:
                 try:
+                    # Chuyển đổi api_id thành int
                     api_id = int(api_id)
-                    if self.telethon_uploader.login(api_id, api_hash, phone, interactive=False):
-                        logger.info("Đã kết nối với Telegram API (Telethon) thành công")
+                    
+                    # Ghi log trạng thái hiện tại
+                    logger.info(f"Kiểm tra kết nối Telethon với api_id={api_id}, phone={phone}")
+                    
+                    # Kiểm tra xem đã kết nối chưa (kiểm tra không chặn)
+                    already_connected = self.telethon_uploader.is_connected()
+                    logger.info(f"Trạng thái kết nối Telethon: {already_connected}")
+                    
+                    if not already_connected:
+                        # Thử đăng nhập không tương tác
+                        login_result = self.telethon_uploader.login(api_id, api_hash, phone, interactive=False)
+                        logger.info(f"Kết quả đăng nhập Telethon: {login_result}")
+                        
+                        if login_result:
+                            logger.info("Đã kết nối với Telegram API (Telethon) thành công")
+                        else:
+                            # Nếu đăng nhập thất bại, lưu để đăng nhập tương tác sau
+                            logger.warning("Không thể đăng nhập Telethon tự động. Sẽ yêu cầu đăng nhập tương tác sau.")
+                            
+                            # Lên lịch hiển thị hộp thoại đăng nhập sau khi khởi động hoàn tất
+                            def show_login_dialog():
+                                from ui.edit_config_modal import TelethonEditModal
+                                TelethonEditModal(app)
+                            
+                            # Hiển thị hộp thoại đăng nhập sau 3 giây
+                            app.root.after(3000, show_login_dialog)
+                    else:
+                        logger.info("Telethon đã được kết nối sẵn")
                 except Exception as e:
                     logger.error(f"Lỗi khi kết nối Telethon: {str(e)}")
-    def test_telegram_connection(self, app):
-        """
-        Kiểm tra kết nối Telegram
-        
-        Args:
-            app: Đối tượng TelegramUploaderApp
-        """
-        bot_token = app.bot_token_var.get()
-        chat_id = app.chat_id_var.get()
-        
-        if not bot_token:
-            messagebox.showerror("Lỗi", "Vui lòng nhập Bot Token!")
-            return
-            
-        if not chat_id:
-            messagebox.showerror("Lỗi", "Vui lòng nhập Chat ID!")
-            return
-        
-        # Hiển thị thông báo đang kiểm tra
-        app.status_var.set("Đang kiểm tra kết nối Telegram...")
-        app.root.update_idletasks()
-        
-        try:
-            # Vì phần telegram_api có thể chưa được khởi tạo đúng,
-            # tạo một instance mới để kiểm tra kết nối
-            from utils.telegram_api import TelegramAPI
-            temp_api = TelegramAPI()
-            success, message = temp_api.test_connection(bot_token, chat_id)
-            
-            if success:
-                # Nếu thành công, lưu lại instance
-                self.telegram_api = temp_api
-                messagebox.showinfo("Thành công", message)
+                    import traceback
+                    logger.error(traceback.format_exc())
             else:
-                messagebox.showerror("Lỗi", message)
-        except Exception as e:
-            messagebox.showerror("Lỗi kết nối", f"Không thể kiểm tra kết nối: {str(e)}")
-        
-        # Khôi phục trạng thái
-        app.status_var.set("Sẵn sàng")
-    def login_telethon(self, app):
-        """
-        Đăng nhập vào Telethon API để tải lên file lớn
-        
-        Args:
-            app: Đối tượng TelegramUploaderApp
-        """
-        # Lấy thông tin từ giao diện
-        api_id = app.api_id_var.get()
-        api_hash = app.api_hash_var.get()
-        phone = app.phone_var.get()
-        
-        # Kiểm tra các trường
-        if not api_id or not api_hash or not phone:
-            messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ API ID, API Hash và số điện thoại!")
-            return
-        
-        try:
-            # Chuyển đổi API ID sang số
-            api_id = int(api_id)
-            
-            # Hiển thị dialog đăng nhập
-            if self.telethon_uploader.show_login_dialog(app.root):
-                # Đăng nhập thành công
-                messagebox.showinfo(
-                    "Thành công", 
-                    "Đăng nhập Telethon thành công! Bạn có thể tải lên video lớn hơn 50MB."
-                )
-                
-                # Lưu cài đặt
-                app.config['TELETHON']['api_id'] = str(api_id)
-                app.config['TELETHON']['api_hash'] = api_hash
-                app.config['TELETHON']['phone'] = phone
-                app.config_manager.save_config(app.config)
-            else:
-                messagebox.showerror("Lỗi", "Đăng nhập Telethon thất bại. Vui lòng kiểm tra thông tin và thử lại.")
-        except ValueError:
-            messagebox.showerror("Lỗi", "API ID phải là một số nguyên!")
-        except Exception as e:
-            messagebox.showerror("Lỗi", f"Lỗi khi đăng nhập Telethon: {str(e)}")
-    
-    def save_telegram_settings(self, app):
-        """
-        Lưu cài đặt Telegram Bot từ giao diện vào file cấu hình
-        
-        Args:
-            app: Đối tượng TelegramUploaderApp
-        """
-        # Lấy giá trị từ giao diện
-        bot_token = app.bot_token_var.get()
-        chat_id = app.chat_id_var.get()
-        
-        # Lưu vào cấu hình
-        app.config['TELEGRAM']['bot_token'] = bot_token
-        app.config['TELEGRAM']['chat_id'] = chat_id
-        app.config['TELEGRAM']['notification_chat_id'] = chat_id  # Sử dụng cùng chat_id cho thông báo
-        
-        # Ghi file
-        app.config_manager.save_config(app.config)
-        
-        # Thông báo
-        messagebox.showinfo("Thông báo", "Đã lưu cài đặt Bot Telegram thành công!")
-        
-        # Kết nối lại với Telegram nếu Bot Token thay đổi
-        if bot_token != self.telegram_api.bot_token:
-            self.telegram_api.disconnect()
-            self.connect_telegram(app)
-        # Refresh settings tab
-        if hasattr(app, 'notebook'):
-            current_tab = app.notebook.index("current")
-            app.notebook.select(current_tab)  # Refresh current tab
-    def save_telethon_settings(self, app):
-        """
-        Lưu cài đặt Telethon từ giao diện vào file cấu hình
-        
-        Args:
-            app: Đối tượng TelegramUploaderApp
-        """
-        # Lấy giá trị từ giao diện
-        use_telethon = app.use_telethon_var.get()
-        api_id = app.api_id_var.get()
-        api_hash = app.api_hash_var.get()
-        phone = app.phone_var.get()
-        
-        # Lưu vào cấu hình
-        app.config['TELETHON']['use_telethon'] = str(use_telethon).lower()
-        app.config['TELETHON']['api_id'] = api_id
-        app.config['TELETHON']['api_hash'] = api_hash
-        app.config['TELETHON']['phone'] = phone
-        
-        # Ghi file
-        app.config_manager.save_config(app.config)
-        
-        # Thông báo
-        messagebox.showinfo("Thông báo", "Đã lưu cài đặt Telethon thành công!")
-        # Refresh settings tab
-        if hasattr(app, 'notebook'):
-            current_tab = app.notebook.index("current")
-            app.notebook.select(current_tab)  # Refresh current tab
+                logger.warning("Cấu hình Telethon không đầy đủ (thiếu api_id, api_hash, hoặc phone)")
+                # Tắt Telethon nếu cấu hình không đầy đủ
+                app.config['TELETHON']['use_telethon'] = 'false'
+                try:
+                    app.config_manager.save_config(app.config)
+                except:
+                    pass
+        else:
+            logger.info("Telethon bị tắt trong cấu hình")

@@ -4,68 +4,122 @@ Module for settings tab UI
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+
 def create_settings_tab(app, parent):
-    """Tạo giao diện tab Cài đặt"""
-    # Tạo frame chính để chứa nội dung
+    """Enhanced settings tab with better tab navigation"""
+    # Create main frame to hold content
     main_frame = ttk.Frame(parent)
     main_frame.pack(fill=tk.BOTH, expand=True)
     
-    # Tạo các frame nội dung cho từng tab
+    # Create content frames for each tab
     bot_frame = ttk.Frame(main_frame)
     telethon_frame = ttk.Frame(main_frame)
     general_frame = ttk.Frame(main_frame)
     
-    # Tạo các nút tab tùy chỉnh
+    # Create custom tab buttons with modern styling
     tab_frame = ttk.Frame(main_frame)
     tab_frame.pack(fill=tk.X, padx=0, pady=0)
     
-    # Tạo 3 nút tab
-    bot_tab = tk.Button(tab_frame, text="Telegram Bot", height=2, relief="ridge",
-                      font=("Arial", 11), command=lambda: show_tab(0))
+    # Create tab buttons with consistent styling
+    bot_tab = tk.Button(
+        tab_frame, 
+        text="Telegram Bot", 
+        height=2, 
+        font=("Arial", 11, "bold"),
+        bg="#2E86C1",  # Start with first tab active
+        fg="white",
+        relief="flat",
+        bd=1,
+        highlightthickness=1,
+        highlightbackground="#BEBEBE",
+        command=lambda: show_tab(0)
+    )
     bot_tab.pack(side=tk.LEFT, fill=tk.Y, padx=1)
     
-    telethon_tab = tk.Button(tab_frame, text="Telethon API (Video lớn)", height=2, relief="ridge",
-                           font=("Arial", 11), command=lambda: show_tab(1))
+    telethon_tab = tk.Button(
+        tab_frame, 
+        text="Telethon API (Video lớn)", 
+        height=2, 
+        font=("Arial", 11),
+        bg="#EDEDED",
+        fg="#2C3E50",
+        relief="flat",
+        bd=0,
+        command=lambda: show_tab(1)
+    )
     telethon_tab.pack(side=tk.LEFT, fill=tk.Y, padx=1)
+    telethon_tab.bind("<Enter>", lambda e: telethon_tab.config(bg="#E5E5E5"))
+    telethon_tab.bind("<Leave>", lambda e: telethon_tab.config(bg="#EDEDED"))
     
-    general_tab = tk.Button(tab_frame, text="Cài đặt chung", height=2, relief="ridge",
-                          font=("Arial", 11), command=lambda: show_tab(2))
+    general_tab = tk.Button(
+        tab_frame, 
+        text="Cài đặt chung", 
+        height=2, 
+        font=("Arial", 11),
+        bg="#EDEDED",
+        fg="#2C3E50",
+        relief="flat",
+        bd=0,
+        command=lambda: show_tab(2)
+    )
     general_tab.pack(side=tk.LEFT, fill=tk.Y, padx=1)
+    general_tab.bind("<Enter>", lambda e: general_tab.config(bg="#E5E5E5"))
+    general_tab.bind("<Leave>", lambda e: general_tab.config(bg="#EDEDED"))
     
     tab_buttons = [bot_tab, telethon_tab, general_tab]
     tab_frames = [bot_frame, telethon_frame, general_frame]
     
-    # Hàm hiển thị tab
+    # Enhanced tab switching function
     def show_tab(index):
-        # Hiển thị frame đã chọn, ẩn các frame khác
+        # Show selected frame, hide others
         for i, frame in enumerate(tab_frames):
             if i == index:
                 frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             else:
                 frame.pack_forget()
         
-        # Cập nhật style cho các nút
+        # Update button styles
         for i, btn in enumerate(tab_buttons):
             if i == index:
-                btn.config(bg="#4a7ebb", fg="white", relief="sunken")
+                btn.config(
+                    bg="#2E86C1",  # Blue for active
+                    fg="white",
+                    relief="flat",
+                    bd=1,
+                    highlightthickness=1,
+                    highlightbackground="#BEBEBE",
+                    font=("Arial", 11, "bold")
+                )
+                # Remove hover effect for active tab
+                btn.unbind("<Enter>")
+                btn.unbind("<Leave>")
             else:
-                btn.config(bg="#f0f0f0", fg="black", relief="ridge")
+                btn.config(
+                    bg="#EDEDED",
+                    fg="#2C3E50",
+                    relief="flat",
+                    bd=0,
+                    highlightthickness=0,
+                    font=("Arial", 11)
+                )
+                # Re-add hover effect
+                btn.bind("<Enter>", lambda e, b=btn: b.config(bg="#E5E5E5"))
+                btn.bind("<Leave>", lambda e, b=btn: b.config(bg="#EDEDED"))
     
-    # Điền nội dung cho các tab
+    # Fill tab content
     create_bot_settings_tab(app, bot_frame)
     create_telethon_settings_tab(app, telethon_frame)
     create_general_settings_tab(app, general_frame)
     
-    # Hiển thị tab đầu tiên mặc định
+    # Show first tab by default
     show_tab(0)
     
-    # Lưu danh sách tab và các hàm để có thể truy cập sau này
-    app.tab_buttons = tab_buttons
-    app.tab_frames = tab_frames
-    app.show_tab = show_tab
+    # Save references for later access
+    app.settings_tab_buttons = tab_buttons
+    app.settings_tab_frames = tab_frames
+    app.show_settings_tab = show_tab
     
     return main_frame
-
 def create_bot_settings_tab(app, parent):
     """Tạo giao diện cài đặt Telegram Bot"""
     # Frame thông tin Telegram

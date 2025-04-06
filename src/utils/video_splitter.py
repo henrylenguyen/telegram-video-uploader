@@ -134,13 +134,14 @@ class VideoSplitter:
             logger.error(f"Lỗi khi lấy thời lượng video: {e}")
             return None
     
-    def split_video(self, video_path):
+    def split_video(self, video_path, output_dir=None):
         """
         Chia nhỏ video thành nhiều phần, mỗi phần dưới kích thước tối đa
         
         Args:
             video_path (str): Đường dẫn đến file video
-            
+            output_dir (str, optional): Thư mục đầu ra. Nếu không cung cấp, sử dụng thư mục làm việc mặc định
+                
         Returns:
             list: Danh sách đường dẫn đến các phần video, hoặc [] nếu có lỗi
         """
@@ -148,6 +149,12 @@ class VideoSplitter:
             return []
             
         try:
+            # Cập nhật thư mục làm việc nếu output_dir được chỉ định
+            work_dir = output_dir if output_dir else self.work_dir
+            
+            # Đảm bảo thư mục tồn tại
+            os.makedirs(work_dir, exist_ok=True)
+            
             # Kiểm tra kích thước file
             file_size = os.path.getsize(video_path) / (1024 * 1024)  # Kích thước tính bằng MB
             
@@ -177,8 +184,8 @@ class VideoSplitter:
             
             for i in range(num_parts):
                 start_time = i * part_duration
-                # Đường dẫn đầu ra
-                output_path = os.path.join(self.work_dir, f"{base_name}_part{i+1:03d}.mp4")
+                # Đường dẫn đầu ra - sử dụng work_dir cập nhật
+                output_path = os.path.join(work_dir, f"{base_name}_part{i+1:03d}.mp4")
                 
                 # Command để cắt video thành phần
                 cmd = [
@@ -209,7 +216,6 @@ class VideoSplitter:
             import traceback
             logger.error(traceback.format_exc())
             return []
-    
     def compress_video(self, video_path, target_size_mb=None):
         """
         Nén video để giảm kích thước

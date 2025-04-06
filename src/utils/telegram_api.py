@@ -1,281 +1,103 @@
 """
-Module quản lý tương tác với Telegram API.
+Module for interacting with Telegram API
 """
+
 import os
-import time
 import logging
-import threading
-import socket
-import requests
+import tempfile
+import time
 from datetime import datetime
 import telebot
+from telebot import apihelper
 from telebot.types import InputFile
+from utils.video_splitter import VideoSplitter
 
-# Nhập module VideoSplitter để xử lý file lớn
-try:
-    from utils.video_splitter import VideoSplitter
-except ImportError:
-    from video_splitter import VideoSplitter
-
-# Cấu hình logging
 logger = logging.getLogger("TelegramAPI")
 
 class TelegramAPI:
     """
-    Quản lý tương tác với Telegram API qua pyTelegramBotAPI.
-    Hỗ trợ tải lên video không giới hạn kích thước bằng cách chia nhỏ.
+    Class for interacting with Telegram API
     """
     
-    def __init__(self):
-        """Khởi tạo TelegramAPI"""
+    def __init__(self, bot_token=None):
+        """
+        Initialize Telegram API
+        
+        Args:
+            bot_token (str): Telegram Bot token
+        """
         self.bot = None
         self.connected = False
-        self.send_lock = threading.Lock()  # Lock để đồng bộ hóa gửi tin nhắn
-        self.bot_token = None
-        self.video_splitter = VideoSplitter()
+        
+        # Connect if token provided
+        if bot_token:
+            self.connect(bot_token)
     
     def connect(self, bot_token):
         """
-        Kết nối với bot Telegram
+        Connect to Telegram Bot API
         
         Args:
-            bot_token (str): Bot token từ BotFather
+            bot_token (str): Telegram Bot token
             
         Returns:
-            bool: True nếu kết nối thành công
+            bool: True if connected successfully
         """
-        if self.connected and self.bot and self.bot_token == bot_token:
-            return True
-            
         try:
-            # Tạo đối tượng bot
+            # Set up API
             self.bot = telebot.TeleBot(bot_token)
             
-            # Kiểm tra kết nối bằng cách lấy thông tin bot
+            # Test connection
             bot_info = self.bot.get_me()
-            
             if bot_info:
-                logger.info(f"Đã kết nối thành công với bot: @{bot_info.username}")
                 self.connected = True
-                self.bot_token = bot_token
                 return True
             else:
-                logger.error("Không thể lấy thông tin bot")
-                self.bot = None
                 self.connected = False
-                self.bot_token = None
                 return False
-                
         except Exception as e:
-            logger.error(f"Lỗi khi kết nối với Telegram API: {str(e)}")
+            logger.error(f"Lỗi khi kết nối Telegram: {str(e)}")
             self.bot = None
             self.connected = False
-            self.bot_token = None
             return False
     
     def disconnect(self):
-        """
-        Ngắt kết nối với bot Telegram
-        """
+        """Disconnect from Telegram Bot API"""
         self.bot = None
         self.connected = False
-        self.bot_token = None
-        logger.info("Đã ngắt kết nối với Telegram API")
     
-    def send_with_retry(self, send_func, max_retries=3, retry_delay=5):
+    def send_message(self, chat_id, text, parse_mode="HTML", disable_notification=False):
         """
-        Thực thi một hàm gửi với cơ chế tự động thử lại
+        Send a message to Telegram
         
         Args:
-            send_func: Hàm gửi dữ liệu cần thực thi
-            max_retries (int): Số lần thử lại tối đa
-            retry_delay (int): Thời gian chờ giữa các lần thử lại (giây)
-            
-        Returns:
-            Kết quả từ hàm gửi hoặc False nếu tất cả các lần thử đều thất bại
-        """
-        retries = 0
-        last_error = None
-        
-        while retries <= max_retries:
-            try:
-                # Kiểm tra kết nối trước khi gửi
-                if not self.connected or not self.bot:
-                    # Thử kết nối lại
-                    if not self.connect(self.bot_token):
-                        logger.error("Mất kết nối và không thể kết nối lại")
-                        time.sleep(retry_delay)
-                        retries += 1
-                        continue
-                
-                # Thực thi hàm gửi
-                result = send_func()
-                if result:
-                    # Thành công
-                    return result
-                
-                # Nếu gửi thất bại nhưng không có ngoại lệ
-                retries += 1
-                time.sleep(retry_delay)
-                
-            except telebot.apihelper.ApiTelegramException as e:
-                # Xử lý lỗi API Telegram
-                last_error = e
-                logger.error(f"Lỗi API Telegram (lần {retries+1}/{max_retries+1}): {e}")
-                
-                # Xử lý các lỗi cụ thể
-                if "Too Many Requests" in str(e) or "retry after" in str(e).lower():
-                    # Lỗi rate limit, lấy thời gian chờ từ lỗi
-                    wait_time = 5  # Mặc định 5 giây
-                    try:
-                        # Thử lấy thời gian chờ từ thông báo lỗi
-                        import re
-                        match = re.search(r'retry after (\d+)', str(e).lower())
-                        if match:
-                            wait_time = int(match.group(1)) + 1
-                    except:
-                        pass
-                    
-                    logger.info(f"Rate limit vượt quá, đợi {wait_time} giây")
-                    time.sleep(wait_time)
-                elif "Bad Request" in str(e) and "file is too big" in str(e).lower():
-                    # Lỗi file quá lớn, không thử lại
-                    logger.error("File quá lớn cho Telegram Bot API (giới hạn 50MB)")
-                    return False
-                else:
-                    # Lỗi khác, đợi trước khi thử lại
-                    time.sleep(retry_delay)
-                
-                retries += 1
-            
-            except (requests.exceptions.RequestException, requests.exceptions.Timeout) as e:
-                # Lỗi kết nối hoặc timeout
-                last_error = e
-                logger.error(f"Lỗi kết nối (lần {retries+1}/{max_retries+1}): {e}")
-                
-                # Đợi lâu hơn cho lỗi kết nối
-                time.sleep(retry_delay * 2)
-                retries += 1
-            
-            except Exception as e:
-                # Lỗi khác
-                last_error = e
-                logger.error(f"Lỗi không xác định (lần {retries+1}/{max_retries+1}): {e}")
-                time.sleep(retry_delay)
-                retries += 1
-        
-        # Nếu đã thử hết số lần
-        logger.error(f"Đã thử {max_retries+1} lần nhưng vẫn thất bại: {last_error}")
-        return False
-    
-    def send_video(self, chat_id, video_path, caption=None):
-        """
-        Gửi video đến chat ID
-        
-        Args:
-            chat_id (str/int): ID chat nhận video
-            video_path (str): Đường dẫn đến file video
-            caption (str, optional): Chú thích cho video
+            chat_id (str/int): ID của cuộc trò chuyện/kênh
+            text (str): Nội dung tin nhắn
+            parse_mode (str): Chế độ parse (HTML/Markdown)
+            disable_notification (bool): Có tắt thông báo không
             
         Returns:
             bool: True nếu gửi thành công
         """
-        if not self.bot:
-            logger.error("Chưa kết nối với bot Telegram!")
+        if not self.connected or not self.bot:
+            logger.error("Chưa kết nối với Telegram API")
             return False
             
-        video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-        video_name = os.path.basename(video_path)
-        
-        # Kiểm tra nếu Telethon được bật và video lớn hơn 50MB
-        use_telethon = False
         try:
-            from app import app
-            if hasattr(app, "config"):
-                use_telethon = app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
-        except:
-            # Nếu không thể lấy từ app, kiểm tra trong cấu hình
-            config = configparser.ConfigParser()
-            config_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.ini')
-            if os.path.exists(config_file):
-                config.read(config_file)
-                if 'TELETHON' in config:
-                    use_telethon = config.getboolean('TELETHON', 'use_telethon', fallback=False)
-        
-        if use_telethon and video_size_mb > 50:
-            # Dùng Telethon để gửi video lớn
-            try:
-                from utils.telethon_uploader import telethon_uploader
-                logger.info(f"🔄 Sử dụng Telethon API để tải lên video lớn: {video_name} ({video_size_mb:.2f} MB)")
-                return telethon_uploader.send_video(chat_id, video_path, caption)
-            except Exception as e:
-                logger.error(f"Lỗi khi sử dụng Telethon: {str(e)}")
-                # Nếu Telethon thất bại, quay lại xử lý thông thường
-                logger.warning("Quay lại phương pháp tải lên thông thường")
-        
-        # Phương pháp gửi thông thường sử dụng Bot API
-        logger.info(f"🔄 Đang xử lý video lớn: {video_name} ({video_size_mb:.2f} MB)")
-        
-        # Nếu video nhỏ hơn 50MB, gửi trực tiếp
-        if video_size_mb <= 50:
-            return self._send_video_directly(chat_id, video_path, caption)
-        
-        # Chia nhỏ video nếu lớn hơn 50MB
-        from utils.video_splitter import VideoSplitter
-        splitter = VideoSplitter()
-        parts = splitter.split_video(video_path)
-        
-        if not parts:
-            logger.error(f"Không thể chia nhỏ video: {video_name}")
+            message = self.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=parse_mode,
+                disable_notification=disable_notification
+            )
+            return message is not None
+        except Exception as e:
+            logger.error(f"Lỗi khi gửi tin nhắn: {str(e)}")
             return False
-        
-        logger.info(f"Video {video_name} ({video_size_mb:.2f} MB) sẽ được gửi thành {len(parts)} phần")
-        
-        # Gửi từng phần
-        total_parts = len(parts)
-        for i, part in enumerate(parts, 1):
-            part_caption = f"{caption or video_name} - Phần {i}/{total_parts}"
-            success = self._send_video_directly(chat_id, part, part_caption)
-            if not success:
-                logger.error(f"Lỗi khi gửi phần {i}/{total_parts}")
-                return False
-            time.sleep(1)  # Chờ giữa các lần gửi
-        
-        # Xóa các file tạm
-        for part in parts:
-            try:
-                os.remove(part)
-            except:
-                pass
-        
-        return True
-    def _check_file_size(self, file_path):
-        """
-        Kiểm tra kích thước file và quyết định cách xử lý
-        
-        Args:
-            file_path (str): Đường dẫn đến file
-            
-        Returns:
-            tuple: (mode, size_mb)
-                mode: 'direct' nếu < 50MB, 'split' nếu cần chia nhỏ, 'compress' nếu cần nén
-                size_mb: Kích thước file tính bằng MB
-        """
-        if not os.path.exists(file_path) or not os.path.isfile(file_path):
-            return None, 0
-            
-        # Kích thước file tính bằng MB
-        size_mb = os.path.getsize(file_path) / (1024 * 1024)
-        
-        if size_mb <= 49:  # Giới hạn an toàn là 49MB
-            return 'direct', size_mb
-        else:
-            # Ưu tiên chia nhỏ trước
-            return 'split', size_mb
     
     def send_video(self, chat_id, video_path, caption=None, width=None, height=None, duration=None, disable_notification=False, progress_callback=None):
         """
-        Gửi file video, tự động xử lý video lớn hơn 50MB
+        Gửi video đến Telegram chat/channel, với chức năng Telethon cải tiến
         
         Args:
             chat_id (str/int): ID của cuộc trò chuyện/kênh
@@ -285,7 +107,131 @@ class TelegramAPI:
             height (int): Chiều cao video
             duration (int): Thời lượng video (giây)
             disable_notification (bool): Có tắt thông báo không
-            progress_callback (function): Callback để cập nhật tiến trình (không bắt buộc)
+            progress_callback (function): Callback để cập nhật tiến trình
+            
+        Returns:
+            bool: True nếu gửi thành công
+        """
+        if not os.path.exists(video_path) or not os.path.isfile(video_path):
+            logger.error(f"File video không tồn tại: {video_path}")
+            return False
+            
+        try:
+            # Lấy thông tin video
+            video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            video_name = os.path.basename(video_path)
+            
+            # Chuẩn bị caption nếu không cung cấp
+            if not caption:
+                file_name = os.path.basename(video_path)
+                caption = f"📹 {file_name}\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            # Cập nhật tiến trình lên 10% (chuẩn bị)
+            if progress_callback:
+                progress_callback(10)
+            
+            # KIỂM TRA TELETHON TRỰC TIẾP - Cách tiếp cận đơn giản hơn
+            # Chỉ kiểm tra cho video lớn (trên 50MB)
+            if video_size_mb > 50:
+                logger.info(f"Video lớn phát hiện: {video_name} ({video_size_mb:.2f} MB)")
+                
+                # TRUY CẬP TRỰC TIẾP INSTANCE APP - Đáng tin cậy hơn
+                try:
+                    # Thử import instance app chính
+                    import sys
+                    main_module = sys.modules['__main__']
+                    if hasattr(main_module, 'app'):
+                        app = main_module.app
+                        
+                        # Kiểm tra xem Telethon có được bật trong config không
+                        use_telethon = app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+                        logger.info(f"Cấu hình Telethon: use_telethon={use_telethon}")
+                        
+                        if use_telethon:
+                            # Lấy telethon uploader trực tiếp từ app
+                            telethon_uploader = app.telethon_uploader
+                            
+                            # Ghi log trạng thái kết nối Telethon
+                            telethon_connected = getattr(telethon_uploader, 'connected', False)
+                            logger.info(f"Trạng thái kết nối Telethon: {telethon_connected}")
+                            
+                            # Kiểm tra kết nối nếu trạng thái không rõ ràng
+                            if not telethon_connected:
+                                logger.info("Thử kết nối lại với Telethon API...")
+                                # Lấy thông tin xác thực trực tiếp từ config
+                                api_id = app.config.get('TELETHON', 'api_id', fallback='')
+                                api_hash = app.config.get('TELETHON', 'api_hash', fallback='')
+                                phone = app.config.get('TELETHON', 'phone', fallback='')
+                                
+                                if api_id and api_hash and phone:
+                                    # Thử đăng nhập lại (không tương tác)
+                                    try:
+                                        api_id = int(api_id)
+                                        login_result = telethon_uploader.login(api_id, api_hash, phone, interactive=False)
+                                        logger.info(f"Kết quả login Telethon: {login_result}")
+                                        telethon_connected = telethon_uploader.connected
+                                    except Exception as e:
+                                        logger.error(f"Lỗi khi kết nối Telethon: {str(e)}")
+                            
+                            # Nếu đã kết nối, sử dụng Telethon
+                            if telethon_connected:
+                                logger.info(f"🔄 Sử dụng Telethon API để tải lên video lớn: {video_name} ({video_size_mb:.2f} MB)")
+                                
+                                # Cập nhật tiến trình lên 20% (bắt đầu tải lên qua Telethon)
+                                if progress_callback:
+                                    progress_callback(20)
+                                
+                                # Tải lên qua Telethon
+                                telethon_result = telethon_uploader.upload_video(
+                                    chat_id, 
+                                    video_path,
+                                    caption=caption,
+                                    progress_callback=progress_callback
+                                )
+                                
+                                if telethon_result:
+                                    logger.info(f"✅ Đã tải lên thành công qua Telethon: {video_name}")
+                                    return True
+                                else:
+                                    logger.error(f"❌ Tải lên thất bại qua Telethon: {video_name}")
+                                    logger.info("Quay lại phương pháp thông thường...")
+                            else:
+                                logger.warning("⚠️ Telethon được cấu hình nhưng không kết nối. Quay lại phương pháp thông thường.")
+                        else:
+                            logger.info("Telethon không được bật trong cấu hình. Sử dụng phương pháp thông thường.")
+                except Exception as e:
+                    logger.error(f"Lỗi khi kiểm tra Telethon: {str(e)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+            
+            # Quay lại phương pháp tiêu chuẩn (tải lên trực tiếp hoặc chia nhỏ)
+            if video_size_mb <= 50:
+                # Tải lên trực tiếp cho video nhỏ
+                return self._send_video_direct(chat_id, video_path, caption, width, height, duration, disable_notification)
+            else:
+                # Chia nhỏ và tải lên theo từng phần cho video lớn
+                logger.info(f"🔄 Đang xử lý video lớn: {video_name} ({video_size_mb:.2f} MB)")
+                return self._send_video_split(chat_id, video_path, caption, disable_notification, progress_callback)
+        
+        except Exception as e:
+            logger.error(f"Lỗi khi gửi video {os.path.basename(video_path)}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
+    def _send_video_direct(self, chat_id, video_path, caption=None, width=None, height=None, duration=None, disable_notification=False, retry_count=3):
+        """
+        Gửi video trực tiếp đến Telegram
+        
+        Args:
+            chat_id (str/int): ID của cuộc trò chuyện/kênh
+            video_path (str): Đường dẫn đến file video
+            caption (str): Chú thích cho video
+            width (int): Chiều rộng video
+            height (int): Chiều cao video
+            duration (int): Thời lượng video (giây)
+            disable_notification (bool): Có tắt thông báo không
+            retry_count (int): Số lần thử lại nếu gặp lỗi
             
         Returns:
             bool: True nếu gửi thành công
@@ -293,317 +239,240 @@ class TelegramAPI:
         if not self.connected or not self.bot:
             logger.error("Chưa kết nối với Telegram API")
             return False
-            
+        
         if not os.path.exists(video_path) or not os.path.isfile(video_path):
             logger.error(f"File video không tồn tại: {video_path}")
             return False
-            
-        try:
-            # Kiểm tra kích thước file
-            mode, file_size = self._check_file_size(video_path)
-            
-            # Chuẩn bị caption nếu không có
-            if not caption:
-                file_name = os.path.basename(video_path)
-                caption = f"📹 {file_name}\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            
-            # Update progress to 10% (preparing)
-            if progress_callback:
-                progress_callback(10)
-            
-            # Xử lý theo chế độ
-            if mode == 'direct':
-                # Update progress to 20% (starting direct upload)
-                if progress_callback:
-                    progress_callback(20)
-                    
-                # Gửi trực tiếp nếu kích thước cho phép
-                result = self._send_video_direct(chat_id, video_path, caption, width, height, duration, disable_notification)
-                
-                # Update progress to 100% if successful
-                if result and progress_callback:
-                    progress_callback(100)
-                    
-                return result
-            elif mode == 'split':
-                # Xử lý video lớn bằng cách chia nhỏ
-                return self._send_video_split(chat_id, video_path, caption, disable_notification, progress_callback)
-            else:
-                logger.error(f"Chế độ không hợp lệ: {mode}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Lỗi khi gửi video {os.path.basename(video_path)}: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
-
-    def _send_video_split(self, chat_id, video_path, caption, disable_notification=False, progress_callback=None):
-        """
-        Gửi video lớn bằng cách chia nhỏ
         
-        Args:
-            chat_id (str/int): ID chat
-            video_path (str): Đường dẫn video
-            caption (str): Chú thích
-            disable_notification (bool): Tắt thông báo
-            progress_callback (function): Callback để cập nhật tiến trình (không bắt buộc)
-            
-        Returns:
-            bool: True nếu thành công
-        """
-        try:
-            # Lấy thông tin video gốc
-            file_name = os.path.basename(video_path)
-            file_size = os.path.getsize(video_path) / (1024 * 1024)  # MB
-            
-            # Thông báo bắt đầu xử lý
-            start_message = f"🔄 Đang xử lý video lớn: {file_name} ({file_size:.2f} MB)"
-            logger.info(start_message)
-            
-            # Update progress to 15% (processing video)
-            if progress_callback:
-                progress_callback(15)
-            
-            # Chia nhỏ video
-            video_parts = self.video_splitter.split_video(video_path)
-            
-            # Update progress to 25% (splitting completed)
-            if progress_callback:
-                progress_callback(25)
-            
-            if not video_parts:
-                # Thử phương pháp nén
-                logger.info(f"Không thể chia nhỏ video, thử phương pháp nén...")
-                
-                # Update progress to 30% (trying compression)
-                if progress_callback:
-                    progress_callback(30)
-                    
-                compressed_video = self.video_splitter.compress_video(video_path)
-                
-                # Update progress to 50% (compression completed)
-                if progress_callback:
-                    progress_callback(50)
-                    
-                if compressed_video and os.path.exists(compressed_video):
-                    # Kiểm tra kích thước sau khi nén
-                    compressed_size = os.path.getsize(compressed_video) / (1024 * 1024)
-                    
-                    if compressed_size <= 49:
-                        # Nếu đã nén xuống dưới 50MB, gửi bình thường
-                        logger.info(f"Video đã được nén: {file_name} ({file_size:.2f}MB → {compressed_size:.2f}MB)")
-                        
-                        # Update progress to 60% (starting upload of compressed video)
-                        if progress_callback:
-                            progress_callback(60)
-                            
-                        result = self._send_video_direct(
-                            chat_id,
-                            compressed_video,
-                            caption,
-                            disable_notification=disable_notification
-                        )
-                        
-                        # Update progress to 100% if successful
-                        if result and progress_callback:
-                            progress_callback(100)
-                            
-                        return result
-                    else:
-                        # Nếu vẫn lớn hơn 50MB sau khi nén
-                        logger.exception(f"❌ Không thể xử lý video: {file_name} (vẫn lớn hơn 50MB sau khi nén)")
-                        return False
-                else:
-                    # Không thể nén
-                    self.send_message(
-                        chat_id,
-                        f"❌ Không thể xử lý video: {file_name} (không thể chia nhỏ hoặc nén)"
-                    )
-                    return False
-            
-            # Thông báo số lượng phần
-            part_message = f"Video {file_name} ({file_size:.2f} MB) sẽ được gửi thành {len(video_parts)} phần"
-            logger.info(part_message)
-            
-            # Gửi từng phần
-            total_parts = len(video_parts)
-            for i, part_path in enumerate(video_parts):
-                # Calculate progress (25% to 95%)
-                if progress_callback:
-                    percent = 25 + (i / total_parts) * 70
-                    progress_callback(int(percent))
-                    
-                part_caption = f"{caption}\nPhần {i+1}/{len(video_parts)}"
-                
-                # Gửi phần video
-                success = self._send_video_direct(
-                    chat_id,
-                    part_path,
-                    part_caption,
-                    disable_notification=disable_notification
-                )
-                
-                if not success:
-                    logger.error(f"Lỗi khi gửi phần {i+1}/{len(video_parts)} của video {file_name}")
-                    return False
-                
-                # Chờ giữa các lần gửi để tránh flood
-                if i < len(video_parts) - 1:
-                    time.sleep(2)
-            
-            # Thông báo hoàn tất
-            complete_message = f"✅ Đã gửi xong video: {file_name} ({len(video_parts)} phần)"
-            logger.info(complete_message)
-            
-            # Update progress to 100%
-            if progress_callback:
-                progress_callback(100)
-                
-            return True
-            
-        except Exception as e:
-            logger.error(f"Lỗi khi gửi video chia nhỏ {os.path.basename(video_path)}: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            
-            return False
-        
-    def _send_video_direct(self, chat_id, video_path, caption, width=None, height=None, duration=None, disable_notification=False):
-        """
-        Gửi video trực tiếp không qua xử lý, với cơ chế tự động thử lại
-        
-        Args:
-            chat_id (str/int): ID chat
-            video_path (str): Đường dẫn video
-            caption (str): Chú thích
-            width (int): Chiều rộng
-            height (int): Chiều cao
-            duration (int): Thời lượng
-            disable_notification (bool): Tắt thông báo
-            
-        Returns:
-            bool: True nếu thành công
-        """
-        def _send():
-            with self.send_lock:  # Sử dụng lock để tránh lỗi flood control
-                # Mở file video
+        # Retry mechanism
+        attempt = 0
+        while attempt < retry_count:
+            try:
+                # Open file in binary mode
                 with open(video_path, 'rb') as video_file:
-                    # Gửi video
-                    self.bot.send_video(
+                    # Send video
+                    message = self.bot.send_video(
                         chat_id=chat_id,
                         video=video_file,
+                        caption=caption,
                         width=width,
                         height=height,
                         duration=duration,
                         disable_notification=disable_notification,
-                        supports_streaming=True  # Hỗ trợ phát trực tuyến
+                        supports_streaming=True
                     )
+                    
+                    # Check if video was sent successfully
+                    if message and message.video:
+                        logger.info(f"✅ Đã gửi video thành công: {os.path.basename(video_path)}")
+                        return True
+                    else:
+                        logger.warning(f"⚠️ Video đã được gửi nhưng không nhận được xác nhận: {os.path.basename(video_path)}")
+                        return True  # Consider it successful if no error was thrown
             
-            logger.info(f"Đã gửi video thành công: {os.path.basename(video_path)}")
-            return True
-        
-        return self.send_with_retry(_send)
-    
-
-    def send_notification(self, notification_chat_id, text, disable_notification=False):
-        """
-        Gửi thông báo đến chat ID nhận thông báo 
-        
-        Args:
-            notification_chat_id (str/int): ID chat nhận thông báo
-            text (str): Nội dung thông báo
-            disable_notification (bool): Có tắt thông báo không
-            
-        Returns:
-            bool: True nếu gửi thành công
-        """
-        # Không gửi thông báo theo yêu cầu, chỉ ghi log
-        logger.info(f"Thông báo (không gửi): {text}")
-        return True
-    
-    def test_connection(self, bot_token, chat_id):
-        """
-        Kiểm tra kết nối và quyền gửi tin nhắn
-        
-        Args:
-            bot_token (str): Bot token cần kiểm tra
-            chat_id (str/int): Chat ID cần kiểm tra quyền
-            
-        Returns:
-            tuple: (success, message) - success là bool, message là thông báo kết quả
-        """
-        try:
-            # Kết nối với token mới
-            test_bot = telebot.TeleBot(bot_token)
-            
-            # Lấy thông tin bot
-            bot_info = test_bot.get_me()
-            if not bot_info:
-                return False, "Không thể lấy thông tin bot. Vui lòng kiểm tra Bot Token."
+            except apihelper.ApiTelegramException as e:
+                if e.error_code == 413:  # Request Entity Too Large
+                    logger.error(f"❌ Video quá lớn cho Telegram Bot API: {os.path.basename(video_path)}")
+                    return False  # No retry for this error
+                    
+                logger.warning(f"⚠️ Lỗi API Telegram (lần {attempt+1}/{retry_count}): {str(e)}")
                 
-            # Kiểm tra quyền gửi tin nhắn
-            if chat_id:
-                test_message = f"🔄 Kiểm tra kết nối từ Telegram Video Uploader\n⏱️ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                test_bot.send_message(chat_id, test_message)
-                
-            return True, f"Kết nối thành công với bot @{bot_info.username}"
+            except Exception as e:
+                logger.warning(f"⚠️ Lỗi khi gửi video (lần {attempt+1}/{retry_count}): {str(e)}")
             
-        except telebot.apihelper.ApiException as e:
-            if "Forbidden" in str(e):
-                return False, "Bot không có quyền gửi tin nhắn đến chat ID này. Vui lòng kiểm tra quyền của bot."
-            elif "Bad Request" in str(e) and "chat not found" in str(e).lower():
-                return False, "Chat ID không hợp lệ hoặc không tồn tại."
-            else:
-                return False, f"Lỗi API Telegram: {str(e)}"
-        except Exception as e:
-            return False, f"Lỗi khi kiểm tra kết nối: {str(e)}"
-    
-    def check_internet_connection(self):
-        """
-        Kiểm tra kết nối internet
+            # Retry after delay
+            attempt += 1
+            if attempt < retry_count:
+                retry_delay = 5  # seconds
+                logger.info(f"Thử lại sau {retry_delay} giây...")
+                time.sleep(retry_delay)
         
-        Returns:
-            bool: True nếu có kết nối internet
-        """
-        try:
-            # Thử kết nối đến Google DNS
-            socket.create_connection(("8.8.8.8", 53), timeout=3)
-            return True
-        except OSError:
-            pass
-        
-        try:
-            # Thử kết nối đến Telegram API
-            socket.create_connection(("api.telegram.org", 443), timeout=3)
-            return True
-        except OSError:
-            pass
-        
+        logger.error(f"❌ Không thể gửi video sau {retry_count} lần thử: {os.path.basename(video_path)}")
         return False
-
-if __name__ == "__main__":
-    # Mã kiểm thử
-    logging.basicConfig(level=logging.DEBUG)
     
-    api = TelegramAPI()
-    
-    # Thay thế với bot token và chat ID thật
-    BOT_TOKEN = "YOUR_BOT_TOKEN"
-    CHAT_ID = "YOUR_CHAT_ID"
-    
-    if api.connect(BOT_TOKEN):
-        print("Kết nối thành công")
+    def _send_video_split(self, chat_id, video_path, caption=None, disable_notification=False, progress_callback=None):
+        """
+        Chia nhỏ video và gửi từng phần
         
-        # Thử nghiệm gửi video lớn
-        # api.send_video(CHAT_ID, "/path/to/large/video.mp4")
-        
-        # Gửi tin nhắn kiểm tra
-        if api.send_message(CHAT_ID, "Tin nhắn kiểm tra từ TelegramAPI"):
-            print("Đã gửi tin nhắn thành công")
-        else:
-            print("Gửi tin nhắn thất bại")
+        Args:
+            chat_id (str/int): ID của cuộc trò chuyện/kênh
+            video_path (str): Đường dẫn đến file video
+            caption (str): Chú thích cho video
+            disable_notification (bool): Có tắt thông báo không
+            progress_callback (function): Callback để cập nhật tiến trình
             
-        api.disconnect()
-    else:
-        print("Kết nối thất bại")
+        Returns:
+            bool: True nếu tất cả các phần được gửi thành công
+        """
+        # FORCE TELETHON CHECK một lần nữa để chắc chắn
+        video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+        logger.info(f"FORCE CHECK TELETHON: Video size = {video_size_mb:.2f} MB")
+        try:
+            import sys
+            main_module = sys.modules['__main__']
+            if hasattr(main_module, 'app'):
+                app = main_module.app
+                use_telethon = app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+                logger.info(f"FORCE CHECK TELETHON: use_telethon = {use_telethon}")
+                
+                if use_telethon:
+                    telethon_uploader = app.telethon_uploader
+                    telethon_connected = getattr(telethon_uploader, 'connected', False)
+                    logger.info(f"FORCE CHECK TELETHON: telethon_connected = {telethon_connected}")
+                    
+                    if telethon_connected:
+                        logger.info(f"FORCE CHECK TELETHON: Thử tải lên qua Telethon")
+                        result = telethon_uploader.upload_video(
+                            chat_id, video_path, caption=caption, progress_callback=progress_callback
+                        )
+                        if result:
+                            logger.info("FORCE CHECK TELETHON: TẢI LÊN THÀNH CÔNG QUA TELETHON!")
+                            return True
+                        logger.error("FORCE CHECK TELETHON: Tải lên thất bại")
+                        
+                    # Kiểm tra khả năng kết nối
+                    else:
+                        try:
+                            is_connected = telethon_uploader.is_connected()
+                            logger.info(f"FORCE CHECK TELETHON: is_connected() = {is_connected}")
+                            
+                            if is_connected:
+                                telethon_uploader.connected = True
+                                logger.info("FORCE CHECK TELETHON: Đã thiết lập connected = True")
+                                
+                                # Thử upload lại
+                                result = telethon_uploader.upload_video(
+                                    chat_id, video_path, caption=caption, progress_callback=progress_callback
+                                )
+                                if result:
+                                    logger.info("FORCE CHECK TELETHON: TẢI LÊN THÀNH CÔNG QUA TELETHON SAU KHI TỰ SỬA!")
+                                    return True
+                        except:
+                            pass
+        except Exception as e:
+            logger.error(f"FORCE CHECK TELETHON ERROR: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+        # Create a video splitter
+        splitter = VideoSplitter()
+        
+        try:
+            # Split the video into parts
+            video_name = os.path.basename(video_path)
+            video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            logger.info(f"Video {video_name} ({video_size_mb:.2f} MB) sẽ được gửi thành nhiều phần")
+            
+            # QUAN TRỌNG: Chỉ truyền một tham số tới split_video
+            video_parts = splitter.split_video(video_path)
+            if not video_parts:
+                logger.error(f"Không thể chia nhỏ video: {video_name}")
+                return False
+            
+            # Send each part
+            total_parts = len(video_parts)
+            part_index = 0
+            successful_parts = 0
+            
+            for part_path in video_parts:
+                part_index += 1
+                part_name = os.path.basename(part_path)
+                
+                # Generate part caption
+                if caption:
+                    part_caption = f"{caption}\n\n📌 Phần {part_index}/{total_parts}"
+                else:
+                    part_caption = f"📹 {video_name} (Phần {part_index}/{total_parts})"
+                
+                # Calculate progress range for this part
+                # Each part starts at 10% and goes to 90% spread across all parts
+                progress_start = 10 + (part_index - 1) * 80 / total_parts
+                progress_end = 10 + part_index * 80 / total_parts
+                
+                # Custom progress callback for this part
+                if progress_callback:
+                    part_progress_callback = lambda p: progress_callback(
+                        int(progress_start + (progress_end - progress_start) * p / 100)
+                    )
+                else:
+                    part_progress_callback = None
+                
+                # Send this part
+                logger.info(f"🔄 Đang gửi phần {part_index}/{total_parts}: {part_name}")
+                
+                # Make multiple attempts if needed
+                max_attempts = 4
+                for attempt in range(max_attempts):
+                    try:
+                        success = self._send_video_direct(
+                            chat_id,
+                            part_path,
+                            part_caption,
+                            disable_notification=disable_notification
+                        )
+                        
+                        if success:
+                            successful_parts += 1
+                            # Update progress to end of this part
+                            if progress_callback:
+                                progress_callback(int(progress_end))
+                            break
+                        
+                        if attempt < max_attempts - 1:
+                            logger.warning(f"⚠️ Lỗi kết nối (lần {attempt+1}/{max_attempts}), thử lại sau 10 giây...")
+                            time.sleep(10)  # Wait before retrying
+                        else:
+                            logger.error(f"❌ Đã thử {max_attempts} lần nhưng không thể gửi phần {part_index}/{total_parts}")
+                    
+                    except Exception as e:
+                        logger.error(f"Lỗi khi gửi phần {part_index}/{total_parts}: {str(e)}")
+                        if attempt < max_attempts - 1:
+                            logger.warning(f"⚠️ Thử lại sau 10 giây...")
+                            time.sleep(10)  # Wait before retrying
+            
+            # Clean up temporary files
+            try:
+                for part_path in video_parts:
+                    if os.path.exists(part_path):
+                        os.remove(part_path)
+            except Exception as e:
+                logger.warning(f"⚠️ Không thể xóa file tạm thời: {str(e)}")
+            
+            # Check if all parts were sent successfully
+            if successful_parts == total_parts:
+                logger.info(f"✅ Đã gửi thành công tất cả {total_parts} phần của video {video_name}")
+                # Set progress to 100%
+                if progress_callback:
+                    progress_callback(100)
+                return True
+            else:
+                logger.error(f"❌ Chỉ gửi được {successful_parts}/{total_parts} phần của video {video_name}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi gửi video theo từng phần: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+            
+    def delete_message(self, chat_id, message_id):
+        """
+        Xóa tin nhắn khỏi Telegram
+        
+        Args:
+            chat_id (str/int): ID của cuộc trò chuyện/kênh
+            message_id (int): ID của tin nhắn cần xóa
+            
+        Returns:
+            bool: True nếu xóa thành công
+        """
+        if not self.connected or not self.bot:
+            logger.error("Chưa kết nối với Telegram API")
+            return False
+            
+        try:
+            result = self.bot.delete_message(chat_id, message_id)
+            return result
+        except Exception as e:
+            logger.error(f"Lỗi khi xóa tin nhắn: {str(e)}")
+            return False
