@@ -101,8 +101,25 @@ class TelethonUploader:
     def disconnect(self):
         """Ngắt kết nối với Telegram"""
         if self.client:
-            self.loop.run_until_complete(self.client.disconnect())
+            try:
+                # Check if client has disconnect method and it's a coroutine
+                if hasattr(self.client, 'disconnect') and self.loop and self.loop.is_running():
+                    self.loop.run_until_complete(self.client.disconnect())
+                elif hasattr(self.client, 'disconnect'):
+                    # Create a new event loop if needed
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    
+                    # Run the disconnect coroutine
+                    loop.run_until_complete(self.client.disconnect())
+            except Exception as e:
+                logger.error(f"Error during Telethon disconnect: {str(e)}")
+            
             self.client = None
+        
         self.connected = False
         logger.info("Đã ngắt kết nối khỏi Telegram")
     

@@ -1,5 +1,5 @@
 """
-Module for the initial configuration modal that appears when no Telegram configuration exists.
+Module for editing Telegram configurations
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -7,19 +7,197 @@ import logging
 import os
 import sys
 import threading
-import time
 import json
 
-logger = logging.getLogger("ConfigModal")
+logger = logging.getLogger("EditConfigModal")
 
-class TelegramConfigModal:
+class TelegramEditModal:
     """
-    Modal dialog for initial Telegram configuration when app starts with no configuration.
+    Modal dialog for editing Telegram Bot configuration
     """
     
     def __init__(self, app):
         """
-        Initialize the configuration modal
+        Initialize the edit modal
+        
+        Args:
+            app: The main application instance
+        """
+        self.app = app
+        self.modal = None
+        
+        # Create modal window
+        self.create_modal()
+    
+    def create_fixed_height_entry(self, parent, textvariable, width=40):
+        """Create an entry widget with fixed height of 40px"""
+        # Create a container frame with fixed height
+        container = ttk.Frame(parent, height=40)
+        container.pack_propagate(False)  # Prevent the frame from shrinking
+        
+        # Create the entry widget within the container
+        entry = ttk.Entry(container, textvariable=textvariable, width=width)
+        entry.pack(fill=tk.BOTH, expand=True)
+        
+        return container, entry
+        
+    def create_modal(self):
+        """Create the edit configuration modal UI"""
+        self.modal = tk.Toplevel(self.app.root)
+        self.modal.title("Chỉnh sửa cấu hình Telegram Bot")
+        self.modal.transient(self.app.root)
+        self.modal.grab_set()
+        
+        # Set fullscreen size
+        screen_width = self.modal.winfo_screenwidth()
+        screen_height = self.modal.winfo_screenheight()
+        
+        # Adjust to keep some margin
+        window_width = screen_width - 100
+        window_height = screen_height - 100
+        
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        
+        self.modal.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        
+        # Main content frame
+        content_frame = ttk.Frame(self.modal, padding=20)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Bot Token
+        ttk.Label(content_frame, text="Token Telegram - (Tìm trong @BotFather)").pack(anchor=tk.W, pady=(0, 5))
+        self.token_var = tk.StringVar(value=self.app.config['TELEGRAM']['bot_token'])
+        token_container, token_entry = self.create_fixed_height_entry(content_frame, self.token_var, width=60)
+        token_container.pack(fill=tk.X, pady=(0, 15))
+        
+        # Chat ID
+        ttk.Label(content_frame, text="Chat ID - (Có định dạng: -100xxxxxxxxx)").pack(anchor=tk.W, pady=(0, 5))
+        self.chat_id_var = tk.StringVar(value=self.app.config['TELEGRAM']['chat_id'])
+        chat_id_container, chat_id_entry = self.create_fixed_height_entry(content_frame, self.chat_id_var, width=60)
+        chat_id_container.pack(fill=tk.X, pady=(0, 15))
+        
+        # Footer with buttons
+        btn_frame = ttk.Frame(content_frame)
+        btn_frame.pack(fill=tk.X, pady=(20, 0))
+        
+        # Test connection button
+        test_btn = ttk.Button(
+            btn_frame, 
+            text="Kiểm tra kết nối", 
+            command=self.test_connection
+        )
+        test_btn.pack(side=tk.LEFT)
+        
+        # Cancel button
+        cancel_btn = ttk.Button(
+            btn_frame, 
+            text="Hủy", 
+            command=self.modal.destroy
+        )
+        cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        
+        # Save button
+        save_btn = ttk.Button(
+            btn_frame, 
+            text="Lưu cài đặt", 
+            command=self.save_settings
+        )
+        save_btn.pack(side=tk.RIGHT)
+        
+        # Focus on token entry
+        token_entry.focus_set()
+    
+    def test_connection(self):
+        """Test Telegram connection with provided settings"""
+        # Test Bot API connection
+        bot_token = self.token_var.get().strip()
+        chat_id = self.chat_id_var.get().strip()
+        
+        if not bot_token or not chat_id:
+            messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ Token và Chat ID!")
+            return
+        
+        try:
+            # Try to connect to Telegram Bot API
+            import telebot
+            bot = telebot.TeleBot(bot_token)
+            
+            # Test if bot info can be retrieved
+            bot_info = bot.get_me()
+            
+            if bot_info:
+                # Try to send a test message
+                try:
+                    message = bot.send_message(
+                        chat_id=chat_id,
+                        text="✅ Kiểm tra kết nối thành công! Tin nhắn này sẽ tự động bị xóa."
+                    )
+                    
+                    # Try to delete the test message
+                    try:
+                        bot.delete_message(chat_id, message.message_id)
+                    except:
+                        pass  # Ignore if can't delete
+                    
+                    messagebox.showinfo(
+                        "Thành công", 
+                        f"Kết nối thành công với bot @{bot_info.username}!"
+                    )
+                except Exception as e:
+                    messagebox.showerror(
+                        "Lỗi", 
+                        f"Kết nối đến bot thành công nhưng không thể gửi tin nhắn đến chat ID: {str(e)}"
+                    )
+            else:
+                messagebox.showerror("Lỗi", "Không thể kết nối đến Telegram Bot API!")
+                
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể kết nối đến Telegram: {str(e)}")
+    
+    def save_settings(self):
+        """Save the configuration settings"""
+        # Get and validate settings
+        bot_token = self.token_var.get().strip()
+        chat_id = self.chat_id_var.get().strip()
+        
+        if not bot_token or not chat_id:
+            messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ Token và Chat ID!")
+            return
+        
+        # Save settings to config
+        self.app.config['TELEGRAM']['bot_token'] = bot_token
+        self.app.config['TELEGRAM']['chat_id'] = chat_id
+        self.app.config['TELEGRAM']['notification_chat_id'] = chat_id  # Use same chat ID for notifications
+        
+        # Save configuration
+        self.app.config_manager.save_config(self.app.config)
+        
+        # Update the values in the settings tab
+        self.app.bot_token_var.set(bot_token)
+        self.app.chat_id_var.set(chat_id)
+        
+        # Reconnect with new settings
+        self.app.telegram_connector.connect_telegram(self.app)
+        
+        # Show success message
+        messagebox.showinfo("Thành công", "Đã lưu cài đặt Bot Telegram thành công!")
+        
+        # Close modal
+        self.modal.destroy()
+        
+        # Refresh settings tab
+        self.app.notebook.select(self.app.notebook.index("current"))
+
+
+class TelethonEditModal:
+    """
+    Modal dialog for editing Telethon API configuration
+    """
+    
+    def __init__(self, app):
+        """
+        Initialize the edit modal
         
         Args:
             app: The main application instance
@@ -45,9 +223,9 @@ class TelegramConfigModal:
         return container, entry
         
     def create_modal(self):
-        """Create the configuration modal UI"""
+        """Create the edit configuration modal UI"""
         self.modal = tk.Toplevel(self.app.root)
-        self.modal.title("Cấu hình Telegram")
+        self.modal.title("Chỉnh sửa cấu hình Telethon API")
         self.modal.transient(self.app.root)
         self.modal.grab_set()
         
@@ -64,66 +242,31 @@ class TelegramConfigModal:
         
         self.modal.geometry(f"{window_width}x{window_height}+{x}+{y}")
         
-        # Handle window close with X button
-        self.modal.protocol("WM_DELETE_WINDOW", self.prevent_close)
+        # Main content frame
+        content_frame = ttk.Frame(self.modal, padding=20)
+        content_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Main title
-        title_label = ttk.Label(
-            self.modal, 
-            text="Cấu hình Telegram",
-            font=("Arial", 14, "bold")
-        )
-        title_label.pack(pady=(20, 30))
+        # API ID
+        ttk.Label(content_frame, text="API ID - (Có định dạng: 2xxxxxx)").pack(anchor=tk.W, pady=(0, 5))
+        self.api_id_var = tk.StringVar(value=self.app.config['TELETHON']['api_id'])
+        api_id_container, api_id_entry = self.create_fixed_height_entry(content_frame, self.api_id_var, width=30)
+        api_id_container.pack(fill=tk.X, pady=(0, 15))
         
-        # Main content frame with grid (2 columns)
-        content_frame = ttk.Frame(self.modal)
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        # API Hash
+        ttk.Label(content_frame, text="API Hash - (Có định dạng: 7xxxxe)").pack(anchor=tk.W, pady=(0, 5))
+        self.api_hash_var = tk.StringVar(value=self.app.config['TELETHON']['api_hash'])
+        api_hash_container, api_hash_entry = self.create_fixed_height_entry(content_frame, self.api_hash_var, width=60)
+        api_hash_container.pack(fill=tk.X, pady=(0, 15))
         
-        # Configure grid columns to be equal width
-        content_frame.columnconfigure(0, weight=1)
-        content_frame.columnconfigure(1, weight=1)
-        
-        # Left column - Telegram Bot configuration
-        bot_frame = ttk.LabelFrame(content_frame, text="Cấu hình Telegram Bot")
-        bot_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        
-        # Token input
-        ttk.Label(bot_frame, text="Token Telegram - (Tìm trong @BotFather)").pack(anchor=tk.W, padx=10, pady=(10, 5))
-        self.token_var = tk.StringVar()
-        token_container, token_entry = self.create_fixed_height_entry(bot_frame, self.token_var)
-        token_container.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        # Chat ID input
-        ttk.Label(bot_frame, text="Chat ID - (Có định dạng: -100xxxxxxxxx)").pack(anchor=tk.W, padx=10, pady=(10, 5))
-        self.chat_id_var = tk.StringVar()
-        chat_id_container, chat_id_entry = self.create_fixed_height_entry(bot_frame, self.chat_id_var)
-        chat_id_container.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        # Right column - Telethon API configuration
-        api_frame = ttk.LabelFrame(content_frame, text="Cấu hình Telethon API")
-        api_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-        
-        # API ID input
-        ttk.Label(api_frame, text="API ID - (Có định dạng: 2xxxxxx)").pack(anchor=tk.W, padx=10, pady=(10, 5))
-        self.api_id_var = tk.StringVar()
-        api_id_container, api_id_entry = self.create_fixed_height_entry(api_frame, self.api_id_var)
-        api_id_container.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        # API Hash input
-        ttk.Label(api_frame, text="API Hash - (Có định dạng: 7xxxxe)").pack(anchor=tk.W, padx=10, pady=(10, 5))
-        self.api_hash_var = tk.StringVar()
-        api_hash_container, api_hash_entry = self.create_fixed_height_entry(api_frame, self.api_hash_var)
-        api_hash_container.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        # Phone number input
-        ttk.Label(api_frame, text="Số điện thoại - (Có định dạng: +84123456789)").pack(anchor=tk.W, padx=10, pady=(10, 5))
-        self.phone_var = tk.StringVar()
-        phone_container, phone_entry = self.create_fixed_height_entry(api_frame, self.phone_var)
-        phone_container.pack(fill=tk.X, padx=10, pady=(0, 10))
+        # Phone number
+        ttk.Label(content_frame, text="Số điện thoại - (Có định dạng: +84123456789)").pack(anchor=tk.W, pady=(0, 5))
+        self.phone_var = tk.StringVar(value=self.app.config['TELETHON']['phone'])
+        phone_container, phone_entry = self.create_fixed_height_entry(content_frame, self.phone_var, width=30)
+        phone_container.pack(fill=tk.X, pady=(0, 15))
         
         # OTP verification group
-        otp_frame = ttk.LabelFrame(api_frame, text="Xác thực OTP")
-        otp_frame.pack(fill=tk.X, padx=10, pady=(10, 10))
+        otp_frame = ttk.LabelFrame(content_frame, text="Xác thực OTP")
+        otp_frame.pack(fill=tk.X, pady=(10, 15))
         
         # OTP field label
         ttk.Label(otp_frame, text="Mã OTP").pack(anchor=tk.W, padx=10, pady=(10, 5))
@@ -146,43 +289,27 @@ class TelegramConfigModal:
         self.otp_button.pack(fill=tk.BOTH, expand=True)
         
         # Footer with buttons
-        footer_frame = ttk.Frame(self.modal)
-        footer_frame.pack(fill=tk.X, padx=20, pady=20)
+        btn_frame = ttk.Frame(content_frame)
+        btn_frame.pack(fill=tk.X, pady=(20, 0))
         
-        # Test connection button
-        test_button = ttk.Button(
-            footer_frame, 
-            text="Kiểm tra kết nối", 
-            command=self.test_connection
+        # Cancel button
+        cancel_btn = ttk.Button(
+            btn_frame, 
+            text="Hủy", 
+            command=self.modal.destroy
         )
-        test_button.pack(side=tk.LEFT, padx=10)
+        cancel_btn.pack(side=tk.RIGHT, padx=(5, 0))
         
-        # Save settings button
+        # Save button
         self.save_button = ttk.Button(
-            footer_frame, 
+            btn_frame, 
             text="Lưu cài đặt", 
             command=self.save_settings
         )
-        self.save_button.pack(side=tk.RIGHT, padx=10)
+        self.save_button.pack(side=tk.RIGHT)
         
-        # Disable Save button if authentication is in progress
-        if self.telethon_verification_in_progress:
-            self.save_button.config(state=tk.DISABLED)
-        
-        # Focus on first input
-        token_entry.focus_set()
-    
-    def prevent_close(self):
-        """Confirm if the user wants to exit without configuration"""
-        result = messagebox.askyesno(
-            "Cấu hình Telegram", 
-            "Ứng dụng cần thông tin cấu hình Telegram để hoạt động đầy đủ.\n\n"
-            "- Nhấn 'Có' để tiếp tục cấu hình\n"
-            "- Nhấn 'Không' để thoát ứng dụng"
-        )
-        
-        if not result:  # No - exit application
-            self.app.root.destroy()
+        # Focus on API ID entry
+        api_id_entry.focus_set()
     
     def request_otp(self):
         """Request OTP for Telethon verification or verify OTP"""
@@ -451,99 +578,50 @@ if __name__ == "__main__":
             messagebox.showerror("Lỗi", f"Lỗi khi xác thực OTP: {str(e)}")
             return False
     
-    def test_connection(self):
-        """Test Telegram connection with provided settings"""
-        # Test Bot API connection
-        bot_token = self.token_var.get().strip()
-        chat_id = self.chat_id_var.get().strip()
-        
-        if not bot_token or not chat_id:
-            messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ Token và Chat ID!")
-            return
-        
-        try:
-            # Try to connect to Telegram Bot API
-            import telebot
-            bot = telebot.TeleBot(bot_token)
-            
-            # Test if bot info can be retrieved
-            bot_info = bot.get_me()
-            
-            if bot_info:
-                # Try to send a test message
-                try:
-                    message = bot.send_message(
-                        chat_id=chat_id,
-                        text="✅ Kiểm tra kết nối thành công! Tin nhắn này sẽ tự động bị xóa."
-                    )
-                    
-                    # Try to delete the test message
-                    try:
-                        bot.delete_message(chat_id, message.message_id)
-                    except:
-                        pass  # Ignore if can't delete
-                    
-                    messagebox.showinfo(
-                        "Thành công", 
-                        f"Kết nối thành công với bot @{bot_info.username}!"
-                    )
-                except Exception as e:
-                    messagebox.showerror(
-                        "Lỗi", 
-                        f"Kết nối đến bot thành công nhưng không thể gửi tin nhắn đến chat ID: {str(e)}"
-                    )
-            else:
-                messagebox.showerror("Lỗi", "Không thể kết nối đến Telegram Bot API!")
-                
-        except Exception as e:
-            messagebox.showerror("Lỗi", f"Không thể kết nối đến Telegram: {str(e)}")
-    
     def save_settings(self):
         """Save the configuration settings"""
-        # Get and validate Bot API settings
-        bot_token = self.token_var.get().strip()
-        chat_id = self.chat_id_var.get().strip()
-        
-        if not bot_token or not chat_id:
-            messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ Token và Chat ID!")
-            return
-        
-        # Get Telethon API settings
+        # Get and validate settings
         api_id = self.api_id_var.get().strip()
         api_hash = self.api_hash_var.get().strip()
         phone = self.phone_var.get().strip()
         
+        if not api_id or not api_hash or not phone:
+            messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ API ID, API Hash và số điện thoại!")
+            return
+        
         # If Telethon verification is in progress, check if it's completed
-        if self.telethon_verification_in_progress and api_id and api_hash and phone:
+        if self.telethon_verification_in_progress:
             if self.otp_button.cget("text") != "✓ Đã xác thực":
                 messagebox.showerror("Lỗi", "Vui lòng hoàn thành xác thực OTP trước khi lưu cài đặt!")
                 return
         
-        # Save settings to config
-        self.app.config['TELEGRAM']['bot_token'] = bot_token
-        self.app.config['TELEGRAM']['chat_id'] = chat_id
-        self.app.config['TELEGRAM']['notification_chat_id'] = chat_id  # Use same chat ID for notifications
+        # Try to convert API ID to int to validate
+        try:
+            api_id_int = int(api_id)
+        except ValueError:
+            messagebox.showerror("Lỗi", "API ID phải là một số nguyên!")
+            return
         
-        # Save Telethon settings if provided
-        if api_id and api_hash and phone:
-            try:
-                api_id_int = int(api_id)  # Validate API ID
-                self.app.config['TELETHON']['api_id'] = api_id
-                self.app.config['TELETHON']['api_hash'] = api_hash
-                self.app.config['TELETHON']['phone'] = phone
-                self.app.config['TELETHON']['use_telethon'] = 'true'
-            except ValueError:
-                messagebox.showerror("Lỗi", "API ID phải là một số nguyên!")
-                return
+        # Save settings to config
+        self.app.config['TELETHON']['api_id'] = api_id
+        self.app.config['TELETHON']['api_hash'] = api_hash
+        self.app.config['TELETHON']['phone'] = phone
+        self.app.config['TELETHON']['use_telethon'] = 'true'
         
         # Save configuration
         self.app.config_manager.save_config(self.app.config)
         
-        # Reconnect with new settings
-        self.app.telegram_connector.connect_telegram(self.app)
+        # Update the values in the settings tab
+        self.app.api_id_var.set(api_id)
+        self.app.api_hash_var.set(api_hash)
+        self.app.phone_var.set(phone)
+        self.app.use_telethon_var.set(True)
         
         # Show success message
-        messagebox.showinfo("Thành công", "Cài đặt đã được lưu thành công!")
+        messagebox.showinfo("Thành công", "Đã lưu cài đặt Telethon API thành công!")
         
         # Close modal
         self.modal.destroy()
+        
+        # Refresh settings tab
+        self.app.notebook.select(self.app.notebook.index("current"))

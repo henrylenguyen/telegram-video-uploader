@@ -168,34 +168,87 @@ class TelegramAPI:
         logger.error(f"Đã thử {max_retries+1} lần nhưng vẫn thất bại: {last_error}")
         return False
     
-    def send_message(self, chat_id, text, disable_notification=False):
+    def send_video(self, chat_id, video_path, caption=None):
         """
-        Gửi tin nhắn văn bản với cơ chế tự động thử lại
+        Gửi video đến chat ID
         
         Args:
-            chat_id (str/int): ID của cuộc trò chuyện/kênh
-            text (str): Nội dung tin nhắn
-            disable_notification (bool): Có tắt thông báo không
+            chat_id (str/int): ID chat nhận video
+            video_path (str): Đường dẫn đến file video
+            caption (str, optional): Chú thích cho video
             
         Returns:
             bool: True nếu gửi thành công
         """
-        if not self.connected or not self.bot:
-            logger.error("Chưa kết nối với Telegram API")
+        if not self.bot:
+            logger.error("Chưa kết nối với bot Telegram!")
             return False
             
-        def _send():
-            with self.send_lock:  # Sử dụng lock để tránh lỗi flood control
-                self.bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    parse_mode='HTML',
-                    disable_notification=disable_notification
-                )
-            return True
+        video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+        video_name = os.path.basename(video_path)
         
-        return self.send_with_retry(_send)
-    
+        # Kiểm tra nếu Telethon được bật và video lớn hơn 50MB
+        use_telethon = False
+        try:
+            from app import app
+            if hasattr(app, "config"):
+                use_telethon = app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+        except:
+            # Nếu không thể lấy từ app, kiểm tra trong cấu hình
+            config = configparser.ConfigParser()
+            config_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'config.ini')
+            if os.path.exists(config_file):
+                config.read(config_file)
+                if 'TELETHON' in config:
+                    use_telethon = config.getboolean('TELETHON', 'use_telethon', fallback=False)
+        
+        if use_telethon and video_size_mb > 50:
+            # Dùng Telethon để gửi video lớn
+            try:
+                from utils.telethon_uploader import telethon_uploader
+                logger.info(f"🔄 Sử dụng Telethon API để tải lên video lớn: {video_name} ({video_size_mb:.2f} MB)")
+                return telethon_uploader.send_video(chat_id, video_path, caption)
+            except Exception as e:
+                logger.error(f"Lỗi khi sử dụng Telethon: {str(e)}")
+                # Nếu Telethon thất bại, quay lại xử lý thông thường
+                logger.warning("Quay lại phương pháp tải lên thông thường")
+        
+        # Phương pháp gửi thông thường sử dụng Bot API
+        logger.info(f"🔄 Đang xử lý video lớn: {video_name} ({video_size_mb:.2f} MB)")
+        
+        # Nếu video nhỏ hơn 50MB, gửi trực tiếp
+        if video_size_mb <= 50:
+            return self._send_video_directly(chat_id, video_path, caption)
+        
+        # Chia nhỏ video nếu lớn hơn 50MB
+        from utils.video_splitter import VideoSplitter
+        splitter = VideoSplitter()
+        parts = splitter.split_video(video_path)
+        
+        if not parts:
+            logger.error(f"Không thể chia nhỏ video: {video_name}")
+            return False
+        
+        logger.info(f"Video {video_name} ({video_size_mb:.2f} MB) sẽ được gửi thành {len(parts)} phần")
+        
+        # Gửi từng phần
+        total_parts = len(parts)
+        for i, part in enumerate(parts, 1):
+            part_caption = f"{caption or video_name} - Phần {i}/{total_parts}"
+            success = self._send_video_directly(chat_id, part, part_caption)
+            if not success:
+                logger.error(f"Lỗi khi gửi phần {i}/{total_parts}")
+                return False
+            time.sleep(1)  # Chờ giữa các lần gửi
+        
+        # Xóa các file tạm
+        for part in parts:
+            try:
+                os.remove(part)
+            except:
+                pass
+        
+        return True
     def _check_file_size(self, file_path):
         """
         Kiểm tra kích thước file và quyết định cách xử lý

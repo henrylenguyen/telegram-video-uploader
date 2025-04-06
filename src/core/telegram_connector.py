@@ -175,6 +175,10 @@ class TelegramConnector:
         if bot_token != self.telegram_api.bot_token:
             self.telegram_api.disconnect()
             self.connect_telegram(app)
+        # Refresh settings tab
+        if hasattr(app, 'notebook'):
+            current_tab = app.notebook.index("current")
+            app.notebook.select(current_tab)  # Refresh current tab
     def save_telethon_settings(self, app):
         """
         Lưu cài đặt Telethon từ giao diện vào file cấu hình
@@ -199,3 +203,7 @@ class TelegramConnector:
         
         # Thông báo
         messagebox.showinfo("Thông báo", "Đã lưu cài đặt Telethon thành công!")
+        # Refresh settings tab
+        if hasattr(app, 'notebook'):
+            current_tab = app.notebook.index("current")
+            app.notebook.select(current_tab)  # Refresh current tab
