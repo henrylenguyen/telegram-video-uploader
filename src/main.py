@@ -24,7 +24,9 @@ logger = logging.getLogger("TelegramUploader")
 
 # Import lớp ứng dụng chính
 from app import TelegramUploaderApp
-
+# Áp dụng patches cho telethon integration
+from utils.telethon_patch import apply_patches
+apply_patches()
 def main():
     """Hàm main để khởi chạy ứng dụng"""
     logger.info("Khởi động ứng dụng Telegram Video Uploader")

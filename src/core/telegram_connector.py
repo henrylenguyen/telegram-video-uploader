@@ -80,13 +80,16 @@ class TelegramConnector:
                     logger.info(f"Kiểm tra kết nối Telethon với api_id={api_id}, phone={phone}")
                     
                     # THAY ĐỔI: Thiết lập connected = True nếu đã có cấu hình đầy đủ
-                    # Điều này giúp đảm bảo ưu tiên sử dụng Telethon nếu đã bật
                     self.telethon_uploader.connected = True
                     logger.info("Đã thiết lập telethon_uploader.connected = True do có cấu hình đầy đủ")
                     
-                    # Kiểm tra xem đã kết nối chưa (kiểm tra không chặn)
-                    already_connected = self.telethon_uploader.is_connected()
-                    logger.info(f"Trạng thái kết nối thực tế Telethon: {already_connected}")
+                    # Kiểm tra xem đã kết nối chưa mà không chặn UI
+                    try:
+                        already_connected = self.telethon_uploader.is_user_authorized()
+                        logger.info(f"Kiểm tra xác thực người dùng Telethon: {already_connected}")
+                    except Exception as e:
+                        logger.error(f"Lỗi kiểm tra xác thực người dùng: {str(e)}")
+                        already_connected = False
                     
                     if not already_connected:
                         # Thử đăng nhập không tương tác
@@ -96,8 +99,7 @@ class TelegramConnector:
                         if login_result:
                             logger.info("Đã kết nối với Telegram API (Telethon) thành công")
                         else:
-                            # Nếu đăng nhập thất bại, vẫn giữ connected = True
-                            # để ưu tiên thử dùng Telethon khi upload
+                            # Vẫn giữ connected = True để ưu tiên dùng Telethon
                             logger.warning("Không thể đăng nhập Telethon tự động, nhưng vẫn ưu tiên sử dụng Telethon")
                             
                             # Lên lịch hiển thị hộp thoại đăng nhập sau khi khởi động hoàn tất

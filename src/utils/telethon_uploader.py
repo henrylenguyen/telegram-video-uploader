@@ -8,6 +8,7 @@ import asyncio
 from telethon import TelegramClient
 from telethon.tl.types import DocumentAttributeVideo
 import time
+import inspect  
 
 logger = logging.getLogger("TelethonUploader")
 
@@ -66,19 +67,27 @@ class TelethonUploader:
             # Đóng client hiện tại nếu có
             if self.client:
                 try:
-                    self.loop.run_until_complete(self.client.disconnect())
-                except:
-                    pass
+                    if hasattr(self.client, 'disconnect'):
+                        if inspect.iscoroutinefunction(self.client.disconnect):
+                            self.loop.run_until_complete(self.client.disconnect())
+                        else:
+                            self.client.disconnect()
+                except Exception as e:
+                    logger.error(f"Lỗi khi ngắt kết nối client hiện tại: {str(e)}")
                 self.client = None
             
             # Tạo client mới
             self.client = TelegramClient(self.session_name, api_id, api_hash, loop=self.loop)
             
             # Kết nối trước
-            self.loop.run_until_complete(self.client.connect())
+            if hasattr(self.client, 'connect'):
+                if inspect.iscoroutinefunction(self.client.connect):
+                    self.loop.run_until_complete(self.client.connect())
+                else:
+                    self.client.connect()
             
-            # Kiểm tra nếu đã được ủy quyền
-            is_authorized = self.loop.run_until_complete(self.client.is_user_authorized())
+            # Kiểm tra xem đã được ủy quyền chưa
+            is_authorized = self.is_user_authorized()
             logger.info(f"Trạng thái ủy quyền Telethon: {is_authorized}")
             
             if is_authorized:
@@ -96,14 +105,14 @@ class TelethonUploader:
                     return True
                 else:
                     logger.error("Đăng nhập tương tác thất bại")
-                    # THAY ĐỔI: Vẫn đặt connected = True để ưu tiên dùng Telethon
+                    # Vẫn đặt connected = True để ưu tiên dùng Telethon
                     self.connected = True
                     logger.info("Đặt connected = True dù đăng nhập thất bại để ưu tiên dùng Telethon")
                     return False
             else:
                 # Đăng nhập không tương tác thất bại
                 logger.error("Không thể đăng nhập tự động. Cần phiên đăng nhập tương tác.")
-                # THAY ĐỔI: Vẫn đặt connected = True để ưu tiên dùng Telethon
+                # Vẫn đặt connected = True để ưu tiên dùng Telethon
                 self.connected = True
                 logger.info("Đặt connected = True dù đăng nhập thất bại để ưu tiên dùng Telethon")
                 return False
@@ -114,14 +123,19 @@ class TelethonUploader:
             logger.error(traceback.format_exc())
             if self.client:
                 try:
-                    self.loop.run_until_complete(self.client.disconnect())
+                    if hasattr(self.client, 'disconnect'):
+                        if inspect.iscoroutinefunction(self.client.disconnect):
+                            self.loop.run_until_complete(self.client.disconnect())
+                        else:
+                            self.client.disconnect()
                 except:
                     pass
                 self.client = None
-            # THAY ĐỔI: Vẫn đặt connected = True để ưu tiên dùng Telethon
+            # Vẫn đặt connected = True để ưu tiên dùng Telethon
             self.connected = True
             logger.info("Đặt connected = True dù đăng nhập thất bại để ưu tiên dùng Telethon")
             return False
+            
     async def _interactive_login(self):
         """Phương thức đăng nhập tương tác được cải tiến với xử lý lỗi tốt hơn"""
         try:
@@ -144,8 +158,23 @@ class TelethonUploader:
         except Exception as e:
             logger.error(f"Lỗi khi đăng nhập tương tác: {str(e)}")
             return False
-    
-    def upload_video(self, chat_id, video_path, caption=None, disable_notification=False, progress_callback=None):
+            
+    def is_user_authorized(self):
+        """Kiểm tra người dùng đã xác thực chưa"""
+        if not self.client:
+            return False
+            
+        try:
+            if inspect.iscoroutinefunction(self.client.is_user_authorized):
+                is_auth = self.loop.run_until_complete(self.client.is_user_authorized())
+            else:
+                is_auth = self.client.is_user_authorized()
+            return is_auth
+        except Exception as e:
+            logger.error(f"Lỗi kiểm tra xác thực: {str(e)}")
+            return False
+            
+    def upload_video(self, chat_id, video_path, caption=None, disable_notification=False, progress_callback=None, force=False):
         """
         Tải lên video lên Telegram sử dụng Telethon API
         
@@ -155,30 +184,79 @@ class TelethonUploader:
             caption (str): Chú thích cho video
             disable_notification (bool): Tắt thông báo cho tin nhắn
             progress_callback (function): Callback cho tiến trình tải lên
+            force (bool): Bỏ qua kiểm tra kết nối nếu True
             
         Returns:
             bool: True nếu tải lên thành công
         """
-        logger.info(f"Bắt đầu tải lên video qua Telethon: {os.path.basename(video_path)}")
+        video_name = os.path.basename(video_path)
+        video_size_mb = 0
+        if os.path.exists(video_path) and os.path.isfile(video_path):
+            video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            
+        logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 1] Bắt đầu tải lên video {video_name} ({video_size_mb:.2f} MB), force={force}")
         
-        if not self.connected or not self.client:
-            logger.error("Chưa kết nối Telethon API")
-            return False
-        
+        # Kiểm tra file tồn tại
         if not os.path.exists(video_path) or not os.path.isfile(video_path):
-            logger.error(f"File video không tồn tại: {video_path}")
+            logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 2] File video không tồn tại: {video_path}")
             return False
             
+        # Log chi tiết state
+        logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 3] Trạng thái hiện tại - client exists: {self.client is not None}, connected: {self.connected}, api_id: {self.api_id is not None}, api_hash: {self.api_hash is not None}, phone: {self.phone is not None}")
+            
+        # Nếu force=True, bỏ qua kiểm tra kết nối
+        if force:
+            logger.info("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 4] Force=True, ưu tiên dùng Telethon bất kể trạng thái kết nối")
+            self.connected = True
+        
+        # Nếu chưa kết nối, báo lỗi
+        if not self.connected or not self.client:
+            if force:
+                # Thử kết nối lại khi force=True
+                logger.info("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 5] Force=True & chưa kết nối, thử kết nối lại...")
+                try:
+                    # Tạo client mới nếu cần
+                    if not self.client:
+                        if not self.api_id or not self.api_hash or not self.phone:
+                            logger.error("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 6] Thiếu thông tin kết nối Telethon")
+                            return False
+                        
+                        logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 7] Tạo client mới với api_id={self.api_id}, phone={self.phone}")
+                        self.client = TelegramClient(self.session_name, self.api_id, self.api_hash, loop=self.loop)
+                    
+                    # Kết nối client
+                    logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 8] Thử kết nối client")
+                    if hasattr(self.client, 'connect'):
+                        if inspect.iscoroutinefunction(self.client.connect):
+                            self.loop.run_until_complete(self.client.connect())
+                        else:
+                            self.client.connect()
+                            
+                    logger.info("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 9] Đã kết nối lại Telethon khi force=True")
+                except Exception as e:
+                    logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 10] Không thể kết nối lại Telethon dù force=True: {str(e)}")
+                    import traceback
+                    logger.error(f"TELETHON_UPLOADER: [STACK TRACE] {traceback.format_exc()}")
+                    # Vẫn tiếp tục thử tải lên dù có lỗi
+                    logger.info("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 11] Vẫn tiếp tục dù có lỗi vì force=True")
+            else:
+                logger.error("TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 12] Chưa kết nối Telethon API và không có force=True")
+                return False
+                
         try:
             # Chuẩn bị biến
             video_size = os.path.getsize(video_path)
-            video_name = os.path.basename(video_path)
+            logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 13] Kích thước video: {video_size / (1024 * 1024):.2f} MB")
             
             # Chuyển đổi chat_id thành int nếu là chuỗi số
             try:
-                chat_id = int(chat_id)
+                if isinstance(chat_id, str) and chat_id.isdigit():
+                    chat_id = int(chat_id)
+                    logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 14] Đã chuyển đổi chat_id thành int: {chat_id}")
+                else:
+                    logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 15] Giữ nguyên chat_id: {chat_id}")
             except ValueError:
-                pass
+                logger.warning(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 16] Không thể chuyển đổi chat_id: {chat_id}")
             
             # Tạo wrapper cho progress_callback nếu được cung cấp
             if progress_callback:
@@ -205,9 +283,18 @@ class TelethonUploader:
             async def _upload_video():
                 try:
                     # Lấy entity trước để đảm bảo nó tồn tại
-                    entity = await self.client.get_entity(chat_id)
+                    try:
+                        logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 17] Đang lấy entity cho chat_id: {chat_id}")
+                        entity = await self.client.get_entity(chat_id)
+                        logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 18] Đã lấy entity thành công: {type(entity).__name__}")
+                    except Exception as e:
+                        logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 19] Lỗi khi lấy entity từ chat_id={chat_id}: {str(e)}")
+                        # Thử dùng trực tiếp chat_id nếu không lấy được entity
+                        logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 20] Sử dụng trực tiếp chat_id: {chat_id}")
+                        entity = chat_id
                     
                     # Tải lên file với tiến trình
+                    logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 21] Bắt đầu tải lên file...")
                     result = await self.client.send_file(
                         entity,
                         video_path,
@@ -224,29 +311,31 @@ class TelethonUploader:
                     if progress_callback:
                         progress_callback(100)
                     
+                    logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 22] Tải lên thành công: {result is not None}")
                     return result is not None
                 except Exception as e:
-                    logger.error(f"Lỗi khi tải lên video qua Telethon: {str(e)}")
+                    logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 23] Lỗi khi tải lên video qua Telethon: {str(e)}")
                     import traceback
-                    logger.error(traceback.format_exc())
+                    logger.error(f"TELETHON_UPLOADER: [STACK TRACE] {traceback.format_exc()}")
                     return False
             
             # Chạy tải lên trong event loop
+            logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 24] Chạy tải lên trong event loop")
             result = self.loop.run_until_complete(_upload_video())
             
             if result:
-                logger.info(f"✅ Đã tải lên thành công qua Telethon: {video_name} ({video_size / (1024 * 1024):.2f} MB)")
+                logger.info(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 25] ✅ Đã tải lên thành công qua Telethon: {video_name} ({video_size / (1024 * 1024):.2f} MB)")
                 return True
             else:
-                logger.error(f"❌ Tải lên thất bại qua Telethon: {video_name}")
+                logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 26] ❌ Tải lên thất bại qua Telethon: {video_name}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Lỗi khi tải lên video qua Telethon: {str(e)}")
+            logger.error(f"TELETHON_UPLOADER: [ĐIỂM KIỂM TRA 27] ❌ Lỗi khi tải lên video qua Telethon: {str(e)}")
             import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"TELETHON_UPLOADER: [STACK TRACE] {traceback.format_exc()}")
             return False
-    
+            
     def is_connected(self):
         """Kiểm tra xem client có kết nối và được ủy quyền không"""
         if not self.client:
@@ -254,22 +343,53 @@ class TelethonUploader:
             return False
         
         try:
+            # Kiểm tra các phương thức riêng biệt để tránh lỗi await boolean
+            connected = False
+            authorized = False
+            
             # Kiểm tra kết nối vật lý
-            is_connected = self.loop.run_until_complete(self.client.is_connected())
-            if not is_connected:
+            try:
+                if inspect.iscoroutinefunction(self.client.is_connected):
+                    connected = self.loop.run_until_complete(self.client.is_connected())
+                else:
+                    connected = self.client.is_connected()
+            except Exception as e:
+                logger.error(f"is_connected: Lỗi kiểm tra kết nối vật lý: {str(e)}")
+                connected = False
+            
+            if not connected:
                 logger.info("is_connected: Client không có kết nối vật lý")
                 return False
             
-            # Kiểm tra ủy quyền
-            is_authorized = self.loop.run_until_complete(self.client.is_user_authorized())
-            logger.info(f"is_connected: Client có kết nối vật lý và trạng thái ủy quyền: {is_authorized}")
-            return is_authorized
+            # Kiểm tra xác thực
+            try:
+                if inspect.iscoroutinefunction(self.client.is_user_authorized):
+                    authorized = self.loop.run_until_complete(self.client.is_user_authorized())
+                else:
+                    authorized = self.client.is_user_authorized()
+            except Exception as e:
+                logger.error(f"is_connected: Lỗi kiểm tra xác thực: {str(e)}")
+                authorized = False
+            
+            logger.info(f"is_connected: Client có kết nối vật lý và trạng thái ủy quyền: {authorized}")
+            
+            # Nếu đã cấu hình đầy đủ nhưng chưa xác thực, vẫn trả về True để ưu tiên dùng Telethon
+            if not authorized and self.api_id and self.api_hash and self.phone:
+                logger.info("is_connected: Cấu hình đầy đủ, trả về True dù chưa xác thực")
+                return True
+                
+            return authorized
         except Exception as e:
             logger.error(f"is_connected: Lỗi khi kiểm tra kết nối: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
+            
+            # Nếu đã cấu hình đầy đủ nhưng lỗi khi kiểm tra, vẫn trả về True để ưu tiên dùng Telethon
+            if self.api_id and self.api_hash and self.phone:
+                logger.info("is_connected: Cấu hình đầy đủ, trả về True dù có lỗi")
+                return True
             return False
-
+            
     def reconnect(self):
         """Thử kết nối lại nếu bị ngắt kết nối"""
         if not self.client or not self.api_id or not self.api_hash:
@@ -296,6 +416,7 @@ class TelethonUploader:
             self.client = None
         
         self.connected = False
+        
     def disconnect(self):
         """Phương thức tương thích với phiên bản cũ - gọi close()"""
         self.close()

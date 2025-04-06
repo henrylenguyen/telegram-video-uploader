@@ -145,6 +145,78 @@ class VideoSplitter:
         Returns:
             list: Danh sách đường dẫn đến các phần video, hoặc [] nếu có lỗi
         """
+        # TRIỆT ĐỂ: HARD-CODED KIỂM TRA use_telethon NGAY TỪ ĐẦU
+        try:
+            # Đảm bảo video tồn tại
+            if not os.path.exists(video_path) or not os.path.isfile(video_path):
+                logger.error(f"Video không tồn tại: {video_path}")
+                return []
+                
+            # Lấy thông tin video
+            video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            video_name = os.path.basename(video_path)
+            
+            # KIỂM TRA TRỰC TIẾP TỪ CONFIG.INI
+            try:
+                from configparser import ConfigParser
+                config = ConfigParser()
+                # Tìm file config.ini trong thư mục cha của thư mục hiện tại
+                config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.ini')
+                
+                use_telethon = False
+                if os.path.exists(config_path):
+                    config.read(config_path)
+                    if 'TELETHON' in config and 'use_telethon' in config['TELETHON']:
+                        use_telethon_str = config['TELETHON']['use_telethon'].lower()
+                        use_telethon = use_telethon_str == 'true' or use_telethon_str == '1'
+                        logger.info(f"HARD CHECK: Đọc trực tiếp từ config.ini - use_telethon = {use_telethon}")
+                
+                # Kiểm tra app.config từ module chính
+                if not use_telethon:
+                    import sys
+                    if 'app' in sys.modules and hasattr(sys.modules['app'], 'config'):
+                        app_config = sys.modules['app'].config
+                        if 'TELETHON' in app_config and 'use_telethon' in app_config['TELETHON']:
+                            use_telethon_str = app_config['TELETHON']['use_telethon'].lower()
+                            use_telethon = use_telethon_str == 'true' or use_telethon_str == '1'
+                            logger.info(f"HARD CHECK: Đọc từ app.config - use_telethon = {use_telethon}")
+                    
+                    # Thử từ __main__
+                    if not use_telethon and '__main__' in sys.modules:
+                        main_module = sys.modules['__main__']
+                        if hasattr(main_module, 'app') and hasattr(main_module.app, 'config'):
+                            app_config = main_module.app.config
+                            if hasattr(app_config, 'getboolean'):
+                                use_telethon = app_config.getboolean('TELETHON', 'use_telethon', fallback=False)
+                                logger.info(f"HARD CHECK: Đọc từ __main__.app.config với getboolean - use_telethon = {use_telethon}")
+                            elif 'TELETHON' in app_config:
+                                use_telethon_str = app_config['TELETHON'].get('use_telethon', 'false').lower()
+                                use_telethon = use_telethon_str == 'true' or use_telethon_str == '1'
+                                logger.info(f"HARD CHECK: Đọc từ __main__.app.config - use_telethon = {use_telethon}")
+                
+                # KHÓA ĐẦU VÀO QUAN TRỌNG NHẤT: Nếu video lớn hơn 50MB và use_telethon = true, KHÔNG CHIA NHỎ
+                if video_size_mb > 50 and use_telethon:
+                    logger.error(f"⛔ HARD BLOCK: KHÔNG CHO PHÉP CHIA NHỎ VIDEO {video_name} ({video_size_mb:.2f} MB) vì use_telethon=True")
+                    
+                    # Hiển thị thông báo lỗi
+                    from tkinter import messagebox
+                    messagebox.showerror(
+                        "Lỗi - Không thể chia nhỏ video", 
+                        f"Video '{video_name}' ({video_size_mb:.2f} MB) không thể được chia nhỏ khi bật tùy chọn 'Sử dụng Telethon API'.\n\n"
+                        f"Vui lòng đảm bảo đã đăng nhập Telethon API trong tab Cài đặt, hoặc tắt tùy chọn 'Sử dụng Telethon API'."
+                    )
+                    
+                    return []  # Trả về danh sách trống để báo hiệu lỗi
+            except Exception as e:
+                logger.error(f"❌ HARD CHECK: Lỗi khi kiểm tra use_telethon từ config: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+        except Exception as e:
+            logger.error(f"❌ HARD CHECK: Lỗi khi kiểm tra ban đầu: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+        
+        # NẾU QUA ĐƯỢC CÁC KIỂM TRA TRÊN, TIẾP TỤC QUY TRÌNH BÌNH THƯỜNG
         if not self._check_ffmpeg():
             return []
             
