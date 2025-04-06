@@ -79,9 +79,14 @@ class TelegramConnector:
                     # Ghi log trạng thái hiện tại
                     logger.info(f"Kiểm tra kết nối Telethon với api_id={api_id}, phone={phone}")
                     
+                    # THAY ĐỔI: Thiết lập connected = True nếu đã có cấu hình đầy đủ
+                    # Điều này giúp đảm bảo ưu tiên sử dụng Telethon nếu đã bật
+                    self.telethon_uploader.connected = True
+                    logger.info("Đã thiết lập telethon_uploader.connected = True do có cấu hình đầy đủ")
+                    
                     # Kiểm tra xem đã kết nối chưa (kiểm tra không chặn)
                     already_connected = self.telethon_uploader.is_connected()
-                    logger.info(f"Trạng thái kết nối Telethon: {already_connected}")
+                    logger.info(f"Trạng thái kết nối thực tế Telethon: {already_connected}")
                     
                     if not already_connected:
                         # Thử đăng nhập không tương tác
@@ -91,8 +96,9 @@ class TelegramConnector:
                         if login_result:
                             logger.info("Đã kết nối với Telegram API (Telethon) thành công")
                         else:
-                            # Nếu đăng nhập thất bại, lưu để đăng nhập tương tác sau
-                            logger.warning("Không thể đăng nhập Telethon tự động. Sẽ yêu cầu đăng nhập tương tác sau.")
+                            # Nếu đăng nhập thất bại, vẫn giữ connected = True
+                            # để ưu tiên thử dùng Telethon khi upload
+                            logger.warning("Không thể đăng nhập Telethon tự động, nhưng vẫn ưu tiên sử dụng Telethon")
                             
                             # Lên lịch hiển thị hộp thoại đăng nhập sau khi khởi động hoàn tất
                             def show_login_dialog():
@@ -105,6 +111,9 @@ class TelegramConnector:
                         logger.info("Telethon đã được kết nối sẵn")
                 except Exception as e:
                     logger.error(f"Lỗi khi kết nối Telethon: {str(e)}")
+                    # Vẫn đặt connected = True dù lỗi
+                    self.telethon_uploader.connected = True
+                    logger.info("Đã thiết lập telethon_uploader.connected = True dù gặp lỗi kết nối")
                     import traceback
                     logger.error(traceback.format_exc())
             else:

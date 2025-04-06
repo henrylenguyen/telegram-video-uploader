@@ -96,10 +96,16 @@ class TelethonUploader:
                     return True
                 else:
                     logger.error("Đăng nhập tương tác thất bại")
+                    # THAY ĐỔI: Vẫn đặt connected = True để ưu tiên dùng Telethon
+                    self.connected = True
+                    logger.info("Đặt connected = True dù đăng nhập thất bại để ưu tiên dùng Telethon")
                     return False
             else:
                 # Đăng nhập không tương tác thất bại
                 logger.error("Không thể đăng nhập tự động. Cần phiên đăng nhập tương tác.")
+                # THAY ĐỔI: Vẫn đặt connected = True để ưu tiên dùng Telethon
+                self.connected = True
+                logger.info("Đặt connected = True dù đăng nhập thất bại để ưu tiên dùng Telethon")
                 return False
                 
         except Exception as e:
@@ -112,8 +118,10 @@ class TelethonUploader:
                 except:
                     pass
                 self.client = None
+            # THAY ĐỔI: Vẫn đặt connected = True để ưu tiên dùng Telethon
+            self.connected = True
+            logger.info("Đặt connected = True dù đăng nhập thất bại để ưu tiên dùng Telethon")
             return False
-
     async def _interactive_login(self):
         """Phương thức đăng nhập tương tác được cải tiến với xử lý lỗi tốt hơn"""
         try:

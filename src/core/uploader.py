@@ -72,6 +72,36 @@ class Uploader:
         # Report file count
         logger.info(f"Bắt đầu tải lên {total_videos} video lên Telegram")
         
+        # THÊM: Kiểm tra use_telethon ngay từ đầu
+        use_telethon = self.app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+        logger.info(f"UPLOADER.upload_videos: use_telethon = {use_telethon}")
+        
+        # THÊM: Kiểm tra kết nối Telethon từ sớm nếu use_telethon = true
+        if use_telethon:
+            telethon_connected = getattr(self.telethon_uploader, 'connected', False)
+            logger.info(f"UPLOADER.upload_videos: Trạng thái kết nối Telethon ban đầu = {telethon_connected}")
+            
+            # Nếu chưa kết nối, thử kết nối
+            if not telethon_connected:
+                try:
+                    # Kiểm tra kết nối
+                    is_connected = self.telethon_uploader.is_connected()
+                    if is_connected:
+                        self.telethon_uploader.connected = True
+                        telethon_connected = True
+                        logger.info("UPLOADER.upload_videos: Đã tự động thiết lập kết nối Telethon = True")
+                    else:
+                        # Thông báo lỗi kết nối
+                        logger.error("UPLOADER.upload_videos: Telethon chưa kết nối")
+                        messagebox.showwarning(
+                            "Cảnh báo Telethon",
+                            "Bạn đã bật 'Sử dụng Telethon API' nhưng chưa đăng nhập Telethon. "
+                            "Video lớn hơn 50MB sẽ không được tải lên.\n\n"
+                            "Vui lòng vào tab Cài đặt > Telethon API để đăng nhập."
+                        )
+                except Exception as e:
+                    logger.error(f"UPLOADER.upload_videos: Lỗi kiểm tra kết nối Telethon: {str(e)}")
+        
         try:
             # Process each video
             for index, video_path in enumerate(videos):
@@ -87,6 +117,22 @@ class Uploader:
                 # Skip if file doesn't exist
                 if not os.path.exists(video_path) or not os.path.isfile(video_path):
                     logger.warning(f"File không tồn tại: {video_path}")
+                    continue
+                
+                # THÊM: Kiểm tra kích thước video
+                video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+                logger.info(f"UPLOADER.upload_videos: Video {video_name}: {video_size_mb:.2f} MB")
+                
+                # THÊM: Kiểm tra use_telethon + kích thước lớn từ sớm
+                if use_telethon and video_size_mb > 50 and not telethon_connected:
+                    logger.error(f"UPLOADER.upload_videos: Bỏ qua video lớn {video_name} vì Telethon chưa kết nối")
+                    messagebox.showerror(
+                        "Lỗi tải lên",
+                        f"Video '{video_name}' có kích thước {video_size_mb:.2f} MB vượt quá giới hạn 50MB.\n\n"
+                        f"Vì bạn đã bật 'Sử dụng Telethon API' nhưng chưa đăng nhập Telethon, "
+                        f"ứng dụng không thể tải lên video này.\n\n"
+                        f"Vui lòng vào tab Cài đặt > Telethon API để đăng nhập."
+                    )
                     continue
                 
                 # Update progress and status
@@ -187,43 +233,114 @@ class Uploader:
         Returns:
             bool: True if upload successful
         """
+        # THÊM: Kiểm tra nhanh video size và use_telethon
+        try:
+            use_telethon = self.app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+            video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            
+            # Log thông tin
+            logger.info(f"UPLOADER.upload_video: {os.path.basename(video_path)}, size = {video_size_mb:.2f} MB, use_telethon = {use_telethon}")
+            
+            # Kiểm tra nếu video lớn và use_telethon = true nhưng chưa đăng nhập Telethon
+            if use_telethon and video_size_mb > 50:
+                telethon_connected = getattr(self.telethon_uploader, 'connected', False)
+                if not telethon_connected:
+                    try:
+                        # Thử kiểm tra kết nối một lần nữa
+                        is_connected = self.telethon_uploader.is_connected()
+                        if is_connected:
+                            self.telethon_uploader.connected = True
+                            telethon_connected = True
+                            logger.info("UPLOADER.upload_video: Đã tự động thiết lập connected = True")
+                    except:
+                        pass
+                    
+                    # Nếu vẫn chưa kết nối, thông báo lỗi
+                    if not telethon_connected:
+                        logger.error(f"UPLOADER.upload_video: Video lớn {video_size_mb:.2f} MB + use_telethon = true nhưng chưa đăng nhập Telethon")
+                        messagebox.showerror(
+                            "Lỗi tải lên",
+                            f"Video '{os.path.basename(video_path)}' có kích thước {video_size_mb:.2f} MB vượt quá giới hạn 50MB.\n\n"
+                            f"Vì bạn đã bật 'Sử dụng Telethon API' nhưng chưa đăng nhập Telethon, "
+                            f"ứng dụng không thể tải lên video này.\n\n"
+                            f"Vui lòng vào tab Cài đặt > Telethon API để đăng nhập."
+                        )
+                        return False
+        except Exception as e:
+            logger.error(f"UPLOADER.upload_video: Lỗi kiểm tra ban đầu: {str(e)}")
+        
+        # Gọi phương thức upload_videos để tải lên
         return self.upload_videos([video_path], chat_id, caption, progress_callback)
     
     def _send_video(self, video_path, chat_id, caption=None):
-        """Gửi video lên Telegram"""
-        # DIRECT TELETHON UPLOAD - Bỏ qua mọi logic khác
-        file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-        if file_size_mb > 50:  # Chỉ sử dụng cho file lớn
-            logger.info(f"DIRECT TELETHON: Phát hiện video lớn ({file_size_mb:.2f} MB), thử sử dụng Telethon trực tiếp")
-            try:
-                # Kiểm tra trạng thái Telethon
-                use_telethon = self.app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
-                if use_telethon and hasattr(self.app, 'telethon_uploader'):
-                    telethon_uploader = self.app.telethon_uploader
-                    
-                    # BYPASS - Tự động thiết lập connected = True nếu is_connected() thành công
+        """
+        Gửi video lên Telegram
+        
+        Args:
+            video_path (str): Đường dẫn đến video
+            chat_id (str/int): Chat ID để gửi video
+            caption (str): Chú thích cho video
+            
+        Returns:
+            bool: True nếu gửi thành công
+        """
+        # Kiểm tra file tồn tại
+        if not os.path.exists(video_path) or not os.path.isfile(video_path):
+            logger.error(f"File video không tồn tại: {video_path}")
+            return False
+        
+        # Lấy kích thước video
+        video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+        video_name = os.path.basename(video_path)
+        
+        # Thông báo trạng thái
+        logger.info(f"SEND_VIDEO: Đang gửi video {video_name} ({video_size_mb:.2f} MB)")
+        
+        # KIỂM TRA USE_TELETHON TRƯỚC TIÊN - Mục tiêu ưu tiên dùng Telethon
+        try:
+            # Lấy trạng thái use_telethon từ cấu hình
+            use_telethon = self.app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+            logger.info(f"SEND_VIDEO: use_telethon = {use_telethon}")
+            
+            # NẾU USE_TELETHON = TRUE: Ưu tiên dùng Telethon
+            if use_telethon:
+                # Thông báo ưu tiên Telethon
+                logger.info(f"SEND_VIDEO: Đã bật use_telethon, ưu tiên sử dụng Telethon API")
+                
+                # Lấy telethon_uploader
+                telethon_uploader = self.telethon_uploader
+                
+                # Kiểm tra kết nối Telethon
+                telethon_connected = getattr(telethon_uploader, 'connected', False)
+                logger.info(f"SEND_VIDEO: Trạng thái kết nối Telethon = {telethon_connected}")
+                
+                # Nếu chưa kết nối, thử kết nối
+                if not telethon_connected:
                     try:
+                        # Thử kết nối Telethon
                         is_connected = telethon_uploader.is_connected()
                         if is_connected:
                             telethon_uploader.connected = True
-                            logger.info("DIRECT TELETHON: Tự động đặt connected = True vì is_connected() = True")
-                    except:
-                        pass
+                            telethon_connected = True
+                            logger.info("SEND_VIDEO: Đã tự động thiết lập connected = True")
+                    except Exception as e:
+                        logger.error(f"SEND_VIDEO: Lỗi kiểm tra kết nối Telethon: {str(e)}")
+                
+                # Nếu kết nối Telethon OK, thử tải lên
+                if telethon_connected:
+                    # Cập nhật tiến trình
+                    self.update_progress(20, "Đang tải lên qua Telethon...")
+                    
+                    # Callback tiến trình
+                    def progress_callback(percent):
+                        self.update_progress(percent, f"Đang tải lên qua Telethon... {percent}%")
+                    
+                    # Tải lên qua Telethon
+                    try:
+                        # Log việc sử dụng Telethon
+                        logger.info(f"SEND_VIDEO: Đang sử dụng Telethon API để tải lên {video_name} ({video_size_mb:.2f} MB)")
                         
-                    # Kiểm tra kết nối Telethon
-                    telethon_connected = getattr(telethon_uploader, 'connected', False)
-                    logger.info(f"DIRECT TELETHON: Trạng thái kết nối = {telethon_connected}")
-                        
-                    if telethon_connected:
-                        # Cập nhật tiến trình
-                        self.update_progress(20, "Đang tải lên qua Telethon...")
-                        
-                        # Sử dụng callback tiến trình
-                        def progress_callback(percent):
-                            self.update_progress(percent, f"Đang tải lên... {percent}%")
-                        
-                        # Tải lên qua Telethon
-                        logger.info(f"DIRECT TELETHON: Đang tải lên video {os.path.basename(video_path)}")
+                        # Tải lên
                         result = telethon_uploader.upload_video(
                             chat_id, 
                             video_path,
@@ -231,28 +348,91 @@ class Uploader:
                             progress_callback=progress_callback
                         )
                         
+                        # Kiểm tra kết quả
                         if result:
-                            logger.info(f"DIRECT TELETHON: Tải lên thành công!")
+                            logger.info(f"SEND_VIDEO: Tải lên thành công qua Telethon API")
                             self.update_progress(100, "Tải lên hoàn tất!")
                             return True
                         else:
-                            logger.error(f"DIRECT TELETHON: Tải lên thất bại, quay lại phương pháp thông thường")
-            except Exception as e:
-                logger.error(f"DIRECT TELETHON: Lỗi - {str(e)}")
-                import traceback
-                logger.error(traceback.format_exc())
+                            # Lỗi khi tải lên qua Telethon
+                            logger.error(f"SEND_VIDEO: Tải lên thất bại qua Telethon API")
+                    except Exception as e:
+                        # Xử lý lỗi khi tải lên
+                        logger.error(f"SEND_VIDEO: Lỗi khi tải lên qua Telethon: {str(e)}")
+                        logger.error(traceback.format_exc())
+                    
+                    # NẾU VIDEO LỚN HƠN 50MB - KHÔNG fallback sang chia nhỏ
+                    if video_size_mb > 50:
+                        logger.error(f"SEND_VIDEO: Video lớn {video_size_mb:.2f} MB + use_telethon = true, không fallback sang chia nhỏ")
+                        messagebox.showerror(
+                            "Lỗi tải lên",
+                            f"Không thể tải lên video '{video_name}' ({video_size_mb:.2f} MB) qua Telethon API.\n\n"
+                            f"Vì bạn đã bật 'Sử dụng Telethon API', ứng dụng sẽ không chia nhỏ video.\n"
+                            f"Vui lòng kiểm tra cấu hình Telethon hoặc tắt tùy chọn 'Sử dụng Telethon API'."
+                        )
+                        self.update_progress(0, "Lỗi tải lên qua Telethon")
+                        return False
+                    
+                    # Video nhỏ hơn 50MB - có thể fallback sang Telegram API
+                    logger.warning(f"SEND_VIDEO: Video nhỏ {video_size_mb:.2f} MB, fallback sang Telegram API")
+                    messagebox.showwarning(
+                        "Thông báo",
+                        f"Không thể tải lên qua Telethon API. Vì video nhỏ hơn 50MB, sẽ thử tải lên qua Telegram API."
+                    )
+                else:
+                    # Telethon chưa kết nối
+                    logger.error(f"SEND_VIDEO: Telethon chưa kết nối, kiểm tra video size")
+                    
+                    # Nếu video lớn, báo lỗi
+                    if video_size_mb > 50:
+                        logger.error(f"SEND_VIDEO: Video lớn {video_size_mb:.2f} MB + Telethon chưa kết nối")
+                        messagebox.showerror(
+                            "Lỗi tải lên",
+                            f"Video '{video_name}' có kích thước {video_size_mb:.2f} MB vượt quá giới hạn 50MB.\n\n"
+                            f"Vì bạn đã bật 'Sử dụng Telethon API' nhưng chưa đăng nhập Telethon, "
+                            f"ứng dụng không thể tải lên video này.\n\n"
+                            f"Vui lòng vào tab Cài đặt > Telethon API để đăng nhập."
+                        )
+                        self.update_progress(0, "Lỗi: Telethon chưa đăng nhập")
+                        return False
+                    
+                    # Video nhỏ, có thể fallback sang Telegram API
+                    logger.warning(f"SEND_VIDEO: Video nhỏ {video_size_mb:.2f} MB, fallback sang Telegram API dù Telethon chưa kết nối")
+                    messagebox.showwarning(
+                        "Thông báo",
+                        f"Telethon chưa đăng nhập. Vì video nhỏ hơn 50MB, sẽ thử tải lên qua Telegram API."
+                    )
+        except Exception as e:
+            logger.error(f"SEND_VIDEO: Lỗi khi kiểm tra Telethon: {str(e)}")
+            logger.error(traceback.format_exc())
         
-        # Mã gốc: sử dụng Telegram API
+        # ĐẾN ĐÂY LÀ DÙNG TELEGRAM API - hoặc use_telethon = false hoặc video < 50MB
         try:
             # Cập nhật tiến độ
-            self.update_progress(10, "Đang chuẩn bị tải lên...")
+            self.update_progress(10, "Đang chuẩn bị tải lên qua Telegram API...")
+            
+            # Kiểm tra lại use_telethon + video size - đảm bảo an toàn
+            try:
+                use_telethon = self.app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+                if use_telethon and video_size_mb > 50:
+                    logger.error(f"SEND_VIDEO_FINAL_CHECK: Video lớn {video_size_mb:.2f} MB + use_telethon = true, từ chối gửi qua Telegram API")
+                    messagebox.showerror(
+                        "Lỗi tải lên",
+                        f"Video '{video_name}' có kích thước {video_size_mb:.2f} MB vượt quá giới hạn 50MB.\n\n"
+                        f"Vì bạn đã bật 'Sử dụng Telethon API', ứng dụng sẽ không chia nhỏ video.\n"
+                        f"Vui lòng kiểm tra cấu hình Telethon hoặc tắt tùy chọn 'Sử dụng Telethon API'."
+                    )
+                    self.update_progress(0, "Lỗi: Không thể gửi qua Telegram API khi bật Telethon")
+                    return False
+            except Exception as e:
+                logger.error(f"SEND_VIDEO_FINAL_CHECK: Lỗi kiểm tra: {str(e)}")
             
             # Sử dụng callback tiến độ
             def progress_callback(percent):
-                self.update_progress(percent, f"Đang tải lên... {percent}%")
+                self.update_progress(percent, f"Đang tải lên qua Telegram API... {percent}%")
             
             # Gửi video qua Telegram API
-            logger.info(f"Tải lên video qua Telegram API: {os.path.basename(video_path)}")
+            logger.info(f"SEND_VIDEO: Tải lên video qua Telegram API: {video_name}")
             
             # Sử dụng telegram_api.send_video
             result = self.telegram_api.send_video(
@@ -265,14 +445,16 @@ class Uploader:
             
             # Hoàn tất
             if result:
+                logger.info(f"SEND_VIDEO: Tải lên thành công qua Telegram API")
                 self.update_progress(100, "Tải lên hoàn tất!")
             else:
+                logger.error(f"SEND_VIDEO: Tải lên thất bại qua Telegram API")
                 self.update_progress(0, "Tải lên thất bại!")
                 
             return result
             
         except Exception as e:
-            logger.error(f"Lỗi khi tải lên video: {str(e)}")
+            logger.error(f"SEND_VIDEO: Lỗi khi tải lên qua Telegram API: {str(e)}")
             logger.error(traceback.format_exc())
             self.update_progress(0, f"Lỗi: {str(e)}")
             return False
@@ -293,6 +475,66 @@ class Uploader:
         if self.is_uploading:
             logger.warning("Đang có quá trình tải lên khác")
             return False
+        
+        # THÊM: Kiểm tra video lớn + use_telethon
+        try:
+            use_telethon = self.app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
+            if use_telethon:
+                # Kiểm tra kết nối Telethon trước
+                telethon_connected = getattr(self.telethon_uploader, 'connected', False)
+                try:
+                    if not telethon_connected:
+                        is_connected = self.telethon_uploader.is_connected()
+                        if is_connected:
+                            self.telethon_uploader.connected = True
+                            telethon_connected = True
+                except:
+                    pass
+                
+                # Kiểm tra các video lớn
+                large_videos = []
+                for video_path in videos:
+                    if os.path.exists(video_path) and os.path.isfile(video_path):
+                        video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+                        if video_size_mb > 50:
+                            large_videos.append((os.path.basename(video_path), video_size_mb))
+                
+                # Nếu có video lớn và Telethon chưa kết nối, thông báo lỗi
+                if large_videos and not telethon_connected:
+                    message = "Các video sau có kích thước vượt quá 50MB:\n\n"
+                    for name, size in large_videos:
+                        message += f"- {name} ({size:.2f} MB)\n"
+                    message += "\nVì bạn đã bật 'Sử dụng Telethon API' nhưng chưa đăng nhập Telethon, "
+                    message += "ứng dụng không thể tải lên những video này.\n\n"
+                    message += "Vui lòng vào tab Cài đặt > Telethon API để đăng nhập."
+                    
+                    logger.error(f"start_upload_thread: Có {len(large_videos)} video lớn nhưng Telethon chưa kết nối")
+                    messagebox.showerror("Lỗi tải lên", message)
+                    
+                    # Nếu tất cả đều là video lớn, hủy hoàn toàn
+                    if len(large_videos) == len(videos):
+                        return False
+                    
+                    # Nếu có video nhỏ, hỏi người dùng có muốn tiếp tục không
+                    if len(large_videos) < len(videos):
+                        answer = messagebox.askyesno(
+                            "Xác nhận",
+                            f"Có {len(videos) - len(large_videos)} video nhỏ hơn 50MB có thể được tải lên.\n"
+                            f"Bạn có muốn tiếp tục tải lên những video nhỏ này không?"
+                        )
+                        if not answer:
+                            return False
+                        
+                        # Lọc bỏ các video lớn
+                        filtered_videos = []
+                        for video_path in videos:
+                            if os.path.exists(video_path) and os.path.isfile(video_path):
+                                video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+                                if video_size_mb <= 50:
+                                    filtered_videos.append(video_path)
+                        videos = filtered_videos
+        except Exception as e:
+            logger.error(f"start_upload_thread: Lỗi kiểm tra video lớn: {str(e)}")
             
         # Create thread
         self.current_thread = threading.Thread(
