@@ -250,18 +250,26 @@ class TelethonUploader:
     def is_connected(self):
         """Kiểm tra xem client có kết nối và được ủy quyền không"""
         if not self.client:
+            logger.info("is_connected: Client chưa được khởi tạo")
             return False
         
         try:
+            # Kiểm tra kết nối vật lý
             is_connected = self.loop.run_until_complete(self.client.is_connected())
             if not is_connected:
+                logger.info("is_connected: Client không có kết nối vật lý")
                 return False
-                
+            
+            # Kiểm tra ủy quyền
             is_authorized = self.loop.run_until_complete(self.client.is_user_authorized())
+            logger.info(f"is_connected: Client có kết nối vật lý và trạng thái ủy quyền: {is_authorized}")
             return is_authorized
-        except:
+        except Exception as e:
+            logger.error(f"is_connected: Lỗi khi kiểm tra kết nối: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
-    
+
     def reconnect(self):
         """Thử kết nối lại nếu bị ngắt kết nối"""
         if not self.client or not self.api_id or not self.api_hash:

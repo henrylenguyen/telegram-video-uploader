@@ -486,31 +486,41 @@ if __name__ == "__main__":
         threading.Thread(target=lambda: self.verify_otp_thread(otp_code), daemon=True).start()
     
     def verify_otp_thread(self, otp_code):
-        """Verify OTP code for Telethon in a separate thread"""
-        success = self.verify_otp()
-        
-        if success:
-            # Re-enable Save button
-            self.app.root.after(0, lambda: self.save_button.config(state=tk.NORMAL))
-            # Change button text to show completion
-            self.app.root.after(0, lambda: self.otp_button.config(
-                text="✓ Đã xác thực thành công", 
-                state=tk.DISABLED,
-                width=25  # Wider for longer text
-            ))
-            # Show success message
-            self.app.root.after(0, lambda: messagebox.showinfo(
-                "Thành công", 
-                "Xác thực thành công! Bạn có thể Lưu cài đặt."
-            ))
-        else:
-            # Reset button
-            self.app.root.after(0, lambda: self.otp_button.config(
-                text="Xác thực mã OTP", 
-                state=tk.NORMAL,
-                width=20  # Maintain wider button
-            ))
-    
+      """Verify OTP code for Telethon in a separate thread"""
+      success = self.verify_otp()
+      
+      if success:
+          # Re-enable Save button
+          self.app.root.after(0, lambda: self.save_button.config(state=tk.NORMAL))
+          # Change button text to show completion
+          self.app.root.after(0, lambda: self.otp_button.config(
+              text="✓ Đã xác thực thành công", 
+              state=tk.DISABLED,
+              width=25  # Wider for longer text
+          ))
+          
+          # THÊM MỚI: Cập nhật trạng thái kết nối thực tế
+          try:
+              logger.info("Đang cập nhật trạng thái kết nối Telethon sau khi xác thực OTP thành công")
+              is_connected = self.app.telethon_uploader.is_connected()
+              self.app.telethon_uploader.connected = is_connected
+              logger.info(f"Trạng thái kết nối Telethon sau xác thực OTP: {is_connected}")
+          except Exception as e:
+              logger.error(f"Lỗi khi cập nhật trạng thái kết nối Telethon: {str(e)}")
+          
+          # Show success message
+          self.app.root.after(0, lambda: messagebox.showinfo(
+              "Thành công", 
+              "Xác thực thành công! Bạn có thể Lưu cài đặt."
+          ))
+      else:
+          # Reset button
+          self.app.root.after(0, lambda: self.otp_button.config(
+              text="Xác thực mã OTP", 
+              state=tk.NORMAL,
+              width=20  # Maintain wider button
+          ))
+
     def verify_otp(self):
         """Verify OTP code for Telethon"""
         if not self.telethon_verification_in_progress:
@@ -605,58 +615,68 @@ if __name__ == "__main__":
             return False
     
     def save_settings(self):
-        """Save the configuration settings"""
-        # Get and validate settings
-        api_id = self.api_id_var.get().strip()
-        api_hash = self.api_hash_var.get().strip()
-        phone = self.phone_var.get().strip()
-        
-        if not api_id or not api_hash or not phone:
-            messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ API ID, API Hash và số điện thoại!")
-            return
-        
-        # If Telethon verification is in progress, check if it's completed
-        if self.telethon_verification_in_progress:
-            if self.otp_button.cget("text") != "✓ Đã xác thực thành công":
-                messagebox.showerror("Lỗi", "Vui lòng hoàn thành xác thực OTP trước khi lưu cài đặt!")
-                return
-        
-        # Try to convert API ID to int to validate
-        try:
-            api_id_int = int(api_id)
-        except ValueError:
-            messagebox.showerror("Lỗi", "API ID phải là một số nguyên!")
-            return
-        
-        # Save settings to config
-        self.app.config['TELETHON']['api_id'] = api_id
-        self.app.config['TELETHON']['api_hash'] = api_hash
-        self.app.config['TELETHON']['phone'] = phone
-        self.app.config['TELETHON']['use_telethon'] = 'true'
-        
-        # Save configuration
-        self.app.config_manager.save_config(self.app.config)
-        
-        # Update the values in the settings tab
-        self.app.api_id_var.set(api_id)
-        self.app.api_hash_var.set(api_hash)
-        self.app.phone_var.set(phone)
-        self.app.use_telethon_var.set(True)
-        
-        # Show success message
-        messagebox.showinfo("Thành công", "Đã lưu cài đặt Telethon API thành công!")
-        
-        # Close modal
-        self.modal.destroy()
-        
-        # Refresh current tab - Compatible with custom tab navigation
-        if hasattr(self.app, 'switch_tab') and hasattr(self.app, 'tab_buttons'):
-            # Find which tab is currently active by checking button colors
-            current_tab = 0  # Default to first tab
-            for i, btn in enumerate(self.app.tab_buttons):
-                if btn.cget("bg") == "#2E86C1" or btn.cget("bg") == "#4a7ebb":  # Active tab color
-                    current_tab = i
-                    break
-            
-            # Refresh the current tab
-            self.app.switch_tab(current_tab)
+      """Save the configuration settings"""
+      # Get and validate settings
+      api_id = self.api_id_var.get().strip()
+      api_hash = self.api_hash_var.get().strip()
+      phone = self.phone_var.get().strip()
+      
+      if not api_id or not api_hash or not phone:
+          messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ API ID, API Hash và số điện thoại!")
+          return
+      
+      # If Telethon verification is in progress, check if it's completed
+      if self.telethon_verification_in_progress:
+          if self.otp_button.cget("text") != "✓ Đã xác thực thành công":
+              messagebox.showerror("Lỗi", "Vui lòng hoàn thành xác thực OTP trước khi lưu cài đặt!")
+              return
+      
+      # Try to convert API ID to int to validate
+      try:
+          api_id_int = int(api_id)
+      except ValueError:
+          messagebox.showerror("Lỗi", "API ID phải là một số nguyên!")
+          return
+      
+      # Save settings to config
+      self.app.config['TELETHON']['api_id'] = api_id
+      self.app.config['TELETHON']['api_hash'] = api_hash
+      self.app.config['TELETHON']['phone'] = phone
+      self.app.config['TELETHON']['use_telethon'] = 'true'
+      
+      # Save configuration
+      self.app.config_manager.save_config(self.app.config)
+      
+      # Update the values in the settings tab
+      self.app.api_id_var.set(api_id)
+      self.app.api_hash_var.set(api_hash)
+      self.app.phone_var.set(phone)
+      self.app.use_telethon_var.set(True)
+      
+      # THÊM MỚI: Kiểm tra trạng thái kết nối thực tế và cập nhật lại
+      try:
+          logger.info("Kiểm tra lại trạng thái kết nối Telethon sau khi lưu cấu hình")
+          if hasattr(self.app.telethon_uploader, 'is_connected'):
+              is_connected = self.app.telethon_uploader.is_connected()
+              self.app.telethon_uploader.connected = is_connected
+              logger.info(f"Trạng thái kết nối Telethon sau khi lưu cấu hình: {is_connected}")
+      except Exception as e:
+          logger.error(f"Lỗi khi kiểm tra lại kết nối Telethon: {str(e)}")
+      
+      # Show success message
+      messagebox.showinfo("Thành công", "Đã lưu cài đặt Telethon API thành công!")
+      
+      # Close modal
+      self.modal.destroy()
+      
+      # Refresh current tab - Compatible with custom tab navigation
+      if hasattr(self.app, 'switch_tab') and hasattr(self.app, 'tab_buttons'):
+          # Find which tab is currently active by checking button colors
+          current_tab = 0  # Default to first tab
+          for i, btn in enumerate(self.app.tab_buttons):
+              if btn.cget("bg") == "#2E86C1" or btn.cget("bg") == "#4a7ebb":  # Active tab color
+                  current_tab = i
+                  break
+          
+          # Refresh the current tab
+          self.app.switch_tab(current_tab)

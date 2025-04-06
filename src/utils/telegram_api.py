@@ -263,15 +263,33 @@ class TelegramAPI:
                 use_telethon = app.config.getboolean('TELETHON', 'use_telethon', fallback=False)
                 
                 if use_telethon:
-                    logger.error(f"SPLIT VIDEO: use_telethon = true - KHÔNG ĐƯỢC chia nhỏ video")
+                    # THAY ĐỔI: Thêm kiểm tra trạng thái kết nối thực tế
+                    telethon_connected = False
+                    try:
+                        if hasattr(app.telethon_uploader, 'is_connected'):
+                            telethon_connected = app.telethon_uploader.is_connected()
+                            app.telethon_uploader.connected = telethon_connected
+                    except Exception as e:
+                        logger.error(f"Lỗi kiểm tra kết nối Telethon: {str(e)}")
+                    
+                    logger.error(f"SPLIT VIDEO: use_telethon = true, kết nối thực tế = {telethon_connected}")
                     video_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+                    
+                    # Thông báo khác nhau tùy thuộc vào trạng thái kết nối
                     from tkinter import messagebox
-                    messagebox.showerror(
-                        "Lỗi tải lên",
-                        f"Video '{os.path.basename(video_path)}' có kích thước {video_size_mb:.2f} MB vượt quá giới hạn 50MB.\n\n"
-                        f"Vì bạn đã bật 'Sử dụng Telethon API', ứng dụng sẽ không chia nhỏ video.\n"
-                        f"Vui lòng sử dụng chức năng tải lên qua Telethon hoặc tắt tùy chọn này."
-                    )
+                    if telethon_connected:
+                        messagebox.showerror(
+                            "Lỗi tải lên",
+                            f"Không thể tải lên video '{os.path.basename(video_path)}' ({video_size_mb:.2f} MB) qua Telethon API mặc dù đã đăng nhập.\n\n"
+                            f"Vui lòng kiểm tra kết nối internet và thử lại sau."
+                        )
+                    else:
+                        messagebox.showerror(
+                            "Lỗi tải lên",
+                            f"Video '{os.path.basename(video_path)}' có kích thước {video_size_mb:.2f} MB vượt quá giới hạn 50MB.\n\n"
+                            f"Bạn cần đăng nhập Telethon API để tải lên video lớn.\n\n"
+                            f"Vui lòng vào tab Cài đặt > Telethon API > Nhấn nút 'Lấy mã xác thực' và hoàn thành quy trình xác thực."
+                        )
                     return False
         except Exception as e:
             logger.error(f"Lỗi kiểm tra use_telethon trong _send_video_split: {str(e)}")
@@ -281,7 +299,6 @@ class TelegramAPI:
         logger.info(f"FORCE CHECK TELETHON: Video size = {video_size_mb:.2f} MB")
         
         # Tiếp tục logic chia nhỏ nếu không bật Telethon
-        # Create a video splitter
         splitter = VideoSplitter()
         
         try:
@@ -295,6 +312,7 @@ class TelegramAPI:
             if not video_parts:
                 logger.error(f"Không thể chia nhỏ video: {video_name}")
                 return False
+            
             
             # Send each part
             total_parts = len(video_parts)
