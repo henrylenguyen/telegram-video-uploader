@@ -762,8 +762,9 @@ def display_video_frames(app, video_path):
         # Chọn 5 vị trí frame để hiển thị
         positions = [0.1, 0.3, 0.5, 0.7, 0.9]  # 10%, 30%, 50%, 70%, 90%
         
-        # Tạo mảng lưu frames (QUAN TRỌNG: phải lưu tham chiếu)
+        # Tạo mảng lưu frames và đường dẫn (QUAN TRỌNG: phải lưu tham chiếu)
         frames = []
+        frame_paths = []
         
         # Tính toán kích thước cho mỗi frame - Thiết lập chiều cao 280px theo yêu cầu
         frame_height = 280
@@ -782,43 +783,97 @@ def display_video_frames(app, video_path):
         # Đảm bảo frame_width không quá nhỏ hoặc quá lớn
         frame_width = max(170, min(frame_width, 450))
         
+        # Tạo thư mục tạm để lưu frames
+        import tempfile
+        temp_dir = tempfile.mkdtemp(prefix="telegram_uploader_frames_")
+        
         # Xử lý từng vị trí
         for i, pos in enumerate(positions):
             if i >= len(app.frame_labels):
                 break
                 
             # Tính vị trí frame theo thời gian
-            frame_position = int(total_frames * pos) 
-            if frame_position >= total_frames:
-                frame_position = total_frames - 1
+            frame_pos = int(total_frames * pos) 
+            if frame_pos >= total_frames:
+                frame_pos = total_frames - 1
             
             # Seek đến vị trí và đọc frame
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_position)
-            success, frame = cap.read()
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
+            ret, frame = cap.read()
             
-            if success:
+            if ret:
                 # Chuyển frame sang định dạng PIL
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                pil_image = Image.fromarray(frame_rgb)
+                pil_img = Image.fromarray(frame_rgb)
                 
                 # Resize theo kích thước đã định
                 try:
-                    pil_image = pil_image.resize((frame_width, frame_height), Image.LANCZOS)
+                    pil_img = pil_img.resize((frame_width, frame_height), Image.LANCZOS)
                 except Exception:
                     try:
                         # Fallback nếu LANCZOS không hoạt động
-                        pil_image = pil_image.resize((frame_width, frame_height), Image.BICUBIC)
+                        pil_img = pil_img.resize((frame_width, frame_height), Image.BICUBIC)
                     except Exception as e:
                         logger.error(f"Không thể resize frame: {str(e)}")
                         continue
                 
+                # Lưu frame vào file tạm
+                frame_path = os.path.join(temp_dir, f"frame_{i}.png")
+                pil_img.save(frame_path)
+                frame_paths.append(frame_path)
+                
                 # Chuyển sang định dạng Tkinter
-                tk_image = ImageTk.PhotoImage(pil_image)
+                tk_image = ImageTk.PhotoImage(pil_img)
                 frames.append(tk_image)  # Lưu reference để tránh bị thu hồi
                 
                 # Hiển thị lên label
                 app.frame_labels[i].config(text="")
                 app.frame_labels[i].config(image=tk_image)
+                
+                # Thêm cursor pointer để biểu thị có thể click
+                app.frame_labels[i].config(cursor="hand2")
+                
+                # Thêm click event để mở gallery
+                app.frame_labels[i].bind("<Button-1>", 
+                      lambda event, paths=frame_paths.copy(), idx=i: 
+                      open_pyqt5_gallery(app, paths, idx))
+                
+                # Thêm tooltip để thông báo có thể click
+                try:
+                    # Import function to add tooltip
+                    from ui.main_tab.tooltip_function import add_tooltip
+                    add_tooltip(app.frame_labels[i], "Nhấn để xem phóng to")
+                except ImportError:
+                    # If function not available, add the tooltip here
+                    def add_tooltip_here(widget, text):
+                        tooltip = None
+                        
+                        def enter(e):
+                            nonlocal tooltip
+                            x = y = 0
+                            x, y, _, _ = widget.bbox("insert") if hasattr(widget, "bbox") else (0, 0, 0, 0)
+                            x += widget.winfo_rootx() + 25
+                            y += widget.winfo_rooty() + 25
+                            
+                            # Create a toplevel window
+                            tooltip = tk.Toplevel(widget)
+                            tooltip.wm_overrideredirect(True)
+                            tooltip.wm_geometry(f"+{x}+{y}")
+                            
+                            label = tk.Label(tooltip, text=text, background="#ffffe0", 
+                                          relief="solid", borderwidth=1, font=("Arial", 9))
+                            label.pack(padx=3, pady=2)
+                            
+                        def leave(e):
+                            nonlocal tooltip
+                            if tooltip:
+                                tooltip.destroy()
+                                tooltip = None
+                                
+                        widget.bind("<Enter>", enter)
+                        widget.bind("<Leave>", leave)
+                    
+                    add_tooltip_here(app.frame_labels[i], "Nhấn để xem phóng to")
             else:
                 app.frame_labels[i].config(image="", text=f"Không thể đọc frame tại {pos*100:.0f}%")
         
@@ -827,6 +882,8 @@ def display_video_frames(app, video_path):
         
         # QUAN TRỌNG: Lưu frames vào đối tượng app để tránh bị thu hồi
         app.current_frames = frames
+        app.frame_paths = frame_paths
+        app.temp_dir = temp_dir  # Lưu để xóa sau khi đóng
     
     except Exception as e:
         logger.error(f"Lỗi hiển thị frame: {str(e)}")
@@ -835,6 +892,42 @@ def display_video_frames(app, video_path):
         # Hiển thị thông báo lỗi trong các frame
         for i, label in enumerate(app.frame_labels):
             label.config(image="", text=f"Lỗi: {str(e)[:30]}")
+
+def open_pyqt5_gallery(app, image_paths, initial_index=0):
+    """
+    Mở gallery modal PyQt5 để xem các frame
+    
+    Args:
+        app: Đối tượng TelegramUploaderApp
+        image_paths: Danh sách đường dẫn đến các frame
+        initial_index: Index của frame hiển thị ban đầu
+    """
+    try:
+        # Import function to open gallery
+        from ui.components.gallery_integration import open_gallery_modal
+        
+        # Call the function to open gallery
+        success = open_gallery_modal(image_paths, initial_index)
+        
+        if not success:
+            # Fallback to old gallery if PyQt5 gallery fails
+            from ui.components.gallery_modal import GalleryModal
+            gallery = GalleryModal(app.root, image_paths, initial_index)
+    
+    except ImportError:
+        # Fallback to old gallery if import fails
+        try:
+            from ui.components.gallery_modal import GalleryModal
+            gallery = GalleryModal(app.root, image_paths, initial_index)
+        except Exception as e:
+            logger.error(f"Lỗi khi mở gallery: {str(e)}")
+            messagebox.showerror("Lỗi", f"Không thể mở gallery: {str(e)}")
+    
+    except Exception as e:
+        logger.error(f"Lỗi khi mở gallery: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        messagebox.showerror("Lỗi", f"Không thể mở gallery: {str(e)}")
 def display_video_info(app, video_path):
     """
     Hiển thị thông tin chi tiết của video với trạng thái tải lên

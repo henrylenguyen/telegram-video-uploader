@@ -155,7 +155,12 @@ class TelegramUploaderApp:
         style.map("Blue.TButton",
                 background=[("active", "#2980b9"), ("!active", "#3498db")],
                 foreground=[("active", "white"), ("!active", "white")])
-    
+                
+        # Style cho gallery components
+        style.configure("Thumb.TFrame", background="#f8f8f8", borderwidth=2, relief="groove")
+        style.configure("ThumbActive.TFrame", background="#f8f8f8", borderwidth=3, relief="raised")
+        style.configure("Controls.TFrame", background="#f0f0f0", borderwidth=1, relief="groove")
+        style.configure("Thumbnails.TFrame", background="#f8f8f8")
     def safe_update_stringvar(self, stringvar, value):
         """
         Cập nhật StringVar an toàn từ thread không phải main thread
@@ -224,8 +229,24 @@ class TelegramUploaderApp:
         self.auto_uploader = None
         self.bulk_uploader = None
         self.watcher_thread = None
+        
+        # After initializing all components
+        self.root.after(2000, self._force_render_checkboxes)
 
-
+    def _force_render_checkboxes(self):
+        """Force rendering of checkboxes after app initialization"""
+        if hasattr(self, 'render_checkboxes'):
+            try:
+                self.render_checkboxes()
+                # Schedule another render after a short delay to catch late UI updates
+                self.root.after(500, self.render_checkboxes)
+            except Exception as e:
+                logger.error(f"Error rendering checkboxes: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+        else:
+            # If render_checkboxes doesn't exist yet, try again later
+            self.root.after(500, self._force_render_checkboxes)
     def check_telegram_config(self):
         """Enhanced Telegram configuration check with improved dialog handling"""
         # Check if bot token and chat ID are configured
@@ -378,18 +399,20 @@ class TelegramUploaderApp:
             # Update UI to ensure checkboxes are visible
             self.root.update_idletasks()
         # Thêm các sự kiện để hiển thị checkbox
-        def force_render_checkboxes():
+        def force_render_checkboxes(self):
             """Hàm hiển thị checkbox sau khi tạo UI"""
             if hasattr(self, 'video_tree'):  # Chỉ hiển thị nếu video_tree đã tồn tại
                 try:
-                    from ui.main_tab.main_tab_func import render_checkboxes
-                    render_checkboxes(self)
-                except (ImportError, AttributeError) as e:
+                    self.render_checkboxes()  # Use the method attached to app
+                except Exception as e:
                     import logging
                     logging.getLogger().error(f"Error rendering checkboxes: {str(e)}")
             else:
                 # Thử lại sau nếu video_tree chưa được tạo
-                self.root.after(500, force_render_checkboxes)
+                self.root.after(500, lambda: force_render_checkboxes(self))
+
+        # Then in the _create_ui method, call it with:
+        self.root.after(1000, lambda: force_render_checkboxes(self))
 
         # Hiển thị checkbox sau khi tạo UI
         self.root.after(1000, force_render_checkboxes)
@@ -692,31 +715,40 @@ class TelegramUploaderApp:
         except ImportError:
             # Fallback nếu không import được
             self.uploader.start_upload(self)
-    def _on_closing(self):
+    def _on_closing(app):
         """Xử lý khi đóng ứng dụng"""
         # Dừng tất cả hoạt động
-        if self.is_uploading:
+        if app.is_uploading:
             # Nếu đang tải lên, yêu cầu xác nhận
             if not messagebox.askyesno("Xác nhận", "Đang có video đang tải lên. Bạn có chắc muốn thoát?"):
                 return
             
             # Dừng quá trình tải lên
-            self.should_stop = True
+            app.should_stop = True
         
-        if self.auto_upload_active:
+        if app.auto_upload_active:
             # Dừng chế độ tự động
-            self.auto_uploader_manager.stop_auto_upload(self)
+            app.auto_uploader_manager.stop_auto_upload(app)
         
         # Lưu cấu hình
-        self.config_manager.save_config(self.config)
+        app.config_manager.save_config(app.config)
         
         # Ngắt kết nối các API
-        if hasattr(self, 'telegram_api'):
-            self.telegram_api.disconnect()
+        if hasattr(app, 'telegram_api'):
+            app.telegram_api.disconnect()
         
-        if hasattr(self, 'telethon_uploader'):
-            self.telethon_uploader.disconnect()
+        if hasattr(app, 'telethon_uploader'):
+            app.telethon_uploader.disconnect()
+        
+        # Xóa thư mục tạm nếu có
+        if hasattr(app, 'temp_dir') and app.temp_dir and os.path.exists(app.temp_dir):
+            try:
+                import shutil
+                shutil.rmtree(app.temp_dir)
+                logger.info(f"Đã xóa thư mục tạm: {app.temp_dir}")
+            except Exception as e:
+                logger.error(f"Lỗi khi xóa thư mục tạm: {str(e)}")
         
         # Đóng ứng dụng
-        self.root.destroy()
+        app.root.destroy()
         logger.info("Đã đóng ứng dụng")

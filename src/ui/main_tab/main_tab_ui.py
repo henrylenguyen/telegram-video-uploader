@@ -31,52 +31,165 @@ def create_main_tab(app, parent):
         app: Đối tượng TelegramUploaderApp
         parent: Frame cha
     """
-    # Tạo canvas để hỗ trợ cuộn
+    # Make sure to initialize these early for checkbox functionality
+    app.video_checkboxes = {}
+    app.checkbox_widgets = []
+    
+    # Add the render_checkboxes method directly to the app instance
+    def render_checkboxes_method():
+        try:
+            from ui.components.checkbox import create_checkbox_cell
+        except ImportError:
+            try:
+                from .components.checkbox import create_checkbox_cell
+            except ImportError:
+                from src.ui.components.checkbox import create_checkbox_cell
+        
+        # Clear existing checkboxes
+        if hasattr(app, 'checkbox_widgets'):
+            for checkbox in app.checkbox_widgets:
+                try:
+                    checkbox.destroy()
+                except Exception:
+                    pass
+        
+        app.checkbox_widgets = []
+        
+        # Create checkbox for each row
+        for item_id in app.video_tree.get_children():
+            if item_id not in app.video_checkboxes:
+                app.video_checkboxes[item_id] = tk.BooleanVar(value=False)
+            
+            checkbox = create_checkbox_cell(app.video_tree, item_id, "#1")
+            if checkbox:
+                checkbox.set(app.video_checkboxes[item_id].get())
+                app.checkbox_widgets.append(checkbox)
+        
+        # Update UI to ensure checkboxes are visible
+        app.root.update_idletasks()
+    
+    # Attach the method to the app
+    app.render_checkboxes = render_checkboxes_method
+    
+    # Create a canvas for scrolling
     main_canvas = tk.Canvas(parent)
     main_scrollbar = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=main_canvas.yview)
     
-    # Thiết lập canvas
+    # Setup canvas
     main_canvas.configure(yscrollcommand=main_scrollbar.set)
     
-    # Sắp xếp canvas và thanh cuộn
+    # Arrange canvas and scrollbar
     main_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     
-    # Tạo frame chứa nội dung
+    # Create a frame to hold all content
     content_frame = ttk.Frame(main_canvas)
     content_window = main_canvas.create_window((0, 0), window=content_frame, anchor="nw", width=main_canvas.winfo_width())
     
-    # Cấu hình cuộn
+    # Configure scrolling
     def on_frame_configure(event):
         main_canvas.configure(scrollregion=main_canvas.bbox("all"))
-        # Đảm bảo frame nội dung có chiều rộng phù hợp
+        # Ensure content frame has appropriate width
         main_canvas.itemconfig(content_window, width=main_canvas.winfo_width())
     
     content_frame.bind("<Configure>", on_frame_configure)
     
-    # Kích hoạt cuộn bằng chuột
+    # Enable mouse wheel scrolling
     def on_mousewheel(event):
         main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
     
     main_canvas.bind_all("<MouseWheel>", on_mousewheel)
     
+    # Create tab buttons frame - Move to top, right below header
+    tab_frame = tk.Frame(content_frame, bg="#F0F0F0", bd=1, relief="raised")
+    tab_frame.pack(fill=tk.X, pady=(0, 10))
+    
+    # Tab names with tooltips
+    tab_names = [
+        ("manual", "Tải lên thủ công"),
+        ("auto", "Tải lên tự động"),
+        ("duplicate", "Danh sách video trùng"),
+        ("uploaded", "Danh sách video đã tải lên")
+    ]
+    
+    app.sub_tab_buttons = {}
+    
+    # Create tab buttons with consistent styling
+    for i, (code, name) in enumerate(tab_names):
+        # First tab is active by default
+        if code == "manual":
+            btn = tk.Button(
+                tab_frame, 
+                text=name,
+                font=("Arial", 11, "bold"),
+                padx=15, pady=8,
+                relief="flat",
+                bg="#2E86C1",  # Blue color for active tab
+                fg="white",
+                bd=1,
+                command=lambda c=code: switch_tab(app, c)
+            )
+        else:
+            btn = tk.Button(
+                tab_frame, 
+                text=name,
+                font=("Arial", 11),
+                padx=15, pady=8,
+                relief="flat",
+                bg="#F0F0F0",
+                fg="#2C3E50",  # Dark blue text
+                bd=0,
+                command=lambda c=code: switch_tab(app, c)
+            )
+            # Add hover effect
+            btn.bind("<Enter>", lambda e, b=btn: b.config(bg="#E0E0E0"))
+            btn.bind("<Leave>", lambda e, b=btn: b.config(bg="#F0F0F0"))
+            
+        btn.pack(side=tk.LEFT)
+        app.sub_tab_buttons[code] = btn
+    
+    # Create frame for tab content
+    app.tab_content_frame = ttk.Frame(content_frame)
+    app.tab_content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+    
+    # Show the first tab
+    create_manual_tab(app, app.tab_content_frame)
+    
+    # Bottom space frame for progress bar and buttons
+    app.bottom_space_frame = ttk.Frame(content_frame, height=100)
+    app.bottom_space_frame.pack(fill=tk.X)
+def create_manual_tab(app, parent):
+    """
+    Tạo giao diện cho tab tải lên thủ công
+    
+    Args:
+        app: Đối tượng TelegramUploaderApp
+        parent: Frame cha
+    """
+    # Khởi tạo info_vars nếu chưa có
+    if not hasattr(app, 'info_vars'):
+        app.info_vars = {}
+    # Biến lưu trữ trang hiện tại
+    app.current_page = 1
+    app.items_per_page = 10  # Số lượng video trên mỗi trang
+    
     # Frame chọn thư mục
-    folder_frame = ttk.LabelFrame(content_frame, text="Thư mục chứa video")
-    folder_frame.pack(fill=tk.X, padx=10, pady=10)
+    folder_frame = ttk.LabelFrame(parent, text="Thư mục chứa video")
+    folder_frame.pack(fill=tk.X, padx=0, pady=10)
     
     # Đường dẫn thư mục
     app.folder_path = tk.StringVar()
     app.folder_path.set(app.config['SETTINGS']['video_folder'])
     
-    # Ô input và nút duyệt cải thiện layout
+    # Ô input và nút duyệt cải thiện layout với chiều cao 40px
     input_frame = ttk.Frame(folder_frame)
     input_frame.pack(fill=tk.X, padx=5, pady=5)
-
+    
     # Container for entry with fixed height
     entry_container = ttk.Frame(input_frame, height=50)
     entry_container.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
     entry_container.pack_propagate(False)  # Maintain fixed height
-
+    
     # Ô nhập liệu với font lớn hơn và có padding
     folder_entry = tk.Entry(entry_container, textvariable=app.folder_path, 
                           font=("Arial", 14),
@@ -85,7 +198,7 @@ def create_main_tab(app, parent):
                           highlightbackground="#cccccc",
                           bd=5)  # Sử dụng border để tạo padding
     folder_entry.pack(fill=tk.BOTH, expand=True)
-
+    
     # Cài đặt văn bản có khoảng trống bên trái để tạo padding
     def pad_text(event=None):
         """Thêm padding bằng cách thêm khoảng trống vào đầu text"""
@@ -94,16 +207,16 @@ def create_main_tab(app, parent):
         if not current_text.startswith("  "):
             folder_entry.delete(0, tk.END)
             folder_entry.insert(0, "  " + current_text.lstrip())
-
+    
     # Áp dụng padding ban đầu và khi focus
     folder_entry.bind("<FocusIn>", pad_text)
     app.root.after(100, pad_text)  # Áp dụng padding sau khi khởi tạo
-
+    
     # Container for browse button with fixed height
     button_container = ttk.Frame(input_frame, height=50, width=100)
     button_container.pack(side=tk.RIGHT, padx=5, pady=5)
     button_container.pack_propagate(False)  # Maintain fixed height
-
+    
     # Nút "Duyệt..." - với màu xanh để nổi bật và chiều cao cố định
     browse_btn = tk.Button(button_container, text="Duyệt...", 
                         bg="#3498db", fg="white",  # Màu xanh giống nút tải lên
@@ -113,8 +226,8 @@ def create_main_tab(app, parent):
     browse_btn.config(command=lambda: browse_folder(app))
     
     # Frame kiểm soát
-    control_top_frame = ttk.Frame(content_frame)
-    control_top_frame.pack(fill=tk.X, padx=10, pady=5)
+    control_top_frame = ttk.Frame(parent)
+    control_top_frame.pack(fill=tk.X, padx=0, pady=5)
     
     # Nút làm mới danh sách
     refresh_btn = ttk.Button(control_top_frame, text="Làm mới danh sách", 
@@ -153,90 +266,6 @@ def create_main_tab(app, parent):
     )
     duplicates_check.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
     
-    # Container cho tabs
-    tab_container = ttk.Frame(content_frame)
-    tab_container.pack(fill=tk.X, padx=10, pady=5)
-    
-    # Tab frame - Make more prominent
-    tab_frame = tk.Frame(tab_container, bg="#F0F0F0", bd=1, relief="raised")
-    tab_frame.pack(fill=tk.X)
-    
-    # Các tab với padding và font phù hợp
-    tab_names = [
-        ("manual", "Tải lên thủ công"),
-        ("auto", "Tải lên tự động"),
-        ("duplicate", "Danh sách video trùng"),
-        ("uploaded", "Danh sách video đã tải lên")
-    ]
-    
-    app.sub_tab_buttons = {}
-    
-    # Tạo các tab button với style như hình ảnh
-    for i, (code, name) in enumerate(tab_names):
-        # First tab is active by default
-        if code == "manual":
-            btn = tk.Button(
-                tab_frame, 
-                text=name,
-                font=("Arial", 11, "bold"),
-                padx=15, pady=8,
-                relief="flat",
-                bg="#2E86C1",  # Blue color for active tab
-                fg="white",
-                bd=1,
-                command=lambda c=code: switch_tab(app, c)
-            )
-        else:
-            btn = tk.Button(
-                tab_frame, 
-                text=name,
-                font=("Arial", 11),
-                padx=15, pady=8,
-                relief="flat",
-                bg="#F0F0F0",
-                fg="#2C3E50",  # Dark blue text
-                bd=0,
-                command=lambda c=code: switch_tab(app, c)
-            )
-            # Add hover effect
-            btn.bind("<Enter>", lambda e, b=btn: b.config(bg="#E0E0E0"))
-            btn.bind("<Leave>", lambda e, b=btn: b.config(bg="#F0F0F0"))
-            
-        btn.pack(side=tk.LEFT)
-        app.sub_tab_buttons[code] = btn
-    
-    # Frame chứa nội dung tab
-    app.tab_content_frame = ttk.Frame(content_frame)
-    app.tab_content_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-    
-    # Hiển thị tab đầu tiên
-    create_manual_tab(app, app.tab_content_frame)
-    
-    # Thanh tiến trình và nút ở cuối
-    app.bottom_space_frame = ttk.Frame(content_frame, height=100)
-    app.bottom_space_frame.pack(fill=tk.X)
-    
-    # Lưu trữ các checkbox trên tree
-    app.checkbox_widgets = []
-
-    # Thêm phương thức render_checkboxes vào app
-    app.render_checkboxes = lambda: render_checkboxes(app)
-
-def create_manual_tab(app, parent):
-    """
-    Tạo giao diện tab tải lên thủ công
-    
-    Args:
-        app: Đối tượng TelegramUploaderApp
-        parent: Frame cha
-    """
-    # Khởi tạo info_vars nếu chưa có
-    if not hasattr(app, 'info_vars'):
-        app.info_vars = {}
-    # Biến lưu trữ trang hiện tại
-    app.current_page = 1
-    app.items_per_page = 10  # Số lượng video trên mỗi trang
-    
     # Frame hiển thị danh sách video
     videos_frame = ttk.LabelFrame(parent, text="Danh sách video")
     videos_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=5)
@@ -256,7 +285,7 @@ def create_manual_tab(app, parent):
     app.video_tree.heading("filename", text="Tên file")
     app.video_tree.heading("status", text="Trạng thái")
     app.video_tree.heading("info", text="Thông tin thêm")
-
+    
     # Thiết lập độ rộng cột
     app.video_tree.column("select", width=60, anchor=tk.CENTER)  # Increase width for checkbox+text
     app.video_tree.column("filename", width=400, anchor=tk.W)
@@ -323,7 +352,7 @@ def create_manual_tab(app, parent):
     # Frame cho các nút chọn
     selection_frame = ttk.Frame(videos_frame)
     selection_frame.pack(fill=tk.X, pady=5)
-
+    
     # Nút chọn/bỏ chọn
     select_all_btn = tk.Button(selection_frame, text="Chọn tất cả", 
                             bg="#3498db", fg="white",
@@ -332,7 +361,7 @@ def create_manual_tab(app, parent):
                             relief="flat",
                             command=lambda: select_all_videos(app))
     select_all_btn.pack(side=tk.LEFT, padx=5)
-
+    
     deselect_all_btn = tk.Button(selection_frame, text="Bỏ chọn tất cả", 
                             bg="#3498db", fg="white",
                             font=("Arial", 11),
@@ -340,7 +369,7 @@ def create_manual_tab(app, parent):
                             relief="flat",
                             command=lambda: deselect_all_videos(app))
     deselect_all_btn.pack(side=tk.LEFT, padx=5)
-
+    
     # Add new button for selecting all videos not yet uploaded
     select_unuploaded_btn = tk.Button(selection_frame, text="Chọn video chưa tải lên", 
                             bg="#3498db", fg="white",
@@ -349,7 +378,6 @@ def create_manual_tab(app, parent):
                             relief="flat",
                             command=lambda: select_unuploaded_videos(app))
     select_unuploaded_btn.pack(side=tk.LEFT, padx=5)
-        
     
     # Frame thông tin video
     info_frame = ttk.LabelFrame(parent, text="Thông tin video đã chọn")
@@ -388,7 +416,7 @@ def create_manual_tab(app, parent):
                             relief="flat",
                             command=lambda: play_selected_video(app))
     app.play_video_btn.pack(side=tk.LEFT, padx=5, pady=5)
-
+    
     app.upload_single_btn = tk.Button(btn_frame, text="Tải lên video đang chọn", 
                                 bg="#3498db", fg="white", 
                                 font=("Arial", 11),
@@ -405,7 +433,6 @@ def create_manual_tab(app, parent):
     info_details_frame = ttk.Frame(info_right_frame)
     info_details_frame.pack(fill=tk.BOTH, expand=True)
     
-
     # Thông tin chi tiết - hiển thị các thông tin cụ thể hơn
     info_details = [
         ("Thông tin video", ""),
@@ -416,13 +443,13 @@ def create_manual_tab(app, parent):
         ("Codec:", ""),
         ("Định dạng:", ""),
     ]
-
+    
     row = 0
     # Header
     header_label = ttk.Label(info_details_frame, text=info_details[0][0], font=("Arial", 11, "bold"))
     header_label.grid(row=row, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
     row += 1
-
+    
     # Các thông tin chi tiết
     for label_text, value in info_details[1:]:
         label = ttk.Label(info_details_frame, text=label_text)
@@ -435,16 +462,16 @@ def create_manual_tab(app, parent):
         value_label.grid(row=row, column=1, sticky=tk.W, pady=2)
         
         row += 1
-
+    
     # Thêm trường trạng thái với tk.Label thay vì ttk.Label để hỗ trợ màu sắc
     status_label = ttk.Label(info_details_frame, text="Trạng thái:")
     status_label.grid(row=row, column=0, sticky=tk.W, pady=2)
-
+    
     # Sử dụng tk.Label thông thường thay vì ttk.Label để có thể thay đổi màu
     # Không cố gắng lấy background từ ttk.Frame, sử dụng màu mặc định của hệ thống
     app.status_value_label = tk.Label(info_details_frame, text="", anchor=tk.W)
     app.status_value_label.grid(row=row, column=1, sticky=tk.W, pady=2)
-  
+    
     # Frame hiển thị các frame từ video
     frames_frame = ttk.LabelFrame(parent, text="Các khung hình từ video")
     frames_frame.pack(fill=tk.X, padx=0, pady=5)
@@ -479,36 +506,6 @@ def create_manual_tab(app, parent):
     # Disable buttons until video is selected
     app.play_video_btn.config(state=tk.DISABLED)
     app.upload_single_btn.config(state=tk.DISABLED)
-    
-    def initialize_checkboxes():
-      """Khởi tạo checkbox sau khi UI đã được render"""
-      # Import render_checkboxes từ main_tab_func
-      try:
-          from ui.main_tab.main_tab_func import render_checkboxes
-      except ImportError:
-          try:
-              from .main_tab_func import render_checkboxes
-          except ImportError:
-              from src.ui.main_tab.main_tab_func import render_checkboxes
-      
-      # Đảm bảo UI đã cập nhật
-      app.root.update_idletasks()
-      
-      # Vẽ lại checkbox
-      render_checkboxes(app)
-      
-      # Vẽ checkbox khi chuyển tab hoặc mở dialog
-      def add_tab_callbacks():
-          if hasattr(app, 'notebook'):
-              app.notebook.bind("<<NotebookTabChanged>>", lambda e: render_checkboxes(app))
-      
-      # Force UI update trước khi vẽ checkbox
-      app.root.after(200, add_tab_callbacks)
-      app.root.after(100, render_checkboxes, app)
-
-    # Khởi tạo checkbox từ đầu
-    app.root.after(300, initialize_checkboxes)
-
 def switch_tab(app, tab_code):
     """
     Chuyển đổi giữa các tab nội dung
@@ -563,7 +560,6 @@ def switch_tab(app, tab_code):
     elif tab_code == "uploaded":
         from .uploaded_tab import create_uploaded_tab
         create_uploaded_tab(app, app.tab_content_frame)
-
 def render_checkboxes(app):
     """Vẽ lại tất cả checkbox trên treeview - LUÔN hiển thị chúng"""
     # Import CustomCheckbox từ components

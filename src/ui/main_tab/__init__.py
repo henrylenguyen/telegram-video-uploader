@@ -10,8 +10,10 @@ from .main_tab_func import (
     on_video_select,
     select_all_videos,
     deselect_all_videos,
-    select_unuploaded_videos,  # Add this new function
+    select_unuploaded_videos,
     change_page,
     play_selected_video,
     upload_selected_video
 )
+from .main_tab_func import display_video_frames, open_pyqt5_gallery
+from .tooltip_function import add_tooltip

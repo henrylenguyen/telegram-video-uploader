@@ -1,108 +1,175 @@
 """
-Script đóng gói ứng dụng Telegram Video Uploader thành file .exe.
+Build script for Telegram Video Uploader
+========================================
+
+This script builds the application into a standalone executable for Windows, macOS, or Linux.
+It handles:
+- Cleaning old builds
+- Setting up resources (FFmpeg, configs, etc.)
+- Building with PyInstaller
+- Creating distribution packages
 """
 import PyInstaller.__main__
 import os
+import sys
 import shutil
 import configparser
-import sys
-import zipfile
-import datetime
 import urllib.request
-import subprocess
-import tempfile
+import zipfile
+import tarfile
+import argparse
 import platform
+import subprocess
+import logging
+import datetime
+import tempfile
+from pathlib import Path
 
-# Thêm thư mục gốc vào đường dẫn
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('build')
 
-# Đường dẫn các thư mục
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_DIR = os.path.join(BASE_DIR, 'src')
-DIST_DIR = os.path.join(BASE_DIR, 'dist')
-BUILD_DIR = os.path.join(BASE_DIR, 'build')
-OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
-DOCS_DIR = os.path.join(BASE_DIR, 'docs')
-TEMP_DIR = os.path.join(tempfile.gettempdir(), 'telegram_uploader_build')
+# Define constants
+SCRIPT_DIR = Path(__file__).parent.absolute()
+BASE_DIR = SCRIPT_DIR.parent
+SRC_DIR = BASE_DIR / 'src'
+DIST_DIR = BASE_DIR / 'dist'
+BUILD_DIR = BASE_DIR / 'build'
+OUTPUT_DIR = BASE_DIR / 'output'
+DOCS_DIR = BASE_DIR / 'docs'
+TEMP_DIR = Path(tempfile.gettempdir()) / 'telegram_uploader_build'
+VERSION = "1.0"
 
-# URL tải FFmpeg cho Windows
-FFMPEG_WIN_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-# Thư mục FFmpeg bên trong ứng dụng
-FFMPEG_APP_DIR = os.path.join(OUTPUT_DIR, 'ffmpeg')
+# FFmpeg download URLs
+FFMPEG_URLS = {
+    'windows': "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    'darwin': "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip",  # macOS
+    'linux': "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+}
+
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Build Telegram Video Uploader')
+    parser.add_argument('--clean-only', action='store_true', help='Only clean build directories')
+    parser.add_argument('--skip-ffmpeg', action='store_true', help='Skip FFmpeg download')
+    parser.add_argument('--skip-zip', action='store_true', help='Skip creating ZIP archive')
+    parser.add_argument('--platform', choices=['auto', 'windows', 'macos', 'linux'], 
+                        default='auto', help='Target platform (default: auto-detect)')
+    
+    return parser.parse_args()
+
+def get_platform(args):
+    """Determine target platform"""
+    if args.platform != 'auto':
+        platform_map = {'windows': 'windows', 'macos': 'darwin', 'linux': 'linux'}
+        return platform_map[args.platform]
+    
+    system = platform.system().lower()
+    if system not in ('windows', 'darwin', 'linux'):
+        logger.error(f"Unsupported platform: {system}")
+        sys.exit(1)
+    return system
 
 def clean_build_dirs():
-    """Xóa các thư mục build cũ"""
-    print("Đang xóa thư mục build cũ...")
+    """Clean old build directories"""
+    logger.info("Cleaning old build directories...")
     
-    # Xóa thư mục build và dist cũ nếu tồn tại
-    if os.path.exists(DIST_DIR):
-        shutil.rmtree(DIST_DIR)
-    if os.path.exists(BUILD_DIR):
-        shutil.rmtree(BUILD_DIR)
-    if os.path.exists(OUTPUT_DIR):
-        shutil.rmtree(OUTPUT_DIR)
-    if os.path.exists(TEMP_DIR):
-        shutil.rmtree(TEMP_DIR)
-        
-    # Tạo thư mục output và temp
-    os.makedirs(OUTPUT_DIR)
-    os.makedirs(os.path.join(OUTPUT_DIR, 'config'), exist_ok=True)
-    os.makedirs(os.path.join(OUTPUT_DIR, 'docs'), exist_ok=True)
-    os.makedirs(TEMP_DIR, exist_ok=True)
+    for directory in [DIST_DIR, BUILD_DIR, OUTPUT_DIR, TEMP_DIR]:
+        if directory.exists():
+            shutil.rmtree(directory)
+        directory.mkdir(exist_ok=True, parents=True)
+    
+    # Create additional directories
+    (OUTPUT_DIR / 'config').mkdir(exist_ok=True)
+    (OUTPUT_DIR / 'docs').mkdir(exist_ok=True)
+    
+    logger.info("Build directories cleaned successfully")
 
-def download_ffmpeg():
-    """Tải và chuẩn bị FFmpeg để tích hợp vào ứng dụng"""
-    print("Đang tải và chuẩn bị FFmpeg...")
+def download_ffmpeg(target_platform):
+    """Download and prepare FFmpeg for inclusion in the application"""
+    logger.info("Downloading and preparing FFmpeg...")
     
-    # Tạo thư mục FFmpeg trong ứng dụng
-    os.makedirs(FFMPEG_APP_DIR, exist_ok=True)
+    # Create FFmpeg directory
+    ffmpeg_dir = OUTPUT_DIR / 'ffmpeg'
+    ffmpeg_dir.mkdir(exist_ok=True)
     
-    # Đường dẫn tải về
-    zip_path = os.path.join(TEMP_DIR, "ffmpeg.zip")
+    # Get download URL for the platform
+    if target_platform not in FFMPEG_URLS:
+        logger.error(f"No FFmpeg download URL for platform {target_platform}")
+        return False
+    
+    url = FFMPEG_URLS[target_platform]
     
     try:
-        # Tải FFmpeg
-        print("Đang tải FFmpeg từ GitHub...")
-        urllib.request.urlretrieve(FFMPEG_WIN_URL, zip_path)
+        # Download FFmpeg
+        logger.info(f"Downloading FFmpeg from {url}...")
+        archive_path = TEMP_DIR / f"ffmpeg{'.zip' if target_platform in ('windows', 'darwin') else '.tar.xz'}"
+        urllib.request.urlretrieve(url, archive_path)
         
-        # Giải nén
-        print("Đang giải nén FFmpeg...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(TEMP_DIR)
+        # Extract files
+        logger.info("Extracting FFmpeg...")
+        if target_platform in ('windows', 'darwin'):
+            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                zip_ref.extractall(TEMP_DIR)
+        else:  # Linux
+            with tarfile.open(archive_path, 'r:xz') as tar_ref:
+                tar_ref.extractall(TEMP_DIR)
         
-        # Tìm thư mục ffmpeg (thư mục có tên bắt đầu bằng ffmpeg)
-        for item in os.listdir(TEMP_DIR):
-            if os.path.isdir(os.path.join(TEMP_DIR, item)) and item.startswith('ffmpeg'):
-                ffmpeg_dir = os.path.join(TEMP_DIR, item)
+        # Find and copy the FFmpeg binaries
+        ffmpeg_exe = "ffmpeg.exe" if target_platform == "windows" else "ffmpeg"
+        ffprobe_exe = "ffprobe.exe" if target_platform == "windows" else "ffprobe"
+        
+        # Search for the binaries
+        found_binaries = False
+        for root, dirs, files in os.walk(TEMP_DIR):
+            if ffmpeg_exe in files and ffprobe_exe in files:
+                # Copy files
+                for binary in [ffmpeg_exe, ffprobe_exe]:
+                    src = Path(root) / binary
+                    dst = ffmpeg_dir / binary
+                    shutil.copy2(src, dst)
+                    
+                    # Make executable on Unix
+                    if target_platform in ('darwin', 'linux'):
+                        os.chmod(dst, 0o755)
                 
-                # Sao chép các file cần thiết (chỉ bin)
-                bin_dir = os.path.join(ffmpeg_dir, 'bin')
-                for file in os.listdir(bin_dir):
-                    if file in ['ffmpeg.exe', 'ffprobe.exe']:
-                        src = os.path.join(bin_dir, file)
-                        dst = os.path.join(FFMPEG_APP_DIR, file)
-                        shutil.copy2(src, dst)
-                        print(f"Đã sao chép {file} vào thư mục ffmpeg")
+                logger.info(f"Copied FFmpeg binaries to {ffmpeg_dir}")
+                found_binaries = True
                 break
         
-        # Xóa file tạm
-        if os.path.exists(zip_path):
-            os.remove(zip_path)
-            
-        print("Đã chuẩn bị FFmpeg thành công")
+        if not found_binaries:
+            logger.warning("Could not find FFmpeg binaries in the downloaded package")
+            create_ffmpeg_readme(ffmpeg_dir)
+            return False
+        
+        # Clean up
+        if archive_path.exists():
+            os.remove(archive_path)
+        
+        return True
+    
     except Exception as e:
-        print(f"Lỗi khi tải FFmpeg: {e}")
-        # Tạo file readme để hướng dẫn cài đặt thủ công
-        with open(os.path.join(FFMPEG_APP_DIR, 'README.txt'), 'w', encoding='utf-8') as f:
-            f.write("Không thể tải tự động FFmpeg.\n")
-            f.write("Vui lòng tải thủ công từ: https://ffmpeg.org/download.html\n")
-            f.write("Sau đó sao chép ffmpeg.exe và ffprobe.exe vào thư mục này.\n")
+        logger.error(f"Error downloading FFmpeg: {e}")
+        create_ffmpeg_readme(ffmpeg_dir)
+        return False
+
+def create_ffmpeg_readme(ffmpeg_dir):
+    """Create README file with instructions for manual FFmpeg installation"""
+    readme_path = ffmpeg_dir / 'README.txt'
+    
+    with open(readme_path, 'w', encoding='utf-8') as f:
+        f.write("Could not automatically download FFmpeg.\n\n")
+        f.write("Please download FFmpeg manually from: https://ffmpeg.org/download.html\n")
+        f.write("Then copy ffmpeg and ffprobe executables to this directory.\n")
 
 def create_config_template():
-    """Tạo file config.ini mẫu"""
-    print("Đang tạo file config.ini mẫu...")
+    """Create template config.ini file"""
+    logger.info("Creating config.ini template...")
     
-    # Tạo file config.ini trống hoặc mẫu nếu chưa tồn tại
     config = configparser.ConfigParser()
     config['TELEGRAM'] = {
         'bot_token': '',
@@ -117,271 +184,385 @@ def create_config_template():
         'check_duplicates': 'true',
         'auto_check_interval': '60'
     }
+    config['TELETHON'] = {
+        'api_id': '',
+        'api_hash': '',
+        'phone': '',
+        'use_telethon': 'false'
+    }
     
-    # Lưu vào thư mục output
-    with open(os.path.join(OUTPUT_DIR, 'config.ini'), 'w') as configfile:
+    config_path = OUTPUT_DIR / 'config.ini'
+    with open(config_path, 'w', encoding='utf-8') as configfile:
         config.write(configfile)
+    
+    logger.info(f"Created config template at {config_path}")
 
-def build_main_application():
-    """Đóng gói ứng dụng chính"""
-    print("Đang đóng gói ứng dụng chính...")
+def find_icon():
+    """Find icon for the application"""
+    icon_paths = [
+        SRC_DIR / 'icon.ico',
+        BUILD_DIR / 'icon.ico',
+        SCRIPT_DIR / 'icon.ico'
+    ]
     
-    # Icon cho ứng dụng
-    icon_path = os.path.join(SRC_DIR, 'icon.ico')
-    if not os.path.exists(icon_path):
-        icon_path = os.path.join(BUILD_DIR, 'icon.ico')
+    for path in icon_paths:
+        if path.exists():
+            return path
     
-    # Kiểm tra xem icon có tồn tại không
-    icon_param = f'--icon={icon_path}' if os.path.exists(icon_path) else ''
-    
-    # Đường dẫn tới file chính
-    main_py = os.path.join(SRC_DIR, 'telegram_uploader.py')
-    
-    # Tìm thư viện python
-    python_lib = os.path.dirname(os.__file__)
-    
-    # Sử dụng PyInstaller để đóng gói
-    PyInstaller.__main__.run([
-        main_py,  # Tên file chính của ứng dụng
-        '--name=Telegram_Video_Uploader',  # Tên ứng dụng
-        '--onefile',  # Đóng gói thành một file duy nhất
-        '--windowed',  # Chế độ cửa sổ (không hiển thị console)
-        icon_param,  # Icon cho ứng dụng
-        '--hidden-import=telebot',  # Import ẩn
-        '--hidden-import=PIL',  # Import ẩn
-        '--hidden-import=cv2',  # Import ẩn
-        '--hidden-import=imagehash',  # Import ẩn
-        '--add-data=src/utils/*.py;utils',  # Thêm các modules
-        '--clean',  # Xóa các file tạm
-    ])
+    return None
 
-def build_config_tool():
-    """Đóng gói công cụ cấu hình"""
-    print("Đang đóng gói công cụ cấu hình...")
+def build_application(target_platform):
+    """Build the main application using PyInstaller"""
+    logger.info("Building main application...")
     
-    # Icon cho ứng dụng
-    icon_path = os.path.join(SRC_DIR, 'icon.ico')
-    if not os.path.exists(icon_path):
-        icon_path = os.path.join(BUILD_DIR, 'icon.ico')
-        
-    # Kiểm tra xem icon có tồn tại không
-    icon_param = f'--icon={icon_path}' if os.path.exists(icon_path) else ''
+    # Find icon
+    icon_path = find_icon()
+    icon_param = f'--icon={icon_path}' if icon_path else ''
     
-    # Đường dẫn tới file chính
-    main_py = os.path.join(SRC_DIR, 'telegram_uploader.py')
+    # Main script
+    main_py = SRC_DIR / 'telegram_uploader.py'
+    if not main_py.exists():
+        main_py = SRC_DIR / 'main.py'  # Fallback to main.py if telegram_uploader.py doesn't exist
     
-    # Tạo thư mục đầu ra riêng
-    config_dist = os.path.join(DIST_DIR, 'config')
-    os.makedirs(config_dist, exist_ok=True)
+    # Platform-specific options
+    console_option = '--windowed' if target_platform in ('windows', 'darwin') else '--console'
     
-    # Sử dụng PyInstaller để đóng gói
-    PyInstaller.__main__.run([
-        main_py,  # Tên file chính của ứng dụng
-        '--name=Telegram_Uploader_Config',  # Tên ứng dụng
-        '--onefile',  # Đóng gói thành một file duy nhất
-        '--windowed',  # Chế độ cửa sổ (không hiển thị console)
-        icon_param,  # Icon cho ứng dụng
-        '--hidden-import=telebot',  # Import ẩn
-        '--add-data=src/utils/*.py;utils',  # Thêm các modules
-        '--clean',  # Xóa các file tạm
-        f'--distpath={config_dist}',  # Thư mục đầu ra khác
-        '--add-data=README.md;.',  # Thêm file README
-    ])
+    # Base options
+    options = [
+        str(main_py),                    # Main script
+        '--name=Telegram_Video_Uploader',  # App name
+        '--onefile',                       # Single executable
+        console_option,                    # UI mode
+        icon_param,                        # Icon
+        '--clean',                         # Clean cache
+        '--noconfirm',                     # No confirmation
+        # Add hidden imports
+        '--hidden-import=telebot',
+        '--hidden-import=PIL',
+        '--hidden-import=cv2',
+        '--hidden-import=imagehash',
+        '--hidden-import=telethon',
+        # Add data files
+        f'--add-data={SRC_DIR / "utils"}/*.py;utils',
+    ]
+    
+    # Add resources if available
+    if icon_path:
+        options.append(f'--add-data={icon_path};.')
+    
+    # Run PyInstaller
+    PyInstaller.__main__.run(options)
+    
+    logger.info("Main application built successfully")
+    return True
 
-def create_additional_files():
-    """Tạo các file bổ sung"""
-    print("Đang tạo các file bổ sung...")
+def build_config_tool(target_platform):
+    """Build the configuration tool"""
+    logger.info("Building configuration tool...")
     
-    # Tạo file README.txt
+    # Find icon
+    icon_path = find_icon()
+    icon_param = f'--icon={icon_path}' if icon_path else ''
+    
+    # Main script (using the same script with config mode)
+    main_py = SRC_DIR / 'telegram_uploader.py'
+    if not main_py.exists():
+        main_py = SRC_DIR / 'main.py'  # Fallback to main.py if telegram_uploader.py doesn't exist
+    
+    # Create output directory
+    config_dist = DIST_DIR / 'config'
+    config_dist.mkdir(exist_ok=True)
+    
+    # Platform-specific options
+    console_option = '--windowed' if target_platform in ('windows', 'darwin') else '--console'
+    
+    # Build options
+    options = [
+        str(main_py),                        # Main script
+        '--name=Telegram_Uploader_Config',   # App name
+        '--onefile',                         # Single executable
+        console_option,                      # UI mode
+        icon_param,                          # Icon
+        '--clean',                           # Clean cache
+        '--noconfirm',                       # No confirmation
+        # Add hidden imports
+        '--hidden-import=telebot',
+        # Add data files
+        f'--add-data={SRC_DIR / "utils"}/*.py;utils',
+        f'--distpath={config_dist}',         # Custom output directory
+    ]
+    
+    # Run PyInstaller
+    PyInstaller.__main__.run(options)
+    
+    logger.info("Configuration tool built successfully")
+    return True
+
+def create_additional_files(target_platform):
+    """Create additional files like README and startup scripts"""
+    logger.info("Creating additional files...")
+    
+    # Create README.txt
     readme_content = """
 TELEGRAM VIDEO UPLOADER
 =======================
 
-Phiên bản: 1.0
+Version: 1.0
 (c) 2025 - All rights reserved
 
-Hướng dẫn sử dụng:
+Setup Instructions:
 ------------------
 
-1. THIẾT LẬP CẤU HÌNH BAN ĐẦU:
-   - Chạy file "config/Telegram_Uploader_Config.exe" để cấu hình thông tin Telegram
-   - Nhập Bot Token và Chat ID (xem hướng dẫn trong ứng dụng)
-   - Kiểm tra kết nối và lưu cấu hình
+1. INITIAL CONFIGURATION:
+   - Run "config/Telegram_Uploader_Config" to configure Telegram information
+   - Enter your Bot Token and Chat ID (see instructions in the app)
+   - Test the connection and save the configuration
 
-2. SỬ DỤNG ỨNG DỤNG CHÍNH:
-   - Chạy file "Telegram_Video_Uploader.exe" để mở ứng dụng chính
-   - Chọn thư mục chứa video
-   - Chọn video cần tải lên và nhấn "Bắt đầu tải lên"
-   - Hoặc sử dụng chế độ tự động trong tab "Tự động"
+2. USING THE MAIN APPLICATION:
+   - Run "Telegram_Video_Uploader" to open the main application
+   - Select a folder containing videos
+   - Select videos to upload and click "Start Upload"
+   - Or use the Auto mode in the "Auto" tab
 
-Tính năng mới:
---------------
-- Phát hiện và lọc video trùng lặp
-- Chế độ tự động tải lên video từ thư mục
-- Hỗ trợ nhiều định dạng video phổ biến
-- Giao diện thân thiện và dễ sử dụng
-- Hỗ trợ tải lên video không giới hạn kích thước
+Features:
+---------
+- Detect and filter duplicate videos
+- Auto-upload mode for new videos in a folder
+- Support for multiple common video formats
+- User-friendly interface
+- Support for uploading videos of unlimited size
 
-Lưu ý:
+Notes:
 ------
-- Bot Telegram cần có quyền gửi tin nhắn và media trong kênh/nhóm đích
-- Ứng dụng đã tích hợp FFmpeg để xử lý video lớn
-- Xem thêm hướng dẫn chi tiết trong thư mục docs
+- Your Telegram Bot needs permission to send messages and media in the target channel/group
+- The application includes FFmpeg for handling large videos
+- See detailed instructions in the docs folder
 
-Liên hệ hỗ trợ:
+Support Contact:
 --------------
-Nếu cần hỗ trợ, vui lòng liên hệ qua:
+If you need assistance, please contact:
 - Email: support@example.com
 - GitHub: https://github.com/username/telegram-video-uploader/issues
 """
 
-    with open(os.path.join(OUTPUT_DIR, 'README.txt'), 'w', encoding='utf-8') as f:
+    with open(OUTPUT_DIR / 'README.txt', 'w', encoding='utf-8') as f:
         f.write(readme_content)
-
-    # Tạo file SETUP.bat
-    setup_content = """
+    
+    # Create platform-specific setup files
+    if target_platform == 'windows':
+        # Create SETUP.bat for Windows
+        setup_content = """
 @echo off
 echo ===================================
 echo  TELEGRAM VIDEO UPLOADER - SETUP
 echo ===================================
 echo.
-echo Đang cài đặt ứng dụng...
+echo Setting up the application...
 echo.
-echo 1. Thiết lập cấu hình
+echo 1. Configure application settings
 echo -----------------------------------
 start "" "config\\Telegram_Uploader_Config.exe"
 echo.
-echo Sau khi cấu hình xong, bạn có thể chạy ứng dụng chính.
+echo After configuration, you can run the main application.
 echo.
 pause
 """
-
-    with open(os.path.join(OUTPUT_DIR, 'SETUP.bat'), 'w', encoding='utf-8') as f:
-        f.write(setup_content)
+        with open(OUTPUT_DIR / 'SETUP.bat', 'w', encoding='utf-8') as f:
+            f.write(setup_content)
         
-    # Tạo file FFmpeg-PATH.bat để đặt đường dẫn FFmpeg
-    ffmpeg_path_content = """
+        # Create FFmpeg-PATH.bat for Windows
+        ffmpeg_path_content = """
 @echo off
 echo ===================================
-echo  THIẾT LẬP FFMPEG PATH
+echo  FFMPEG PATH SETUP
 echo ===================================
 echo.
-echo Đang thiết lập đường dẫn FFmpeg...
+echo Setting up FFmpeg path...
 SET "CURRENT_DIR=%~dp0"
 SET "FFMPEG_DIR=%CURRENT_DIR%ffmpeg"
 
-REM Thêm FFmpeg vào PATH cho phiên làm việc hiện tại
+REM Add FFmpeg to PATH for current session
 SET "PATH=%FFMPEG_DIR%;%PATH%"
 
-REM Kiểm tra cài đặt
+REM Check installation
 ffmpeg -version
 if %ERRORLEVEL% NEQ 0 (
-    echo Lỗi: Không thể thiết lập FFmpeg. Vui lòng kiểm tra thư mục ffmpeg.
+    echo Error: Could not set up FFmpeg. Please check the ffmpeg directory.
 ) else (
-    echo Thiết lập FFmpeg thành công!
+    echo FFmpeg setup successful!
 )
 echo.
-echo Bạn có thể chạy ứng dụng ngay bây giờ.
+echo You can now run the application.
 echo.
 pause
 """
+        with open(OUTPUT_DIR / 'FFmpeg-PATH.bat', 'w', encoding='utf-8') as f:
+            f.write(ffmpeg_path_content)
+    
+    elif target_platform in ('darwin', 'linux'):
+        # Create setup.sh for macOS/Linux
+        setup_content = """#!/bin/bash
+echo "==================================="
+echo " TELEGRAM VIDEO UPLOADER - SETUP"
+echo "==================================="
+echo
+echo "Setting up the application..."
+echo
+echo "1. Configure application settings"
+echo "-----------------------------------"
+chmod +x config/Telegram_Uploader_Config
+./config/Telegram_Uploader_Config &
+echo
+echo "After configuration, you can run the main application."
+echo
+"""
+        setup_path = OUTPUT_DIR / 'setup.sh'
+        with open(setup_path, 'w', encoding='utf-8') as f:
+            f.write(setup_content)
+        # Make executable
+        os.chmod(setup_path, 0o755)
+        
+        # Create ffmpeg-path.sh for macOS/Linux
+        ffmpeg_path_content = """#!/bin/bash
+echo "==================================="
+echo " FFMPEG PATH SETUP"
+echo "==================================="
+echo
+echo "Setting up FFmpeg path..."
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+FFMPEG_DIR="$SCRIPT_DIR/ffmpeg"
 
-    with open(os.path.join(OUTPUT_DIR, 'FFmpeg-PATH.bat'), 'w', encoding='utf-8') as f:
-        f.write(ffmpeg_path_content)
+# Add FFmpeg to PATH for current session
+export PATH="$FFMPEG_DIR:$PATH"
 
-def copy_files_to_output():
-    """Sao chép các file vào thư mục output"""
-    print("Đang sao chép các file vào thư mục output...")
+# Check installation
+if ffmpeg -version &> /dev/null; then
+    echo "FFmpeg setup successful!"
+else
+    echo "Error: Could not set up FFmpeg. Please check the ffmpeg directory."
+fi
+echo
+echo "You can now run the application."
+echo
+"""
+        ffmpeg_path = OUTPUT_DIR / 'ffmpeg-path.sh'
+        with open(ffmpeg_path, 'w', encoding='utf-8') as f:
+            f.write(ffmpeg_path_content)
+        # Make executable
+        os.chmod(ffmpeg_path, 0o755)
     
-    # Sao chép file .exe
-    if os.path.exists(os.path.join(DIST_DIR, 'Telegram_Video_Uploader.exe')):
-        shutil.copy(
-            os.path.join(DIST_DIR, 'Telegram_Video_Uploader.exe'),
-            os.path.join(OUTPUT_DIR, 'Telegram_Video_Uploader.exe')
-        )
+    logger.info("Additional files created successfully")
+
+def copy_files_to_output(target_platform):
+    """Copy built files to output directory"""
+    logger.info("Copying files to output directory...")
     
-    # Sao chép file config tool
-    config_exe = os.path.join(DIST_DIR, 'config', 'Telegram_Uploader_Config.exe')
-    if os.path.exists(config_exe):
-        shutil.copy(
-            config_exe,
-            os.path.join(OUTPUT_DIR, 'config', 'Telegram_Uploader_Config.exe')
-        )
+    # Executable extension based on platform
+    exe_ext = '.exe' if target_platform == 'windows' else ''
     
-    # Sao chép tài liệu
-    docs_output = os.path.join(OUTPUT_DIR, 'docs')
-    if os.path.exists(DOCS_DIR):
-        for doc_file in os.listdir(DOCS_DIR):
-            if doc_file.endswith('.md'):
-                shutil.copy(
-                    os.path.join(DOCS_DIR, doc_file),
-                    os.path.join(docs_output, doc_file)
-                )
+    # Copy main executable
+    main_exe = DIST_DIR / f"Telegram_Video_Uploader{exe_ext}"
+    if main_exe.exists():
+        shutil.copy2(main_exe, OUTPUT_DIR)
+    else:
+        logger.error(f"Main executable not found: {main_exe}")
     
-    # Tạo thư mục images trong docs nếu chưa có
-    images_dir = os.path.join(docs_output, 'images')
-    os.makedirs(images_dir, exist_ok=True)
+    # Copy config tool
+    config_exe = DIST_DIR / 'config' / f"Telegram_Uploader_Config{exe_ext}"
+    if config_exe.exists():
+        shutil.copy2(config_exe, OUTPUT_DIR / 'config')
+    else:
+        logger.error(f"Config tool not found: {config_exe}")
     
-    # Sao chép ảnh nếu có
-    source_images = os.path.join(DOCS_DIR, 'images')
-    if os.path.exists(source_images):
-        for img_file in os.listdir(source_images):
-            shutil.copy(
-                os.path.join(source_images, img_file),
-                os.path.join(images_dir, img_file)
-            )
+    # Copy documentation
+    docs_output = OUTPUT_DIR / 'docs'
+    if DOCS_DIR.exists():
+        for doc_file in DOCS_DIR.glob('*.md'):
+            shutil.copy2(doc_file, docs_output)
+        
+        # Copy images if they exist
+        images_dir = docs_output / 'images'
+        images_dir.mkdir(exist_ok=True)
+        
+        source_images = DOCS_DIR / 'images'
+        if source_images.exists():
+            for img_file in source_images.glob('*'):
+                shutil.copy2(img_file, images_dir)
+    
+    logger.info("Files copied to output successfully")
 
 def create_release_zip():
-    """Tạo file ZIP để phát hành"""
-    print("Đang tạo file ZIP phát hành...")
+    """Create ZIP file for release"""
+    logger.info("Creating release ZIP file...")
     
-    # Tên file ZIP
+    # Create ZIP filename with timestamp
     timestamp = datetime.datetime.now().strftime("%Y%m%d")
-    zip_filename = f"Telegram_Video_Uploader_v1.0_{timestamp}.zip"
-    zip_path = os.path.join(BASE_DIR, zip_filename)
+    zip_filename = f"Telegram_Video_Uploader_v{VERSION}_{timestamp}.zip"
+    zip_path = BASE_DIR / zip_filename
     
-    # Tạo file ZIP
+    # Create ZIP file
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # Thêm tất cả file trong thư mục output
         for root, dirs, files in os.walk(OUTPUT_DIR):
             for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, OUTPUT_DIR)
+                file_path = Path(root) / file
+                arcname = file_path.relative_to(OUTPUT_DIR)
                 zipf.write(file_path, arcname)
     
-    print(f"Đã tạo file phát hành: {zip_path}")
+    logger.info(f"Release ZIP created at: {zip_path}")
+    return zip_path
 
 def main():
-    """Hàm chính để đóng gói ứng dụng"""
-    # Xóa các thư mục build cũ
-    clean_build_dirs()
+    """Main build function"""
+    try:
+        # Parse command-line arguments
+        args = parse_arguments()
+        
+        # Get target platform
+        target_platform = get_platform(args)
+        logger.info(f"Building for platform: {target_platform}")
+        
+        # Clean build directories
+        clean_build_dirs()
+        
+        # If clean-only flag is set, exit
+        if args.clean_only:
+            logger.info("Clean-only flag set, exiting")
+            return
+        
+        # Create config template
+        create_config_template()
+        
+        # Download FFmpeg if required
+        if not args.skip_ffmpeg:
+            download_ffmpeg(target_platform)
+        else:
+            logger.info("Skipping FFmpeg download as requested")
+        
+        # Build applications
+        build_application(target_platform)
+        build_config_tool(target_platform)
+        
+        # Create additional files
+        create_additional_files(target_platform)
+        
+        # Copy files to output directory
+        copy_files_to_output(target_platform)
+        
+        # Create release ZIP if required
+        if not args.skip_zip:
+            zip_path = create_release_zip()
+            logger.info(f"Build completed successfully! Release package: {zip_path}")
+        else:
+            logger.info(f"Build completed successfully! Output directory: {OUTPUT_DIR}")
+        
+        # Provide usage instructions
+        logger.info("\nUsage instructions:")
+        logger.info("1. Distribute the ZIP file to users")
+        logger.info("2. Instruct users to extract the ZIP and run SETUP.bat (Windows) or setup.sh (macOS/Linux)")
     
-    # Tạo file config.ini mẫu
-    create_config_template()
-    
-    # Tải và chuẩn bị FFmpeg
-    download_ffmpeg()
-    
-    # Đóng gói ứng dụng chính
-    build_main_application()
-    
-    # Đóng gói công cụ cấu hình
-    build_config_tool()
-    
-    # Tạo các file bổ sung
-    create_additional_files()
-    
-    # Sao chép các file vào thư mục output
-    copy_files_to_output()
-    
-    # Tạo file ZIP phát hành
-    create_release_zip()
-    
-    print("\nĐã hoàn tất quá trình đóng gói ứng dụng!")
-    print(f"Các file được tạo trong thư mục: {OUTPUT_DIR}")
-    print("Hướng dẫn sử dụng:")
-    print("1. Phân phối file ZIP cho người dùng")
-    print("2. Hướng dẫn người dùng giải nén và chạy file SETUP.bat")
+    except Exception as e:
+        logger.error(f"Build failed: {e}", exc_info=True)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
