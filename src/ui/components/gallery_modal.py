@@ -6,9 +6,10 @@ import sys
 import logging
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, 
                             QPushButton, QVBoxLayout, QHBoxLayout, QScrollArea,
-                            QFrame, QSizePolicy, QMessageBox)
-from PyQt5.QtGui import QPixmap, QIcon, QImage, QPalette, QColor, QCursor
-from PyQt5.QtCore import Qt, QSize, pyqtSignal
+                            QFrame, QGridLayout, QSizePolicy, QMessageBox, QShortcut,
+                            QFileDialog)
+from PyQt5.QtGui import QPixmap, QIcon, QImage, QPalette, QColor, QCursor, QKeySequence
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,15 @@ class ThumbnailWidget(QWidget):
         """Handle mouse press event"""
         self.clicked.emit(self.index)
         super().mousePressEvent(event)
+    
+    def scrollToVisible(self):
+        """Scroll to make this widget visible in the scroll area"""
+        scrollarea = self.parent().parent()
+        if hasattr(scrollarea, 'ensureVisible'):
+            # Get the position of this widget relative to the scroll area's widget
+            pos = self.mapTo(scrollarea.widget(), QPoint(0, 0))
+            # Ensure it's visible
+            scrollarea.ensureVisible(pos.x(), pos.y(), self.width(), self.height())
 
 
 class GalleryModal(QMainWindow):
@@ -231,30 +241,12 @@ class GalleryModal(QMainWindow):
         zoom_layout.addWidget(zoom_out_button)
         zoom_layout.addWidget(zoom_in_button)
         
-        # Close button
-        close_button = QPushButton("Đóng")
-        close_button.setStyleSheet("""
-            QPushButton {
-                background-color: #e74c3c;
-                color: white;
-                border-radius: 4px;
-                padding: 8px 15px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #c0392b;
-            }
-        """)
-        close_button.setCursor(QCursor(Qt.PointingHandCursor))
-        close_button.clicked.connect(self.close)
-        
+        # Add widgets to controls layout (without the close button)
         controls_layout.addWidget(self.download_button)
         controls_layout.addStretch(1)
         controls_layout.addWidget(self.counter_label)
         controls_layout.addStretch(1)
         controls_layout.addWidget(zoom_control_widget)
-        controls_layout.addWidget(close_button)
         
         # Add main components to left layout
         left_layout.addWidget(main_image_container, 1)
@@ -343,8 +335,8 @@ class GalleryModal(QMainWindow):
                 self.original_pixmap = pixmap
                 self._update_main_image()
                 
-                # Update counter
-                self.counter_label.setText(f"{index + 1} / {len(self.image_paths)}")
+                # Update counter with zoom level
+                self.counter_label.setText(f"{index + 1} / {len(self.image_paths)} (Zoom: {self.zoom_level:.2f}x)")
                 
                 # Update thumbnails
                 for i, thumbnail in enumerate(self.thumbnails):
@@ -355,29 +347,32 @@ class GalleryModal(QMainWindow):
                 selected_thumbnail.scrollToVisible()
     
     def _update_main_image(self):
-        """Update the main image with current zoom level"""
-        if hasattr(self, 'original_pixmap'):
-            # Get the display size (accounting for buttons)
-            display_width = self.main_image.width() - 20  # Padding
-            display_height = self.main_image.height() - 20  # Padding
+        """Update the main image with improved zoom handling"""
+        if not hasattr(self, 'original_pixmap') or self.original_pixmap.isNull():
+            return
+            
+        try:
+            # Get the display size
+            display_width = max(50, self.main_image.width() - 20)  # Ensure positive value
+            display_height = max(50, self.main_image.height() - 20)
             
             # Get original size
-            original_width = self.original_pixmap.width()
-            original_height = self.original_pixmap.height()
+            original_width = max(1, self.original_pixmap.width())  # Prevent division by zero
+            original_height = max(1, self.original_pixmap.height())
             
             # Calculate the base scaling to fit in view
             width_ratio = display_width / original_width
             height_ratio = display_height / original_height
             base_scale = min(width_ratio, height_ratio)
             
-            # Apply zoom level
-            scale = base_scale * self.zoom_level
+            # Apply zoom level with safety check
+            scale = base_scale * max(0.1, min(2.5, self.zoom_level))
             
-            # Calculate new size
-            new_width = int(original_width * scale)
-            new_height = int(original_height * scale)
+            # Calculate new size with limits to prevent excessive memory usage
+            new_width = min(10000, int(original_width * scale))
+            new_height = min(10000, int(original_height * scale))
             
-            # Create scaled pixmap
+            # Create scaled pixmap with high quality transformation
             scaled_pixmap = self.original_pixmap.scaled(
                 new_width, new_height, 
                 Qt.KeepAspectRatio, Qt.SmoothTransformation
@@ -385,6 +380,8 @@ class GalleryModal(QMainWindow):
             
             # Set the pixmap
             self.main_image.setPixmap(scaled_pixmap)
+        except Exception as e:
+            print(f"Error updating image: {str(e)}")
     
     def resizeEvent(self, event):
         """Handle window resize event"""
@@ -401,20 +398,60 @@ class GalleryModal(QMainWindow):
         prev_idx = (self.current_index - 1) % len(self.image_paths)
         self.select_image(prev_idx)
     
-    def zoom_in(self):
-        """Zoom in on the current image"""
-        self.zoom_level = min(3.0, self.zoom_level * 1.2)
+    def zoom_out(self):
+        """Zoom out with strict limits and smaller increments"""
+        # Hard stop at 0.5x zoom
+        if self.zoom_level <= 0.5:
+            return
+        
+        # Use smaller increments as zoom decreases
+        if self.zoom_level > 2.0:
+            # Faster zooming when highly zoomed in
+            increment = 0.1
+        elif self.zoom_level > 1.0:
+            # Moderate decrements in normal range
+            increment = 0.05
+        else:
+            # Very small decrements when already zoomed out
+            increment = 0.025
+        
+        # Apply zoom with absolute bounds check
+        self.zoom_level -= increment
+        self.zoom_level = max(0.5, self.zoom_level)  # Double-check we don't go below min
+        
+        # Update counter and image
+        self.counter_label.setText(f"{self.current_index + 1} / {len(self.image_paths)} (Zoom: {self.zoom_level:.2f}x)")
         self._update_main_image()
     
-    def zoom_out(self):
-        """Zoom out from the current image"""
-        self.zoom_level = max(0.5, self.zoom_level / 1.2)
+    def zoom_in(self):
+        """Zoom in on the current image with strict limits and smaller increments"""
+        # Use very strict zoom limits
+        if self.zoom_level >= 2.5:
+            # Hard stop at 2.5x zoom
+            return
+        
+        # Use smaller increments as zoom increases
+        if self.zoom_level < 1.0:
+            # Faster zooming when zoomed out
+            increment = 0.1
+        elif self.zoom_level < 1.5:
+            # Moderate increments in normal range
+            increment = 0.05
+        else:
+            # Very small increments when already zoomed in
+            increment = 0.025
+        
+        # Apply zoom with absolute bounds check
+        self.zoom_level += increment
+        self.zoom_level = min(2.5, self.zoom_level)  # Double-check we don't exceed max
+        
+        # Update counter and image
+        self.counter_label.setText(f"{self.current_index + 1} / {len(self.image_paths)} (Zoom: {self.zoom_level:.2f}x)")
         self._update_main_image()
+    
     
     def download_image(self):
         """Download the current image"""
-        from PyQt5.QtWidgets import QFileDialog
-        
         try:
             # Get the current image path
             source_path = self.image_paths[self.current_index]
@@ -434,43 +471,64 @@ class GalleryModal(QMainWindow):
                 shutil.copy2(source_path, dest_path)
                 QMessageBox.information(self, "Thành công", f"Đã lưu hình ảnh vào: {dest_path}")
         except Exception as e:
-            logger.error(f"Error downloading image: {str(e)}")
+            print(f"Error downloading image: {str(e)}")
             QMessageBox.critical(self, "Lỗi", f"Không thể lưu hình ảnh: {str(e)}")
 
-# Add missing scrollToVisible method to ThumbnailWidget
-def scrollToVisible(self):
-    """Scroll to make this widget visible in the scroll area"""
-    scrollarea = self.parent().parent()
-    if isinstance(scrollarea, QScrollArea):
-        # Get the position of this widget relative to the scroll area's widget
-        pos = self.mapTo(scrollarea.widget(), QPoint(0, 0))
-        # Ensure it's visible
-        scrollarea.ensureVisible(pos.x(), pos.y(), self.width(), self.height())
 
-# Attach the method to the ThumbnailWidget class
-ThumbnailWidget.scrollToVisible = scrollToVisible
-
-# For testing the component directly
 if __name__ == "__main__":
-    from PyQt5.QtWidgets import QShortcut
-    from PyQt5.QtGui import QKeySequence, QShortcut
+    # Read paths from file if provided as argument
+    if len(sys.argv) > 1:
+        path_file = sys.argv[1]
+        
+        if os.path.exists(path_file):
+            try:
+                with open(path_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                # First line is initial index
+                initial_index = 0
+                try:
+                    initial_index = int(lines[0].strip())
+                except:
+                    pass
+                
+                # Rest of lines are image paths
+                image_paths = [line.strip() for line in lines[1:] if line.strip()]
+                
+                if image_paths:
+                    # Create application and gallery
+                    app = QApplication(sys.argv)
+                    gallery = GalleryModal(image_paths, initial_index=initial_index)
+                    gallery.show()
+                    sys.exit(app.exec_())
+            except Exception as e:
+                print(f"Error opening gallery: {str(e)}")
+                sys.exit(1)
     
+    # If no file provided or error, show test gallery with dummy images
+    print("No valid image paths file provided. Running test gallery.")
+    
+    # Create a test application
     app = QApplication(sys.argv)
     
-    # Create test images if needed
-    import tempfile
-    temp_dir = tempfile.mkdtemp()
-    test_images = []
+    # Create test images
+    temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_images")
+    os.makedirs(temp_dir, exist_ok=True)
     
+    test_images = []
     for i in range(5):
-        test_image = QImage(800, 600, QImage.Format_RGB32)
-        test_image.fill(QColor(50 + i * 40, 100, 150))
+        # Create a QImage for testing
+        image = QImage(800, 600, QImage.Format_RGB32)
+        image.fill(QColor(50 + i * 40, 100, 150))
+        
+        # Save to a temporary file
         path = os.path.join(temp_dir, f"test_image_{i}.png")
-        test_image.save(path)
+        image.save(path)
         test_images.append(path)
     
-    # Create and show gallery
+    # Create and show the gallery
     gallery = GalleryModal(test_images)
     gallery.show()
     
+    # Run the application
     sys.exit(app.exec_())

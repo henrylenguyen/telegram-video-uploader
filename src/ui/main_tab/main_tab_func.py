@@ -819,7 +819,7 @@ def display_video_frames(app, video_path):
                 
                 # Lưu frame vào file tạm
                 frame_path = os.path.join(temp_dir, f"frame_{i}.png")
-                pil_img.save(frame_path)
+                pil_img.save(frame_path, quality=100, dpi=(300, 300))
                 frame_paths.append(frame_path)
                 
                 # Chuyển sang định dạng Tkinter
@@ -835,7 +835,7 @@ def display_video_frames(app, video_path):
                 
                 # Thêm click event để mở gallery
                 app.frame_labels[i].bind("<Button-1>", 
-                      lambda event, paths=frame_paths.copy(), idx=i: 
+                      lambda event, paths=frame_paths, idx=i: 
                       open_pyqt5_gallery(app, paths, idx))
                 
                 # Thêm tooltip để thông báo có thể click
