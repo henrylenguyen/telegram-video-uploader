@@ -1,12 +1,76 @@
 import sys
 import os
 from PyQt5 import QtWidgets, QtCore, QtGui, uic
+from PyQt5.QtGui import QPainter, QColor, QPen, QPolygonF
+from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal
 
 import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("MainUI")
+
+class PlayButton(QtWidgets.QPushButton):
+    """Custom play button with SVG-like triangle using QPainter"""
+    
+    def __init__(self, parent=None):
+        super(PlayButton, self).__init__(parent)
+        # Set size
+        self.setFixedSize(70, 70)
+        self.setCursor(Qt.PointingHandCursor)
+        # No text
+        self.setText("")
+        # Default colors
+        self.background_color = QColor("#3498DB")
+        self.icon_color = QColor(255, 255, 255)
+        # Update visuals
+        self.update()
+        
+    def paintEvent(self, event):
+        """Custom paint event to draw the play button"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw rounded background
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self.background_color)
+        painter.drawRoundedRect(0, 0, self.width(), self.height(), 25, 25)
+        
+        # Draw play triangle
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self.icon_color)
+        
+        # Create a triangle polygon
+        # Slightly offset to right to account for visual weight
+        width = self.width()
+        height = self.height()
+        triangle_width = width * 0.4
+        triangle_height = height * 0.4
+        
+        # Center the triangle within the button
+        center_x = width / 2 + width * 0.03  # Slight right adjustment
+        center_y = height / 2
+        
+        # Create triangle points
+        triangle = QPolygonF()
+        triangle.append(QPointF(center_x - triangle_width/2, center_y - triangle_height/2))
+        triangle.append(QPointF(center_x + triangle_width/2, center_y))
+        triangle.append(QPointF(center_x - triangle_width/2, center_y + triangle_height/2))
+        
+        # Draw the triangle
+        painter.drawPolygon(triangle)
+        
+    def enterEvent(self, event):
+        """Handle hover state"""
+        self.background_color = QColor("#2980B9")
+        self.update()
+        super().enterEvent(event)
+        
+    def leaveEvent(self, event):
+        """Handle end of hover state"""
+        self.background_color = QColor("#3498DB")
+        self.update()
+        super().leaveEvent(event)
 
 class MainUI(QtWidgets.QMainWindow):
     """Main UI class that loads components directly from .ui files"""
@@ -101,24 +165,6 @@ class MainUI(QtWidgets.QMainWindow):
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 width: 0px;
             }
-
-            /* Video list alternating colors */
-            QFrame#videoItem1, QFrame#videoItem3, QFrame#videoItem5 {
-                background-color: #FFFFFF;
-            }
-            
-            QFrame#videoItem2, QFrame#videoItem4 {
-                background-color: #F8FAFC;
-            }
-            
-            QFrame#videoItem:hover {
-                background-color: #F1F5F9;
-            }
-            
-            /* Status tags center alignment */
-            QLabel.statusNew, QLabel.statusDuplicate, QLabel.statusUploaded {
-                qproperty-alignment: AlignCenter;
-            }
         """)
 
     def load_ui_components(self):
@@ -139,6 +185,10 @@ class MainUI(QtWidgets.QMainWindow):
         # Load header
         self.header = self.load_header()
         self.main_layout.addWidget(self.header)
+
+        # Add 20px spacing after header
+        spacer_after_header = QtWidgets.QSpacerItem(20, 20, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        self.main_layout.addItem(spacer_after_header)
 
         # Group folder selection and sub-tabs without spacing
         folder_tabs_container = QtWidgets.QWidget()
@@ -186,141 +236,6 @@ class MainUI(QtWidgets.QMainWindow):
         self.action_bar = self.load_action_bar()
         self.main_layout.addWidget(self.action_bar)
 
-        # Apply additional styling and fixes
-        self.apply_ui_fixes()
-
-    def apply_ui_fixes(self):
-        """Apply all the requested fixes to the UI components"""
-        # Fix 1: Force white background on header with !important rule
-        self.header.setStyleSheet(self.header.styleSheet() + """
-            QWidget#Header {
-                background-color: #FFFFFF !important;
-            }
-        """)
-        
-        # Fix 2 & 3: Style sub-tabs like header navbar
-        if hasattr(self, 'sub_tabs'):
-            # Make sub-tabs look like header tabs
-            self.sub_tabs.setStyleSheet("""
-                QWidget#SubTabs {
-                    background-color: #FFFFFF;
-                    border-radius: 0px;
-                    border-top: none;
-                }
-                
-                QPushButton#activeTab, QPushButton#inactiveTab {
-                    border-radius: 0px;
-                    padding: 0px 20px;
-                    font-size: 16px;
-                    min-width: 180px; 
-                    qproperty-alignment: AlignCenter;
-                }
-                
-                QPushButton#activeTab {
-                    color: #3498DB;
-                    border-bottom: 3px solid #3498DB;
-                    background-color: #EBF5FB;
-                    font-weight: bold;
-                }
-                
-                QPushButton#inactiveTab {
-                    color: #64748B;
-                    background-color: transparent;
-                }
-                
-                QPushButton#inactiveTab:hover {
-                    color: #3498DB;
-                    background-color: #F5F9FF;
-                }
-            """)
-            
-            # Make all tabs same width and apply center alignment
-            for button in self.sub_tabs.findChildren(QtWidgets.QPushButton):
-                button.setFixedWidth(180)
-                button.setStyleSheet(button.styleSheet() + """
-                    qproperty-alignment: AlignCenter;
-                    border-radius: 0px;
-                """)
-        
-        # Fix 4: Làm lại phần phân trang và giữ border như ảnh 3
-        if hasattr(self, 'video_list'):
-            # Cập nhật phần phân trang
-            pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
-            if pagination_frame:
-                pagination_frame.setStyleSheet("""
-                    background-color: #FFFFFF;
-                    border-top: 1px solid #E2E8F0;
-                """)
-                
-                # Cập nhật các nút phân trang
-                page_buttons = []
-                for name in ["firstPageButton", "prevPageButton", "page1Button", "page2Button", "nextPageButton", "lastPageButton"]:
-                    button = pagination_frame.findChild(QtWidgets.QPushButton, name)
-                    if button:
-                        page_buttons.append(button)
-                        
-                # Áp dụng style cho các nút
-                for button in page_buttons:
-                    if button.objectName() == "page1Button":
-                        button.setStyleSheet("""
-                            background-color: #3498DB;
-                            color: white;
-                            border: 1px solid #3498DB;
-                            border-radius: 4px;
-                            padding: 5px 10px;
-                            font-size: 12px;
-                            min-width: 30px;
-                            max-width: 30px;
-                            min-height: 30px;
-                            max-height: 30px;
-                            qproperty-alignment: AlignCenter;
-                        """)
-                    else:
-                        button.setStyleSheet("""
-                            background-color: #FFFFFF;
-                            color: #64748B;
-                            border: 1px solid #E2E8F0;
-                            border-radius: 4px;
-                            padding: 5px 10px;
-                            font-size: 12px;
-                            min-width: 30px;
-                            max-width: 30px;
-                            min-height: 30px;
-                            max-height: 30px;
-                            qproperty-alignment: AlignCenter;
-                        """)
-                    button.setCursor(QtCore.Qt.PointingHandCursor)
-        
-        # Fix 5: Đảm bảo video frames hiển thị đúng (cao 300px, cách trên dưới 20px)
-        if hasattr(self, 'video_frames'):
-            # Cập nhật margins để cách trên dưới 20px
-            self.video_frames.setContentsMargins(30, 20, 30, 20)
-            
-            # Cập nhật chiều cao cho frames
-            frames_scroll_area = self.video_frames.findChild(QtWidgets.QScrollArea, "framesScrollArea")
-            if frames_scroll_area:
-                frames_scroll_area.setMinimumHeight(350)
-                
-                # Cập nhật nội dung scroll area
-                scroll_content = frames_scroll_area.widget()
-                if scroll_content:
-                    scroll_content.setMinimumHeight(350)
-                    
-                    # Cập nhật từng frame
-                    for i in range(1, 6):
-                        frame = scroll_content.findChild(QtWidgets.QFrame, f"frame{i}")
-                        if frame:
-                            frame.setMinimumHeight(300)
-                            frame.setMaximumHeight(300)
-                            frame.setFixedHeight(300)
-                            frame.setStyleSheet("""
-                                min-height: 300px;
-                                max-height: 300px;
-                                background-color: #FFFFFF;
-                                border: 2px solid #E2E8F0;
-                                border-radius: 6px;
-                            """)
-
     def load_header(self):
         """Load header component from .ui file"""
         ui_path = os.path.join(self.get_ui_dir(), "header.ui")
@@ -334,16 +249,23 @@ class MainUI(QtWidgets.QMainWindow):
             uic.loadUi(fixed_ui_path, header_widget)
             logger.info("Header UI loaded successfully")
 
-            # Bỏ nền xám cho header
-            header_widget.setStyleSheet(header_widget.styleSheet() + """
-                QWidget#Header {
-                    background-color: #FFFFFF !important;
-                    border-bottom: 1px solid #E2E8F0;
-                }
-            """)
-
-            # Add shadow effect
-            self.add_shadow(header_widget)
+            # Set up tab button group to handle exclusive selection
+            tab_button_group = QtWidgets.QButtonGroup(header_widget)
+            
+            # Find all tab buttons
+            tab_buttons = header_widget.findChildren(QtWidgets.QPushButton)
+            
+            # Add buttons to group and set initial state
+            for i, button in enumerate(tab_buttons):
+                tab_button_group.addButton(button, i)
+                button.setCursor(QtCore.Qt.PointingHandCursor)
+                
+                # Set first button as checked by default
+                if i == 0:
+                    button.setChecked(True)
+            
+            # Store button group
+            self.header_tab_group = tab_button_group
 
             return header_widget
         except Exception as e:
@@ -366,9 +288,6 @@ class MainUI(QtWidgets.QMainWindow):
 
             # Bỏ margin bottom để sát với sub-tabs
             folder_widget.setContentsMargins(30, 10, 30, 0)
-
-            # Add shadow effect
-            self.add_shadow(folder_widget)
 
             # Store reference to important controls
             self.folder_path_edit = folder_widget.findChild(QtWidgets.QLineEdit, "directoryLineEdit")
@@ -397,49 +316,23 @@ class MainUI(QtWidgets.QMainWindow):
             uic.loadUi(fixed_ui_path, tabs_widget)
             logger.info("Sub-tabs UI loaded successfully")
 
-            # Làm giống navbar ở header
-            tabs_widget.setStyleSheet("""
-                QWidget#SubTabs {
-                    background-color: #FFFFFF;
-                    border-radius: 0px;
-                }
-                
-                QPushButton#activeTab, QPushButton#inactiveTab {
-                    border-radius: 0px;
-                    padding: 0px 20px;
-                    font-size: 16px;
-                    min-width: 180px;
-                    qproperty-alignment: AlignCenter;
-                }
-                
-                QPushButton#activeTab {
-                    color: #3498DB;
-                    border-bottom: 3px solid #3498DB;
-                    background-color: #EBF5FB;
-                    font-weight: bold;
-                }
-                
-                QPushButton#inactiveTab {
-                    color: #64748B;
-                    background-color: transparent;
-                }
-                
-                QPushButton#inactiveTab:hover {
-                    color: #3498DB;
-                    background-color: #F5F9FF;
-                }
-            """)
-
-            # Đảm bảo các nút con có style đúng
-            for button in tabs_widget.findChildren(QtWidgets.QPushButton):
-                button.setFixedWidth(180)
+            # Set up tab button group to handle exclusive selection
+            tab_button_group = QtWidgets.QButtonGroup(tabs_widget)
+            
+            # Find all tab buttons
+            tab_buttons = tabs_widget.findChildren(QtWidgets.QPushButton)
+            
+            # Add buttons to group and set cursor
+            for i, button in enumerate(tab_buttons):
+                tab_button_group.addButton(button, i)
                 button.setCursor(QtCore.Qt.PointingHandCursor)
+                button.setEnabled(True)  # Ensure all buttons are enabled
+            
+            # Store button group
+            self.subtab_group = tab_button_group
 
             # Bỏ margin top để sát với folder selection
             tabs_widget.setContentsMargins(30, 0, 30, 10)
-
-            # Add shadow effect
-            self.add_shadow(tabs_widget)
 
             return tabs_widget
         except Exception as e:
@@ -460,38 +353,28 @@ class MainUI(QtWidgets.QMainWindow):
             uic.loadUi(fixed_ui_path, list_widget)
             logger.info("Video list UI loaded successfully")
 
-            # Giữ border như ảnh 3
-            list_widget.setStyleSheet(list_widget.styleSheet() + """
-                QFrame#videoItem {
-                    border-bottom: 1px solid #E2E8F0;
-                }
-                
-                QLabel.statusNew, QLabel.statusDuplicate, QLabel.statusUploaded {
-                    qproperty-alignment: AlignCenter;
-                }
-            """)
-
-            # Tạo hiệu ứng alternating rows và làm cả hàng clickable
-            for i in range(1, 6):
+            # Make rows clickable
+            for i in range(1, 11):  # Increased to 10 for more mock data
                 videoItem = list_widget.findChild(QtWidgets.QFrame, f"videoItem{i}")
                 if videoItem:
-                    if i % 2 == 0:  # Even rows
-                        videoItem.setStyleSheet("""
-                            background-color: #F8FAFC;
-                            border-bottom: 1px solid #E2E8F0;
-                        """)
-                    else:  # Odd rows
-                        videoItem.setStyleSheet("""
-                            background-color: #FFFFFF;
-                            border-bottom: 1px solid #E2E8F0;
-                        """)
-                    
-                    # Làm cả hàng có thể click để toggle checkbox
+                    # Make entire row clickable to toggle checkbox
                     videoItem.mousePressEvent = lambda event, idx=i: self.toggle_checkbox(idx)
                     videoItem.setCursor(QtCore.Qt.PointingHandCursor)
 
             # Add shadow effect
-            self.add_shadow(list_widget)
+            shadow = QtWidgets.QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(15)
+            shadow.setColor(QtGui.QColor(0, 0, 0, 30))
+            shadow.setOffset(0, 2)
+            list_widget.setGraphicsEffect(shadow)
+
+            # Add bottom margin to prevent shadow clipping
+            list_widget.setContentsMargins(
+                list_widget.contentsMargins().left(),
+                list_widget.contentsMargins().top(),
+                list_widget.contentsMargins().right(),
+                list_widget.contentsMargins().bottom() + 15
+            )
 
             return list_widget
         except Exception as e:
@@ -512,8 +395,25 @@ class MainUI(QtWidgets.QMainWindow):
             uic.loadUi(fixed_ui_path, preview_widget)
             logger.info("Video preview UI loaded successfully")
 
+            # Add custom SVG play button
+            play_button_container = preview_widget.findChild(QtWidgets.QWidget, "playButtonContainer")
+            if play_button_container:
+                layout = QtWidgets.QVBoxLayout(play_button_container)
+                layout.setContentsMargins(0, 0, 0, 0)
+                
+                # Create and add the custom play button
+                self.play_button = PlayButton(play_button_container)
+                layout.addWidget(self.play_button)
+                
+                # Connect click handler
+                self.play_button.clicked.connect(self.view_video)
+
             # Add shadow effect
-            self.add_shadow(preview_widget)
+            shadow = QtWidgets.QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(15)
+            shadow.setColor(QtGui.QColor(0, 0, 0, 30))
+            shadow.setOffset(0, 2)
+            preview_widget.setGraphicsEffect(shadow)
 
             # Store reference to important controls
             self.view_button = preview_widget.findChild(QtWidgets.QPushButton, "viewVideoButton")
@@ -544,34 +444,26 @@ class MainUI(QtWidgets.QMainWindow):
             uic.loadUi(fixed_ui_path, frames_widget)
             logger.info("Video frames UI loaded successfully")
 
-            # Đặt margin top/bottom 20px
-            frames_widget.setContentsMargins(30, 20, 30, 20)
-            
-            # Đảm bảo chiều cao của frames là 300px
+            # Add padding to scroll area for proper scrolling
             frames_scroll_area = frames_widget.findChild(QtWidgets.QScrollArea, "framesScrollArea")
             if frames_scroll_area:
-                frames_scroll_area.setMinimumHeight(350)
-                
-                scroll_content = frames_scroll_area.widget()
-                if scroll_content:
-                    scroll_content.setMinimumHeight(350)
+                frames_scroll_area.setStyleSheet("""
+                    QScrollArea {
+                        padding: 15px;
+                        border: none;
+                    }
                     
-                    for i in range(1, 6):
-                        frame = scroll_content.findChild(QtWidgets.QFrame, f"frame{i}")
-                        if frame:
-                            frame.setMinimumHeight(300)
-                            frame.setMaximumHeight(300)
-                            frame.setFixedHeight(300)
-                            frame.setStyleSheet("""
-                                min-height: 300px;
-                                max-height: 300px;
-                                background-color: #FFFFFF;
-                                border: 2px solid #E2E8F0;
-                                border-radius: 6px;
-                            """)
+                    QScrollArea > QWidget > QWidget {
+                        padding: 15px;
+                    }
+                """)
 
             # Add shadow effect
-            self.add_shadow(frames_widget)
+            shadow = QtWidgets.QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(15)
+            shadow.setColor(QtGui.QColor(0, 0, 0, 30))
+            shadow.setOffset(0, 2)
+            frames_widget.setGraphicsEffect(shadow)
 
             return frames_widget
         except Exception as e:
@@ -608,7 +500,11 @@ class MainUI(QtWidgets.QMainWindow):
                     button.setCursor(QtCore.Qt.PointingHandCursor)
 
             # Add shadow effect
-            self.add_shadow(action_bar_widget)
+            shadow = QtWidgets.QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(15)
+            shadow.setColor(QtGui.QColor(0, 0, 0, 30))
+            shadow.setOffset(0, 2)
+            action_bar_widget.setGraphicsEffect(shadow)
 
             return action_bar_widget
         except Exception as e:
@@ -651,17 +547,6 @@ class MainUI(QtWidgets.QMainWindow):
             logger.error(f"Error fixing UI file {ui_path}: {str(e)}")
             return ui_path
 
-    def add_shadow(self, widget):
-        """Add shadow effect to a widget"""
-        try:
-            shadow = QtWidgets.QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(15)
-            shadow.setColor(QtGui.QColor(0, 0, 0, 30))
-            shadow.setOffset(0, 2)
-            widget.setGraphicsEffect(shadow)
-        except Exception as e:
-            logger.warning(f"Could not add shadow effect: {str(e)}")
-
     def toggle_checkbox(self, idx):
         """Toggle checkbox when clicking anywhere in the row"""
         checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{idx}")
@@ -669,8 +554,143 @@ class MainUI(QtWidgets.QMainWindow):
             checkbox.setChecked(not checkbox.isChecked())
             logger.info(f"Toggled checkbox {idx}: {checkbox.isChecked()}")
 
-    # Fallback UI creation methods (các phương thức fallback giữ nguyên)
-    # ...
+    # Fallback UI creation methods
+    def create_fallback_header(self):
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("Header")
+        widget.setMinimumHeight(70)
+        widget.setMaximumHeight(70)
+        
+        layout = QtWidgets.QHBoxLayout(widget)
+        
+        logo = QtWidgets.QLabel("HENLLADEV")
+        logo.setStyleSheet("font-size: 28px; font-weight: bold; color: #3498DB;")
+        layout.addWidget(logo)
+        
+        spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        layout.addItem(spacer)
+        
+        return widget
+    
+    def create_fallback_folder_selection(self):
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("FolderSelection")
+        
+        layout = QtWidgets.QHBoxLayout(widget)
+        
+        label = QtWidgets.QLabel("Thư mục chứa video")
+        layout.addWidget(label)
+        
+        self.folder_path_edit = QtWidgets.QLineEdit()
+        layout.addWidget(self.folder_path_edit)
+        
+        self.browse_button = QtWidgets.QPushButton("Duyệt")
+        layout.addWidget(self.browse_button)
+        
+        return widget
+    
+    def create_fallback_sub_tabs(self):
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("SubTabs")
+        
+        layout = QtWidgets.QHBoxLayout(widget)
+        
+        tab1 = QtWidgets.QPushButton("Tải lên thủ công")
+        tab1.setObjectName("activeTab")
+        layout.addWidget(tab1)
+        
+        tab2 = QtWidgets.QPushButton("Tự động tải lên")
+        tab2.setObjectName("inactiveTab")
+        layout.addWidget(tab2)
+        
+        spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        layout.addItem(spacer)
+        
+        return widget
+    
+    def create_fallback_video_list(self):
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("VideoList")
+        
+        layout = QtWidgets.QVBoxLayout(widget)
+        
+        title = QtWidgets.QLabel("Danh sách video")
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+        layout.addWidget(title)
+        
+        # Would add more elements here in a real implementation
+        
+        return widget
+    
+    def create_fallback_video_preview(self):
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("VideoPreview")
+        
+        layout = QtWidgets.QVBoxLayout(widget)
+        
+        title = QtWidgets.QLabel("Xem trước video")
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+        layout.addWidget(title)
+        
+        # Create a preview frame
+        preview_frame = QtWidgets.QFrame()
+        preview_frame.setMinimumHeight(250)
+        preview_frame.setStyleSheet("background-color: #F2F6FC; border-radius: 8px;")
+        frame_layout = QtWidgets.QVBoxLayout(preview_frame)
+        
+        # Add custom play button
+        self.play_button = PlayButton()
+        frame_layout.addWidget(self.play_button, 0, Qt.AlignCenter)
+        
+        layout.addWidget(preview_frame)
+        
+        # Add buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        self.view_button = QtWidgets.QPushButton("Xem video")
+        self.view_button.setMinimumHeight(45)
+        self.upload_this_button = QtWidgets.QPushButton("Tải lên video này")
+        self.upload_this_button.setMinimumHeight(45)
+        
+        button_layout.addWidget(self.view_button)
+        button_layout.addWidget(self.upload_this_button)
+        
+        layout.addLayout(button_layout)
+        
+        return widget
+    
+    def create_fallback_video_frames(self):
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("VideoFrames")
+        
+        layout = QtWidgets.QVBoxLayout(widget)
+        
+        title = QtWidgets.QLabel("Các khung hình từ video")
+        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+        layout.addWidget(title)
+        
+        # Would add more elements here in a real implementation
+        
+        return widget
+    
+    def create_fallback_action_bar(self):
+        widget = QtWidgets.QWidget()
+        widget.setObjectName("ActionBar")
+        
+        layout = QtWidgets.QHBoxLayout(widget)
+        
+        self.select_all_button = QtWidgets.QPushButton("Chọn tất cả")
+        layout.addWidget(self.select_all_button)
+        
+        self.deselect_all_button = QtWidgets.QPushButton("Bỏ chọn tất cả")
+        layout.addWidget(self.deselect_all_button)
+        
+        spacer = QtWidgets.QSpacerItem(40, 20, QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        layout.addItem(spacer)
+        
+        self.upload_button = QtWidgets.QPushButton("Tải lên")
+        layout.addWidget(self.upload_button)
+        
+        return widget
 
     def connect_signals(self):
         """Connect signals to slots"""
@@ -696,8 +716,49 @@ class MainUI(QtWidgets.QMainWindow):
 
         if hasattr(self, 'upload_button'):
             self.upload_button.clicked.connect(self.upload_selected_videos)
+            
+        # Connect header tab buttons
+        if hasattr(self, 'header_tab_group'):
+            self.header_tab_group.buttonClicked.connect(self.header_tab_clicked)
+            
+        # Connect sub-tab buttons
+        if hasattr(self, 'subtab_group'):
+            self.subtab_group.buttonClicked.connect(self.subtab_clicked)
+            
+        # Connect play button in video preview if found
+        if hasattr(self, 'play_button'):
+            self.play_button.clicked.connect(self.view_video)
 
-    # Slot methods - Chỉ giữ lại trích dẫn không có tính năng thực
+    def header_tab_clicked(self, button):
+        """Handle header tab button clicks"""
+        # Set clicked button as checked, others as unchecked
+        for btn in self.header_tab_group.buttons():
+            btn.setChecked(btn == button)
+        
+        # Switch stack widget based on button index
+        index = self.header_tab_group.id(button)
+        logger.info(f"Header tab {index} clicked: {button.text()}")
+        
+    def subtab_clicked(self, button):
+        """Handle sub-tab button clicks"""
+        # Set clicked button as checked, others as unchecked
+        for btn in self.subtab_group.buttons():
+            if btn.objectName() == "activeTab":
+                btn.setObjectName("inactiveTab")
+                btn.setStyleSheet("")  # Remove any custom style
+            
+        # Set the clicked button as active
+        button.setObjectName("activeTab")
+        button.setStyleSheet("""
+            color: #3498DB;
+            border-bottom: 3px solid #3498DB;
+            background-color: #EBF5FB;
+            font-weight: bold;
+        """)
+        
+        logger.info(f"Sub-tab clicked: {button.text()}")
+
+    # Slot methods
     def browse_folder(self):
         """Open file dialog to browse for folder"""
         folder = QtWidgets.QFileDialog.getExistingDirectory(
@@ -723,7 +784,7 @@ class MainUI(QtWidgets.QMainWindow):
         """Select all videos in the list"""
         logger.info("Selecting all videos")
         if hasattr(self, 'video_list'):
-            for i in range(1, 6):  # Assuming 5 videos in the list
+            for i in range(1, 11):  # Increased to 10 for more items
                 checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
                 if checkbox:
                     checkbox.setChecked(True)
@@ -732,7 +793,7 @@ class MainUI(QtWidgets.QMainWindow):
         """Deselect all videos in the list"""
         logger.info("Deselecting all videos")
         if hasattr(self, 'video_list'):
-            for i in range(1, 6):  # Assuming 5 videos in the list
+            for i in range(1, 11):  # Increased to 10 for more items
                 checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
                 if checkbox:
                     checkbox.setChecked(False)
@@ -741,7 +802,7 @@ class MainUI(QtWidgets.QMainWindow):
         """Select only videos that haven't been uploaded"""
         logger.info("Selecting unuploaded videos")
         if hasattr(self, 'video_list'):
-            for i in range(1, 6):  # Assuming 5 videos in the list
+            for i in range(1, 11):  # Increased to 10 for more items
                 status = self.video_list.findChild(QtWidgets.QLabel, f"status{i}")
                 checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
                 
@@ -759,7 +820,7 @@ class MainUI(QtWidgets.QMainWindow):
             selected_count = 0
             selected_videos = []
             
-            for i in range(1, 6):  # Assuming 5 videos in the list
+            for i in range(1, 11):  # Increased to 10 for more items
                 checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
                 label = self.video_list.findChild(QtWidgets.QLabel, f"label{i}")
                 

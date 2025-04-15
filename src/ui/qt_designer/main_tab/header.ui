@@ -118,12 +118,13 @@ QTabWidget::tab-bar {
 
 QPushButton:hover {
     color: #3498DB;
-    background-color: transparent;
+    background-color: #EBF5FB;
 }
+
 QPushButton:checked {
     color: #3498DB;
     border-bottom: 3px solid #3498DB;
-	background-color: #EBF5FB;
+    background-color: #EBF5FB;
     font-weight: bold;
 }</string>
      </property>
@@ -158,6 +159,9 @@ QPushButton:checked {
          <string>Tải lên</string>
         </property>
         <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="checked">
          <bool>true</bool>
         </property>
        </widget>

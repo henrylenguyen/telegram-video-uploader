@@ -17,6 +17,7 @@
    <string notr="true">QWidget#FolderSelection {
     background-color: #FFFFFF;
     border-radius: 10px;
+    border: 1px solid #E2E8F0;
 }
 
 QLabel {

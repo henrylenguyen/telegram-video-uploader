@@ -17,6 +17,7 @@
    <string notr="true">QWidget#VideoPreview {
     background-color: #FFFFFF;
     border-radius: 10px;
+    border: 1px solid #E2E8F0;
 }
 
 QLabel#titleLabel {
@@ -27,9 +28,9 @@ QLabel#titleLabel {
 }
 
 QFrame#previewFrame {
-    border: 1px solid #E4E7EB;
-    border-radius: 6px;
-    background-color: #FFFFFF;
+    border: none;
+    background-color: #F2F6FC;
+    border-radius: 8px;
 }
 
 QScrollArea {
@@ -52,19 +53,6 @@ QScrollBar::handle:vertical {
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
-}
-
-QPushButton#playButton {
-    background-color: #3498DB;
-    border-radius: 45px;
-    min-width: 90px;
-    max-width: 90px;
-    min-height: 90px;
-    max-height: 90px;
-}
-
-QPushButton#playButton:hover {
-    background-color: #2980B9;
 }
 
 QPushButton {
@@ -138,12 +126,18 @@ QLabel.valueLabel {
      </property>
      <layout class="QVBoxLayout" name="verticalLayout_2">
       <item alignment="Qt::AlignHCenter|Qt::AlignVCenter">
-       <widget class="QPushButton" name="playButton">
-        <property name="text">
-         <string>▶</string>
+       <widget class="QWidget" name="playButtonContainer" native="true">
+        <property name="minimumSize">
+         <size>
+          <width>70</width>
+          <height>70</height>
+         </size>
         </property>
-        <property name="styleSheet">
-         <string notr="true">font-size: 36px; color: white;</string>
+        <property name="maximumSize">
+         <size>
+          <width>70</width>
+          <height>70</height>
+         </size>
         </property>
        </widget>
       </item>

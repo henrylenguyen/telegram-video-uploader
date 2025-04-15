@@ -17,6 +17,7 @@
    <string notr="true">QWidget#ActionBar {
     background-color: #FFFFFF;
     border-radius: 6px;
+    border: 1px solid #E2E8F0;
 }
 
 QPushButton.outlineButton {

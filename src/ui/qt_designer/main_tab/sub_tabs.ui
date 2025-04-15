@@ -17,6 +17,7 @@
    <string notr="true">QWidget#SubTabs {
     background-color: #FFFFFF;
     border-radius: 0px;
+    border-bottom: 1px solid #E2E8F0;
 }
 
 /* Tab custom style */
@@ -46,6 +47,7 @@ QPushButton#inactiveTab {
 
 QPushButton#inactiveTab:hover {
     color: #3498DB;
+    background-color: #F5F9FF;
     cursor: pointer;
 }</string>
   </property>
@@ -82,6 +84,12 @@ QPushButton#inactiveTab:hover {
      <property name="text">
       <string>Tải lên thủ công</string>
      </property>
+     <property name="checkable">
+      <bool>true</bool>
+     </property>
+     <property name="checked">
+      <bool>true</bool>
+     </property>
     </widget>
    </item>
    <item>
@@ -100,6 +108,9 @@ QPushButton#inactiveTab:hover {
      </property>
      <property name="text">
       <string>Tự động tải lên</string>
+     </property>
+     <property name="checkable">
+      <bool>true</bool>
      </property>
     </widget>
    </item>
@@ -123,6 +134,9 @@ QPushButton#inactiveTab:hover {
      <property name="objectName">
       <string>inactiveTab</string>
      </property>
+     <property name="checkable">
+      <bool>true</bool>
+     </property>
     </widget>
    </item>
    <item>
@@ -144,6 +158,9 @@ QPushButton#inactiveTab:hover {
      </property>
      <property name="objectName">
       <string>inactiveTab</string>
+     </property>
+     <property name="checkable">
+      <bool>true</bool>
      </property>
     </widget>
    </item>
