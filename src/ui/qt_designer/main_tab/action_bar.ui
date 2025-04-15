@@ -24,8 +24,8 @@ QPushButton.outlineButton {
     color: #3498DB;
     border: 1px solid #BFDBFE;
     border-radius: 4px;
-    padding: 5px 10px;
-    font-size: 12px;
+    padding: 8px 15px;
+    font-size: 14px;
 }
 
 QPushButton.outlineButton:hover {
@@ -34,7 +34,8 @@ QPushButton.outlineButton:hover {
 
 QLabel#selectionLabel {
     color: #64748B;
-    font-size: 13px;
+    font-size: 16px;
+    background-color: transparent;
 }
 
 QPushButton#uploadButton {
@@ -42,8 +43,8 @@ QPushButton#uploadButton {
     color: white;
     border: none;
     border-radius: 6px;
-    padding: 5px 15px;
-    font-size: 13px;
+    padding: 10px 20px;
+    font-size: 16px;
     font-weight: bold;
 }
 
@@ -52,6 +53,9 @@ QPushButton#uploadButton:hover {
 }</string>
   </property>
   <layout class="QHBoxLayout" name="horizontalLayout">
+   <property name="spacing">
+    <number>5</number>
+   </property>
    <property name="leftMargin">
     <number>15</number>
    </property>
@@ -68,14 +72,14 @@ QPushButton#uploadButton:hover {
     <widget class="QPushButton" name="selectAllButton">
      <property name="minimumSize">
       <size>
-       <width>120</width>
-       <height>30</height>
+       <width>140</width>
+       <height>40</height>
       </size>
      </property>
      <property name="maximumSize">
       <size>
-       <width>120</width>
-       <height>30</height>
+       <width>140</width>
+       <height>40</height>
       </size>
      </property>
      <property name="class" stdset="0">
@@ -90,14 +94,14 @@ QPushButton#uploadButton:hover {
     <widget class="QPushButton" name="deselectAllButton">
      <property name="minimumSize">
       <size>
-       <width>120</width>
-       <height>30</height>
+       <width>140</width>
+       <height>40</height>
       </size>
      </property>
      <property name="maximumSize">
       <size>
-       <width>120</width>
-       <height>30</height>
+       <width>140</width>
+       <height>40</height>
       </size>
      </property>
      <property name="class" stdset="0">
@@ -112,14 +116,14 @@ QPushButton#uploadButton:hover {
     <widget class="QPushButton" name="selectUnuploadedButton">
      <property name="minimumSize">
       <size>
-       <width>190</width>
-       <height>30</height>
+       <width>210</width>
+       <height>40</height>
       </size>
      </property>
      <property name="maximumSize">
       <size>
-       <width>190</width>
-       <height>30</height>
+       <width>210</width>
+       <height>40</height>
       </size>
      </property>
      <property name="class" stdset="0">
@@ -167,14 +171,14 @@ QPushButton#uploadButton:hover {
     <widget class="QPushButton" name="uploadButton">
      <property name="minimumSize">
       <size>
-       <width>125</width>
-       <height>30</height>
+       <width>150</width>
+       <height>40</height>
       </size>
      </property>
      <property name="maximumSize">
       <size>
-       <width>125</width>
-       <height>30</height>
+       <width>150</width>
+       <height>40</height>
       </size>
      </property>
      <property name="text">

@@ -22,15 +22,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger("TelegramUploader")
 
-# Import lớp ứng dụng chính
-from app import TelegramUploaderApp
 # Áp dụng patches cho telethon integration
 from utils.telethon_patch import apply_patches
 apply_patches()
+
 def main():
     """Hàm main để khởi chạy ứng dụng"""
     logger.info("Khởi động ứng dụng Telegram Video Uploader")
     
+    # Import sau khi patch đã được áp dụng
+    from app import USE_QT_UI, run_qt_ui, TelegramUploaderApp
+    
+    if USE_QT_UI:
+        # Cố gắng sử dụng Qt UI
+        try:
+            # Chạy Qt UI
+            result = run_qt_ui()
+            
+            # Nếu khởi động Qt UI thành công, kết thúc ở đây
+            if result is not None:
+                return result
+            
+            # Nếu thất bại, chuyển sang Tkinter
+            logger.warning("Không thể khởi động Qt UI. Chuyển sang Tkinter.")
+        except Exception as e:
+            # Log lỗi
+            logger.error(f"Lỗi khởi tạo giao diện Qt: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # Tiếp tục chuyển sang Tkinter
+            logger.info("Chuyển sang sử dụng giao diện Tkinter")
+    
+    # Tkinter UI (dùng khi Qt không hoạt động hoặc USE_QT_UI = False)
     # Tạo cửa sổ gốc
     root = tk.Tk()
     

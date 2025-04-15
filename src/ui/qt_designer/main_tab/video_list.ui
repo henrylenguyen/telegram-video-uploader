@@ -20,9 +20,10 @@
 }
 
 QLabel#titleLabel {
-    font-size: 16px;
+    font-size: 20px;
     font-weight: bold;
     color: #1E293B;
+    background-color: transparent;
 }
 
 QScrollArea {
@@ -49,6 +50,7 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 
 QCheckBox {
     spacing: 10px;
+    background-color: transparent;
 }
 
 QCheckBox::indicator {
@@ -87,6 +89,9 @@ QLabel.statusNew {
     border-radius: 4px;
     background-color: #EBF5FB;
     font-size: 11px;
+    min-width: 60px;
+    max-width: 60px;
+    text-align: center;
 }
 
 QLabel.statusDuplicate {
@@ -96,6 +101,9 @@ QLabel.statusDuplicate {
     border-radius: 4px;
     background-color: #FEF2F2;
     font-size: 11px;
+    min-width: 60px;
+    max-width: 60px;
+    text-align: center;
 }
 
 QLabel.statusUploaded {
@@ -105,6 +113,9 @@ QLabel.statusUploaded {
     border-radius: 4px;
     background-color: #ECFDF5;
     font-size: 11px;
+    min-width: 60px;
+    max-width: 60px;
+    text-align: center;
 }
 
 QFrame#paginationFrame {
@@ -140,6 +151,7 @@ QPushButton.pageButton:hover {
 QLabel.paginationInfo {
     color: #64748B;
     font-size: 13px;
+    background-color: transparent;
 }</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">

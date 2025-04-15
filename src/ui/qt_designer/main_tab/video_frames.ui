@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>800</width>
-    <height>180</height>
+    <height>350</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -21,9 +21,10 @@
 }
 
 QLabel#titleLabel {
-    font-size: 16px;
+    font-size: 20px;
     font-weight: bold;
     color: #1E293B;
+    background-color: transparent;
 }
 
 QScrollArea {
@@ -59,7 +60,7 @@ QFrame.frameItem {
     <number>20</number>
    </property>
    <property name="topMargin">
-    <number>15</number>
+    <number>20</number>
    </property>
    <property name="rightMargin">
     <number>20</number>
@@ -80,7 +81,7 @@ QFrame.frameItem {
       <bool>true</bool>
      </property>
      <property name="horizontalScrollBarPolicy">
-      <enum>Qt::ScrollBarAlwaysOn</enum>
+      <enum>Qt::ScrollBarAsNeeded</enum>
      </property>
      <property name="verticalScrollBarPolicy">
       <enum>Qt::ScrollBarAlwaysOff</enum>
@@ -91,8 +92,14 @@ QFrame.frameItem {
         <x>0</x>
         <y>0</y>
         <width>758</width>
-        <height>120</height>
+        <height>350</height>
        </rect>
+      </property>
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>350</height>
+       </size>
       </property>
       <layout class="QHBoxLayout" name="horizontalLayout">
        <property name="spacing">
@@ -114,8 +121,8 @@ QFrame.frameItem {
         <widget class="QFrame" name="frame1" native="true">
          <property name="minimumSize">
           <size>
-           <width>100</width>
-           <height>100</height>
+           <width>200</width>
+           <height>200</height>
           </size>
          </property>
          <property name="class" stdset="0">
@@ -127,8 +134,8 @@ QFrame.frameItem {
         <widget class="QFrame" name="frame2" native="true">
          <property name="minimumSize">
           <size>
-           <width>100</width>
-           <height>100</height>
+           <width>200</width>
+           <height>200</height>
           </size>
          </property>
          <property name="class" stdset="0">
@@ -140,8 +147,8 @@ QFrame.frameItem {
         <widget class="QFrame" name="frame3" native="true">
          <property name="minimumSize">
           <size>
-           <width>100</width>
-           <height>100</height>
+           <width>200</width>
+           <height>200</height>
           </size>
          </property>
          <property name="class" stdset="0">
@@ -153,8 +160,8 @@ QFrame.frameItem {
         <widget class="QFrame" name="frame4" native="true">
          <property name="minimumSize">
           <size>
-           <width>100</width>
-           <height>100</height>
+           <width>200</width>
+           <height>200</height>
           </size>
          </property>
          <property name="class" stdset="0">
@@ -166,8 +173,8 @@ QFrame.frameItem {
         <widget class="QFrame" name="frame5" native="true">
          <property name="minimumSize">
           <size>
-           <width>100</width>
-           <height>100</height>
+           <width>200</width>
+           <height>200</height>
           </size>
          </property>
          <property name="class" stdset="0">

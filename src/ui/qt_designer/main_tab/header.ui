@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1200</width>
+    <width>1500</width>
     <height>70</height>
    </rect>
   </property>
@@ -32,9 +32,12 @@
 }
 
 QLabel#logoLabel {
-    font-size: 24px;
+    font-size: 28px;
     font-weight: bold;
     color: #3498DB;
+    background-color: transparent;
+    letter-spacing: 1px;
+    text-transform: uppercase;
 }
 
 QTabWidget::pane {
@@ -46,8 +49,8 @@ QTabWidget::pane {
 QTabBar::tab {
     background-color: transparent;
     color: #64748B;
-    padding: 15px 30px;
-    font-size: 14px;
+    padding: 20px;
+    font-size: 16px;
     border: none;
     min-width: 100px;
 }
@@ -55,7 +58,7 @@ QTabBar::tab {
 QTabBar::tab:selected {
     color: #3498DB;
     border-bottom: 3px solid #3498DB;
-    background-color: #EBF5FB;
+    background-color: transparent;
     font-weight: bold;
 }
 
@@ -90,12 +93,12 @@ QTabWidget::tab-bar {
    <item>
     <spacer name="horizontalSpacer">
      <property name="orientation">
-      <enum>Qt::Orientation::Horizontal</enum>
+      <enum>Horizontal</enum>
      </property>
      <property name="sizeHint" stdset="0">
       <size>
-       <width>40</width>
-       <height>20</height>
+       <width>70</width>
+       <height>70</height>
       </size>
      </property>
     </spacer>
@@ -109,18 +112,19 @@ QTabWidget::tab-bar {
     border: none;
     border-radius: 0px;
     padding: 10px 20px;
-    font-size: 14px;
+    font-size: 16px;
     text-align: center;
 }
 
 QPushButton:hover {
     color: #3498DB;
-    background-color: #D6EAF8;
+    background-color: transparent;
 }
 QPushButton:checked {
-    color: #2196F3;
-    border-bottom: 2px solid #2196F3;
-	background-color: #D6EAF8;
+    color: #3498DB;
+    border-bottom: 3px solid #3498DB;
+	background-color: #EBF5FB;
+    font-weight: bold;
 }</string>
      </property>
      <layout class="QHBoxLayout" name="tabsLayout">
@@ -143,8 +147,8 @@ QPushButton:checked {
        <widget class="QPushButton" name="uploadTabButton">
         <property name="minimumSize">
          <size>
-          <width>100</width>
-          <height>40</height>
+          <width>150</width>
+          <height>70</height>
          </size>
         </property>
         <property name="styleSheet">
@@ -162,8 +166,8 @@ QPushButton:checked {
        <widget class="QPushButton" name="settingsTabButton">
         <property name="minimumSize">
          <size>
-          <width>100</width>
-          <height>40</height>
+          <width>150</width>
+          <height>70</height>
          </size>
         </property>
         <property name="styleSheet">
@@ -181,8 +185,8 @@ QPushButton:checked {
        <widget class="QPushButton" name="historyTabButton">
         <property name="minimumSize">
          <size>
-          <width>100</width>
-          <height>40</height>
+          <width>150</width>
+          <height>70</height>
          </size>
         </property>
         <property name="styleSheet">
@@ -200,8 +204,8 @@ QPushButton:checked {
        <widget class="QPushButton" name="journalTabButton">
         <property name="minimumSize">
          <size>
-          <width>100</width>
-          <height>40</height>
+          <width>150</width>
+          <height>70</height>
          </size>
         </property>
         <property name="styleSheet">
@@ -219,8 +223,8 @@ QPushButton:checked {
        <widget class="QPushButton" name="helpTabButton">
         <property name="minimumSize">
          <size>
-          <width>100</width>
-          <height>40</height>
+          <width>150</width>
+          <height>70</height>
          </size>
         </property>
         <property name="styleSheet">

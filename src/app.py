@@ -1,3 +1,9 @@
+"""
+Telegram Video Uploader Application
+==================================
+
+Ứng dụng chính để tải video lên Telegram với các tính năng tiên tiến.
+"""
 import os
 import sys
 import logging
@@ -6,14 +12,23 @@ from tkinter import ttk, messagebox
 import threading
 from queue import Queue
 
+# Định nghĩa biến để quyết định dùng Qt hay Tkinter
+USE_QT_UI = True  # True = dùng Qt, False = dùng Tkinter
+
+# Import PyQt5 nếu sử dụng Qt UI
+if USE_QT_UI:
+    try:
+        from PyQt5 import QtWidgets
+    except ImportError:
+        USE_QT_UI = False
+        logging.warning("Không thể import PyQt5, chuyển sang sử dụng Tkinter")
+
 # Import các module
 from ui.splash_screen import show_splash_screen
-from ui.main_tab import create_main_tab
-from ui.auto_tab import create_auto_tab
 from ui.settings_tab import create_settings_tab
 from ui.history_tab import create_history_tab
 from ui.log_tab import create_log_tab
-from ui.guide_tab import create_guide_tab  # Thêm module tab hướng dẫn
+from ui.guide_tab import create_guide_tab
 
 from core.config_manager import ConfigManager
 from core.uploader import Uploader
@@ -28,6 +43,30 @@ from utils.telethon_uploader import TelethonUploader
 from utils.auto_uploader import AutoUploader, BulkUploader
 
 logger = logging.getLogger("TelegramUploader")
+
+# Function để khởi chạy Qt UI
+def run_qt_ui():
+    """Khởi chạy giao diện Qt"""
+    try:
+        # Import the Qt UI
+        from ui.qt_main_ui import MainUI
+        
+        # Create Qt application
+        qt_app = QtWidgets.QApplication(sys.argv)
+        
+        # Create main window
+        main_window = MainUI()
+        
+        # Show the window
+        main_window.show()
+        
+        # Run the application
+        return qt_app.exec_()
+    except Exception as e:
+        logger.error(f"Error starting Qt UI: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
 
 class TelegramUploaderApp:
     """
@@ -161,6 +200,7 @@ class TelegramUploaderApp:
         style.configure("ThumbActive.TFrame", background="#f8f8f8", borderwidth=3, relief="raised")
         style.configure("Controls.TFrame", background="#f0f0f0", borderwidth=1, relief="groove")
         style.configure("Thumbnails.TFrame", background="#f8f8f8")
+    
     def safe_update_stringvar(self, stringvar, value):
         """
         Cập nhật StringVar an toàn từ thread không phải main thread
@@ -170,7 +210,6 @@ class TelegramUploaderApp:
             value: Giá trị mới
         """
         self.root.after(0, lambda: stringvar.set(value))
-        
 
     def _initialize_components(self):
         """Enhanced component initialization with better error handling"""
@@ -229,43 +268,7 @@ class TelegramUploaderApp:
         self.auto_uploader = None
         self.bulk_uploader = None
         self.watcher_thread = None
-        
-        # After initializing all components
-        self.root.after(2000, self._force_render_checkboxes)
 
-    def _force_render_checkboxes(self):
-        """Force rendering of checkboxes after app initialization"""
-        if hasattr(self, 'render_checkboxes'):
-            try:
-                self.render_checkboxes()
-                # Schedule another render after a short delay to catch late UI updates
-                self.root.after(500, self.render_checkboxes)
-            except Exception as e:
-                logger.error(f"Error rendering checkboxes: {str(e)}")
-                import traceback
-                logger.error(traceback.format_exc())
-        else:
-            # If render_checkboxes doesn't exist yet, try again later
-            self.root.after(500, self._force_render_checkboxes)
-    def check_telegram_config(self):
-        """Enhanced Telegram configuration check with improved dialog handling"""
-        # Check if bot token and chat ID are configured
-        bot_token = self.config['TELEGRAM']['bot_token']
-        chat_id = self.config['TELEGRAM']['chat_id']
-        
-        if not bot_token or not chat_id:
-            # Import and show configuration modal
-            try:
-                from ui.config_modal import TelegramConfigModal
-                # Use after() to ensure the UI is fully loaded first
-                self.root.after(1000, lambda: TelegramConfigModal(self))
-            except Exception as e:
-                logger.error(f"Error showing config modal: {str(e)}")
-                # Fallback to simple message
-                messagebox.showwarning(
-                    "Cấu hình chưa hoàn tất", 
-                    "Bạn cần cấu hình thông tin Telegram trong tab Cài đặt."
-                )
     def _setup_ffmpeg(self):
         """Thiết lập FFmpeg"""
         # Hiển thị thông báo cho người dùng
@@ -366,59 +369,6 @@ class TelegramUploaderApp:
         self.video_checkboxes = {}
         self.checkbox_widgets = []
         
-        # Add the render_checkboxes method directly to the app instance
-        def render_checkboxes_method():
-            try:
-                from ui.components.checkbox import create_checkbox_cell
-            except ImportError:
-                try:
-                    from .components.checkbox import create_checkbox_cell
-                except ImportError:
-                    from src.ui.components.checkbox import create_checkbox_cell
-            
-            # Clear existing checkboxes
-            if hasattr(self, 'checkbox_widgets'):
-                for checkbox in self.checkbox_widgets:
-                    try:
-                        checkbox.destroy()
-                    except Exception:
-                        pass
-            
-            self.checkbox_widgets = []
-            
-            # Create checkbox for each row
-            for item_id in self.video_tree.get_children():
-                if item_id not in self.video_checkboxes:
-                    self.video_checkboxes[item_id] = tk.BooleanVar(value=False)
-                
-                checkbox = create_checkbox_cell(self.video_tree, item_id, "#1")
-                if checkbox:
-                    checkbox.set(self.video_checkboxes[item_id].get())
-                    self.checkbox_widgets.append(checkbox)
-            
-            # Update UI to ensure checkboxes are visible
-            self.root.update_idletasks()
-        # Thêm các sự kiện để hiển thị checkbox
-        def force_render_checkboxes(self):
-            """Hàm hiển thị checkbox sau khi tạo UI"""
-            if hasattr(self, 'video_tree'):  # Chỉ hiển thị nếu video_tree đã tồn tại
-                try:
-                    self.render_checkboxes()  # Use the method attached to app
-                except Exception as e:
-                    import logging
-                    logging.getLogger().error(f"Error rendering checkboxes: {str(e)}")
-            else:
-                # Thử lại sau nếu video_tree chưa được tạo
-                self.root.after(500, lambda: force_render_checkboxes(self))
-
-        # Then in the _create_ui method, call it with:
-        self.root.after(1000, lambda: force_render_checkboxes(self))
-
-        # Hiển thị checkbox sau khi tạo UI
-        self.root.after(1000, force_render_checkboxes)
-        # Attach the method to the app
-        self.render_checkboxes = render_checkboxes_method
-        
         # Tạo style cho các thành phần
         style = ttk.Style()
         
@@ -517,7 +467,20 @@ class TelegramUploaderApp:
         self.content_frames = [main_content, settings_content, history_content, log_content, guide_content]
         
         # Tạo UI cho từng tab content
-        create_main_tab(self, main_content)
+        # Thông báo cho main tab mà không sử dụng main_tab Tkinter nữa
+        ttk.Label(
+            main_content, 
+            text="Tab Tải lên đã được chuyển sang sử dụng giao diện Qt", 
+            font=("Arial", 16, "bold")
+        ).pack(pady=100)
+        
+        ttk.Label(
+            main_content, 
+            text="Vui lòng sử dụng giao diện Qt để xem và sử dụng tính năng này.", 
+            font=("Arial", 14)
+        ).pack(pady=10)
+        
+        # Các tab khác vẫn dùng Tkinter như bình thường
         create_settings_tab(self, settings_content)
         create_history_tab(self, history_content)
         create_log_tab(self, log_content)
@@ -543,14 +506,15 @@ class TelegramUploaderApp:
                         bd=0,
                         activebackground="#2980b9",
                         activeforeground="white",
-                        command=lambda: self._start_upload())
+                        state=tk.DISABLED,  # Disabled in Tkinter mode
+                        command=self._start_upload)
         self.upload_btn.pack(side=tk.RIGHT, padx=10)
 
         # Thêm nhãn trạng thái bên trái (optional)
         status_frame = tk.Frame(footer_frame, bg="#EDEDED")
         status_frame.pack(side=tk.LEFT, padx=10, pady=10)
 
-        self.status_var = tk.StringVar(value="Sẵn sàng")
+        self.status_var = tk.StringVar(value="Sẵn sàng (Qt Mode)")
         status_label = tk.Label(status_frame, 
                             textvariable=self.status_var,
                             bg="#EDEDED",
@@ -559,6 +523,26 @@ class TelegramUploaderApp:
         status_label.pack(side=tk.LEFT)
         # Check if Telegram is configured, and show config modal if not
         self.check_telegram_config()
+
+    def check_telegram_config(self):
+        """Kiểm tra cấu hình Telegram và hiển thị modal nếu cần"""
+        # Check if bot token and chat ID are configured
+        bot_token = self.config['TELEGRAM']['bot_token']
+        chat_id = self.config['TELEGRAM']['chat_id']
+        
+        if not bot_token or not chat_id:
+            # Import and show configuration modal
+            try:
+                from ui.config_modal import TelegramConfigModal
+                # Use after() to ensure the UI is fully loaded first
+                self.root.after(1000, lambda: TelegramConfigModal(self))
+            except Exception as e:
+                logger.error(f"Error showing config modal: {str(e)}")
+                # Fallback to simple message
+                messagebox.showwarning(
+                    "Cấu hình chưa hoàn tất", 
+                    "Bạn cần cấu hình thông tin Telegram trong tab Cài đặt."
+                )
 
     def switch_tab(self, tab_index):
         """Improved tab switching with proper visual feedback"""
@@ -603,6 +587,7 @@ class TelegramUploaderApp:
         if hasattr(self, 'show_tab') and tab_index == 1:  # If switching to Settings tab
             # Reset to first sub-tab
             self.show_tab(0)
+    
     def show_content(self, index):
         """Hiển thị nội dung của tab đã chọn"""
         # Hide current content if exists
@@ -629,126 +614,44 @@ class TelegramUploaderApp:
             else:
                 btn.config(bg="#f0f0f0", fg="black")
     
-    def render_checkboxes(self):
-        """Vẽ lại tất cả checkbox trên treeview với xử lý lỗi tốt hơn"""
-        try:
-            # Import functions safely
-            try:
-                from ui.main_tab.main_tab_func import safely_render_checkboxes
-                safely_render_checkboxes(self)
-                return
-            except ImportError:
-                pass
-                
-            # Fallback if we can't import the safer version
-            # Import CustomCheckbox từ components
-            try:
-                from ui.components.checkbox import create_checkbox_cell
-            except ImportError:
-                try:
-                    from src.ui.components.checkbox import create_checkbox_cell
-                except ImportError:
-                    # Last resort: direct import
-                    import sys, os
-                    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-                    from ui.components.checkbox import create_checkbox_cell
-            
-            # Xóa tất cả checkbox hiện tại
-            if hasattr(self, 'checkbox_widgets'):
-                for checkbox in self.checkbox_widgets:
-                    try:
-                        checkbox.destroy()
-                    except Exception as e:
-                        logger.error(f"Error destroying checkbox: {str(e)}")
-            
-            self.checkbox_widgets = []
-            
-            # Force cập nhật UI
-            self.root.update_idletasks()
-            
-            # Get valid items only
-            try:
-                valid_items = [item for item in self.video_tree.get_children()]
-            except Exception as e:
-                logger.error(f"Error getting tree children: {str(e)}")
-                valid_items = []
-                
-            # Clean up invalid references
-            invalid_keys = [key for key in self.video_checkboxes if key not in valid_items]
-            for key in invalid_keys:
-                if key in self.video_checkboxes:
-                    del self.video_checkboxes[key]
-            
-            # Tạo checkbox cho tất cả hàng có trong tree
-            for item_id in valid_items:
-                try:
-                    if item_id not in self.video_checkboxes:
-                        # Lấy thông tin video để quyết định có nên chọn mặc định không
-                        video_values = self.video_tree.item(item_id, "values")
-                        tags = self.video_tree.item(item_id, "tags")
-                        status = video_values[2] if len(video_values) > 2 else ""
-                        
-                        # Mặc định chọn những video không phải đã tải lên hoặc trùng lặp
-                        should_check = not (status == "Đã tải lên" or status == "Trùng lặp" or "uploaded" in tags or "duplicate" in tags)
-                        self.video_checkboxes[item_id] = tk.BooleanVar(value=should_check)
-                    
-                    checkbox = create_checkbox_cell(self.video_tree, item_id, "#1")
-                    if checkbox:
-                        checkbox.set(self.video_checkboxes[item_id].get())
-                        self.checkbox_widgets.append(checkbox)
-                except Exception as e:
-                    logger.error(f"Error creating checkbox for item {item_id}: {str(e)}")
-            
-            # Force cập nhật lại lần nữa để đảm bảo hiển thị
-            self.root.update_idletasks()
-        
-        except Exception as e:
-            logger.error(f"Error in render_checkboxes: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-    # ===== Các phương thức kết nối UI =====
     def _start_upload(self):
-        """Sử dụng logic kiểm tra trùng lặp trước khi tải lên"""
-        try:
-            from ui.main_tab.upload_button_logic import start_upload
-            start_upload(self)
-        except ImportError:
-            # Fallback nếu không import được
-            self.uploader.start_upload(self)
-    def _on_closing(app):
+        """Sử dụng logic kiểm tra trùng lặp trước khi tải lên - KHÔNG SỬ DỤNG Ở CHẾ ĐỘ TKINTER"""
+        messagebox.showinfo("Chế độ Qt", "Vui lòng sử dụng giao diện Qt để sử dụng tính năng này")
+    
+    def _on_closing(self):
         """Xử lý khi đóng ứng dụng"""
         # Dừng tất cả hoạt động
-        if app.is_uploading:
+        if self.is_uploading:
             # Nếu đang tải lên, yêu cầu xác nhận
             if not messagebox.askyesno("Xác nhận", "Đang có video đang tải lên. Bạn có chắc muốn thoát?"):
                 return
             
             # Dừng quá trình tải lên
-            app.should_stop = True
+            self.should_stop = True
         
-        if app.auto_upload_active:
+        if self.auto_upload_active:
             # Dừng chế độ tự động
-            app.auto_uploader_manager.stop_auto_upload(app)
+            self.auto_uploader_manager.stop_auto_upload(self)
         
         # Lưu cấu hình
-        app.config_manager.save_config(app.config)
+        self.config_manager.save_config(self.config)
         
         # Ngắt kết nối các API
-        if hasattr(app, 'telegram_api'):
-            app.telegram_api.disconnect()
+        if hasattr(self, 'telegram_api'):
+            self.telegram_api.disconnect()
         
-        if hasattr(app, 'telethon_uploader'):
-            app.telethon_uploader.disconnect()
+        if hasattr(self, 'telethon_uploader'):
+            self.telethon_uploader.disconnect()
         
         # Xóa thư mục tạm nếu có
-        if hasattr(app, 'temp_dir') and app.temp_dir and os.path.exists(app.temp_dir):
+        if hasattr(self, 'temp_dir') and self.temp_dir and os.path.exists(self.temp_dir):
             try:
                 import shutil
-                shutil.rmtree(app.temp_dir)
-                logger.info(f"Đã xóa thư mục tạm: {app.temp_dir}")
+                shutil.rmtree(self.temp_dir)
+                logger.info(f"Đã xóa thư mục tạm: {self.temp_dir}")
             except Exception as e:
                 logger.error(f"Lỗi khi xóa thư mục tạm: {str(e)}")
         
         # Đóng ứng dụng
-        app.root.destroy()
+        self.root.destroy()
         logger.info("Đã đóng ứng dụng")
