@@ -16,21 +16,27 @@
   <property name="styleSheet">
    <string notr="true">QWidget#SubTabs {
     background-color: #FFFFFF;
-    border-radius: 6px;
+    border-radius: 0px;
 }
 
 /* Tab custom style */
 QPushButton {
+    background-color: transparent;
+    color: #64748B;
     border: none;
-    border-radius: 6px;
-    padding: 5px;
+    border-radius: 0px;
+    padding: 5px 20px;
     font-size: 16px;
     min-height: 30px;
+    min-width: 180px;
+    qproperty-alignment: AlignCenter;
 }
 
 QPushButton#activeTab {
-    background-color: #3498DB;
-    color: white;
+    color: #3498DB;
+    border-bottom: 3px solid #3498DB;
+    background-color: #EBF5FB;
+    font-weight: bold;
 }
 
 QPushButton#inactiveTab {
@@ -39,8 +45,8 @@ QPushButton#inactiveTab {
 }
 
 QPushButton#inactiveTab:hover {
-    background-color: #F5F9FF;
     color: #3498DB;
+    cursor: pointer;
 }</string>
   </property>
   <layout class="QHBoxLayout" name="horizontalLayout">

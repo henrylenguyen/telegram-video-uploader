@@ -57,23 +57,29 @@ QCheckBox::indicator {
     width: 20px;
     height: 20px;
     border-radius: 4px;
-    border: 1px solid #CBD5E1;
 }
 
 QCheckBox::indicator:unchecked {
-    background-color: #FFFFFF;
+    background-color: #F1F5F9;
 }
 
 QCheckBox::indicator:checked {
     background-color: #3498DB;
-    border: 1px solid #3498DB;
     image: url(icons/check.png);
 }
 
 QFrame#videoItem {
     background-color: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 6px;
+    border-bottom: 1px solid #E2E8F0;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    border-radius: 0px;
+}
+
+QFrame#videoItem:hover {
+    background-color: #F1F5F9;
+    cursor: pointer;
 }
 
 QLabel.videoName {
@@ -92,6 +98,7 @@ QLabel.statusNew {
     min-width: 60px;
     max-width: 60px;
     text-align: center;
+    qproperty-alignment: AlignCenter;
 }
 
 QLabel.statusDuplicate {
@@ -104,6 +111,7 @@ QLabel.statusDuplicate {
     min-width: 60px;
     max-width: 60px;
     text-align: center;
+    qproperty-alignment: AlignCenter;
 }
 
 QLabel.statusUploaded {
@@ -116,6 +124,7 @@ QLabel.statusUploaded {
     min-width: 60px;
     max-width: 60px;
     text-align: center;
+    qproperty-alignment: AlignCenter;
 }
 
 QFrame#paginationFrame {
@@ -131,6 +140,10 @@ QPushButton.pageButton {
     padding: 5px 10px;
     font-size: 12px;
     min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    max-height: 30px;
+    qproperty-alignment: AlignCenter;
 }
 
 QPushButton.pageButtonActive {
@@ -141,11 +154,16 @@ QPushButton.pageButtonActive {
     padding: 5px 10px;
     font-size: 12px;
     min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    max-height: 30px;
+    qproperty-alignment: AlignCenter;
 }
 
 QPushButton.pageButton:hover {
     background-color: #F1F5F9;
     color: #3498DB;
+    cursor: pointer;
 }
 
 QLabel.paginationInfo {

@@ -27,8 +27,8 @@
   </property>
   <property name="styleSheet">
    <string notr="true">QWidget#Header {
-    background-color: #FFFFFF;
-    border-bottom: 1px solid #E2E8F0;
+ background-color: #FFFFFF !important;
+  border-bottom: 1px solid #E2E8F0;
 }
 
 QLabel#logoLabel {
