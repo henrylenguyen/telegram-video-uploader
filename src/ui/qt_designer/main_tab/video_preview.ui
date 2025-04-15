@@ -1,0 +1,384 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>VideoPreview</class>
+ <widget class="QWidget" name="VideoPreview">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>500</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">QWidget#VideoPreview {
+    background-color: #FFFFFF;
+    border-radius: 10px;
+}
+
+QLabel#titleLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: #1E293B;
+}
+
+QFrame#previewFrame {
+    border: 1px solid #E4E7EB;
+    border-radius: 6px;
+    background-color: #FFFFFF;
+}
+
+QScrollArea {
+    border: none;
+    background-color: transparent;
+}
+
+QScrollBar:vertical {
+    border: none;
+    background: #F1F5F9;
+    width: 8px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical {
+    background: #CBD5E1;
+    min-height: 20px;
+    border-radius: 4px;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QPushButton#playButton {
+    background-color: #3498DB;
+    border-radius: 35px;
+    min-width: 70px;
+    max-width: 70px;
+    min-height: 70px;
+    max-height: 70px;
+}
+
+QPushButton#playButton:hover {
+    background-color: #2980B9;
+}
+
+QPushButton {
+    background-color: #3498DB;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 13px;
+}
+
+QPushButton:hover {
+    background-color: #2980B9;
+}
+
+QLabel#infoTitleLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: #1E293B;
+}
+
+QWidget#infoPanel {
+    background-color: #F9FAFB;
+    border: 1px solid #E4E7EB;
+    border-radius: 6px;
+}
+
+QLabel.infoLabel {
+    font-size: 13px;
+    color: #64748B;
+}
+
+QLabel.valueLabel {
+    font-size: 13px;
+    color: #334155;
+}</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="leftMargin">
+    <number>20</number>
+   </property>
+   <property name="topMargin">
+    <number>20</number>
+   </property>
+   <property name="rightMargin">
+    <number>20</number>
+   </property>
+   <property name="bottomMargin">
+    <number>20</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="titleLabel">
+     <property name="text">
+      <string>Xem trước video</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QScrollArea" name="previewScrollArea">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>180</height>
+      </size>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="scrollAreaWidgetContents">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>380</width>
+        <height>214</height>
+       </rect>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_2">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QFrame" name="previewFrame">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>214</height>
+          </size>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_3">
+          <item alignment="Qt::AlignHCenter|Qt::AlignVCenter">
+           <widget class="QPushButton" name="playButton">
+            <property name="text">
+             <string/>
+            </property>
+            <property name="icon">
+             <iconset>
+              <normaloff>icons/play.png</normaloff>icons/play.png</iconset>
+            </property>
+            <property name="iconSize">
+             <size>
+              <width>30</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QPushButton" name="viewVideoButton">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>38</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Xem video</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="uploadThisVideoButton">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>38</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Tải lên video này</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="infoTitleLabel">
+     <property name="text">
+      <string>Thông tin video</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="infoPanel" native="true">
+     <layout class="QFormLayout" name="formLayout">
+      <property name="horizontalSpacing">
+       <number>30</number>
+      </property>
+      <property name="verticalSpacing">
+       <number>30</number>
+      </property>
+      <property name="leftMargin">
+       <number>15</number>
+      </property>
+      <property name="topMargin">
+       <number>15</number>
+      </property>
+      <property name="rightMargin">
+       <number>15</number>
+      </property>
+      <property name="bottomMargin">
+       <number>15</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="fileNameLabel">
+        <property name="class" stdset="0">
+         <string>infoLabel</string>
+        </property>
+        <property name="text">
+         <string>Tên file:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="fileNameValueLabel">
+        <property name="class" stdset="0">
+         <string>valueLabel</string>
+        </property>
+        <property name="text">
+         <string>family_picnic.mp4</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="durationLabel">
+        <property name="class" stdset="0">
+         <string>infoLabel</string>
+        </property>
+        <property name="text">
+         <string>Thời lượng:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="durationValueLabel">
+        <property name="class" stdset="0">
+         <string>valueLabel</string>
+        </property>
+        <property name="text">
+         <string>00:03:45</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="resolutionLabel">
+        <property name="class" stdset="0">
+         <string>infoLabel</string>
+        </property>
+        <property name="text">
+         <string>Độ phân giải:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLabel" name="resolutionValueLabel">
+        <property name="class" stdset="0">
+         <string>valueLabel</string>
+        </property>
+        <property name="text">
+         <string>1920 x 1080</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="sizeLabel">
+        <property name="class" stdset="0">
+         <string>infoLabel</string>
+        </property>
+        <property name="text">
+         <string>Kích thước:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLabel" name="sizeValueLabel">
+        <property name="class" stdset="0">
+         <string>valueLabel</string>
+        </property>
+        <property name="text">
+         <string>42.5 MB</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="statusLabel">
+        <property name="class" stdset="0">
+         <string>infoLabel</string>
+        </property>
+        <property name="text">
+         <string>Trạng thái:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QLabel" name="statusValueLabel">
+        <property name="class" stdset="0">
+         <string>valueLabel</string>
+        </property>
+        <property name="text">
+         <string>Chưa tải lên</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">color: #10B981;</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="codecLabel">
+        <property name="class" stdset="0">
+         <string>infoLabel</string>
+        </property>
+        <property name="text">
+         <string>Codec:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QLabel" name="codecValueLabel">
+        <property name="class" stdset="0">
+         <string>valueLabel</string>
+        </property>
+        <property name="text">
+         <string>H.264</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
