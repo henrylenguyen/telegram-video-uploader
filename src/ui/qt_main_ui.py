@@ -292,6 +292,8 @@ class MainUI(QtWidgets.QMainWindow):
             # Store reference to important controls
             self.folder_path_edit = folder_widget.findChild(QtWidgets.QLineEdit, "directoryLineEdit")
             self.browse_button = folder_widget.findChild(QtWidgets.QPushButton, "browseButton")
+            self.refresh_button = folder_widget.findChild(QtWidgets.QPushButton, "refreshButton")
+            self.recent_folders_combo = folder_widget.findChild(QtWidgets.QComboBox, "recentFoldersComboBox")
             
             # Thêm cursor pointer cho nút browse
             if self.browse_button:
@@ -728,6 +730,14 @@ class MainUI(QtWidgets.QMainWindow):
         # Connect play button in video preview if found
         if hasattr(self, 'play_button'):
             self.play_button.clicked.connect(self.view_video)
+            
+        # Kết nối nút làm mới
+        if hasattr(self, 'refresh_button'):
+            self.refresh_button.clicked.connect(self.refresh_folder)
+
+        # Kết nối combobox thư mục gần đây
+        if hasattr(self, 'recent_folders_combo'):
+            self.recent_folders_combo.currentIndexChanged.connect(self.load_recent_folder)
 
     def header_tab_clicked(self, button):
         """Handle header tab button clicks"""
@@ -830,7 +840,23 @@ class MainUI(QtWidgets.QMainWindow):
                     
             logger.info(f"Uploading {selected_count} videos: {selected_videos}")
             # Implementation would connect to your upload logic
+            
+    def refresh_folder(self):
+        """Làm mới nội dung thư mục hiện tại"""
+        current_folder = self.folder_path_edit.text()
+        if current_folder:
+            logger.info(f"Đang làm mới thư mục: {current_folder}")
+            # Thực hiện quét lại thư mục và cập nhật UI
+            # (Phần logic cụ thể sẽ phụ thuộc vào cách bạn quét thư mục)
 
+    def load_recent_folder(self, index):
+        """Tải thư mục gần đây từ dropdown"""
+        if index > 0:  # 0 là mục "Thư mục gần đây"
+            selected_folder = self.recent_folders_combo.currentText()
+            self.folder_path_edit.setText(selected_folder)
+            logger.info(f"Đã chọn thư mục gần đây: {selected_folder}")
+            # Cập nhật danh sách video từ thư mục được chọn
+            
 # Run the application if executed directly
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)

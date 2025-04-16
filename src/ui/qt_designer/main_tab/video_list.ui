@@ -184,6 +184,33 @@ QLabel.paginationInfo {
     color: #64748B;
     font-size: 13px;
     background-color: transparent;
+}
+
+QComboBox {
+    border: 1px solid #E4E7EB;
+    border-radius: 4px;
+    padding: 4px 8px;
+    background-color: #FFFFFF;
+    color: #64748B;
+    font-size: 13px;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 15px;
+    border-left-width: 1px;
+    border-left-color: #E4E7EB;
+    border-left-style: solid;
+}
+
+QLineEdit {
+    border: 1px solid #E4E7EB;
+    border-radius: 4px;
+    padding: 4px 8px;
+    background-color: #FFFFFF;
+    color: #64748B;
+    font-size: 13px;
 }</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -208,6 +235,70 @@ QLabel.paginationInfo {
       <widget class="QLabel" name="titleLabel">
        <property name="text">
         <string>Danh sách video</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="sortComboBox">
+       <property name="minimumSize">
+        <size>
+         <width>180</width>
+         <height>30</height>
+        </size>
+       </property>
+       <property name="placeholderText">
+        <string>Sắp xếp</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Sắp xếp theo tên (A-Z)</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Sắp xếp theo tên (Z-A)</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Kích thước (lớn → nhỏ)</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Kích thước (nhỏ → lớn)</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Thời lượng video</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Ngày tạo</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Trạng thái</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="searchLineEdit">
+       <property name="minimumSize">
+        <size>
+         <width>180</width>
+         <height>30</height>
+        </size>
+       </property>
+       <property name="placeholderText">
+        <string>🔍 Tìm kiếm...</string>
+       </property>
+       <property name="clearButtonEnabled">
+        <bool>true</bool>
        </property>
       </widget>
      </item>
@@ -1129,7 +1220,7 @@ QLabel.paginationInfo {
          <string>paginationInfo</string>
         </property>
         <property name="text">
-         <string>Hiển thị 1-10 / 24 videos</string>
+         <string>Hiển thị 1-10 trên tổng 24 videos, có 2 video trùng, có 2 đã tải lên</string>
         </property>
        </widget>
       </item>
