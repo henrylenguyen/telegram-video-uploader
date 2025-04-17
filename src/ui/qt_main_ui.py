@@ -1656,65 +1656,58 @@ class MainUI(QtWidgets.QMainWindow):
         """Load recent folders from config"""
         if not hasattr(self, 'recent_folders_combo'):
             return
-                
-        # Clear existing items except the first one (header)
+            
+        # Clear existing items first (except header)
         while self.recent_folders_combo.count() > 1:
             self.recent_folders_combo.removeItem(1)
         
-        # Try to get recent folders from config
+        # Try to load from app.config if available
         try:
             if hasattr(self, 'app') and hasattr(self.app, 'config'):
-                # Check if config is ConfigParser or dictionary
+                # Check if app.config is ConfigParser or dictionary
                 if hasattr(self.app.config, 'has_section') and callable(self.app.config.has_section):
                     # ConfigParser approach
                     if self.app.config.has_section('RECENT_FOLDERS'):
-                        # Load each folder from config
-                        for i in range(10):  # Load up to 10 recent folders
-                            key = f"folder_{i}"
-                            try:
-                                if self.app.config.has_option('RECENT_FOLDERS', key):
-                                    folder = self.app.config.get('RECENT_FOLDERS', key)
-                                    if folder and os.path.exists(folder):
-                                        self.recent_folders_combo.addItem(folder)
-                            except Exception as e:
-                                logger.error(f"Error loading folder {i} from config: {str(e)}")
-                
-                # Dictionary approach
-                elif isinstance(self.app.config, dict) and 'RECENT_FOLDERS' in self.app.config:
-                    recent_folders = self.app.config.get('RECENT_FOLDERS', {})
-                    if isinstance(recent_folders, dict):
-                        # Load each folder from config
-                        for i in range(10):  # Load up to 10 recent folders
-                            key = f"folder_{i}"
-                            if key in recent_folders:
-                                folder = recent_folders.get(key)
-                                if folder and os.path.exists(folder):
-                                    self.recent_folders_combo.addItem(folder)
-                
-                # If no RECENT_FOLDERS section exists yet and config_manager is available
-                elif hasattr(self.app, 'config_manager'):
-                    if isinstance(self.app.config, dict):
-                        self.app.config['RECENT_FOLDERS'] = {}
-                        self.app.config_manager.save_config(self.app.config)
-            
-            # Direct approach in case app or app.config is not available
-            else:
-                # Try to load directly from config.ini file
-                config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config.ini')
-                if os.path.exists(config_path):
-                    import configparser
-                    config = configparser.ConfigParser()
-                    config.read(config_path, encoding='utf-8')
-                    
-                    if 'RECENT_FOLDERS' in config:
+                        # Load folders (up to 10)
                         for i in range(10):
-                            key = f"folder_{i}"
-                            if config.has_option('RECENT_FOLDERS', key):
-                                folder = config.get('RECENT_FOLDERS', key)
-                                if folder and os.path.exists(folder):
-                                    self.recent_folders_combo.addItem(folder)
+                            option = f"folder_{i}"
+                            if self.app.config.has_option('RECENT_FOLDERS', option):
+                                folder = self.app.config.get('RECENT_FOLDERS', option)
+                                # Chỉ thêm các thư mục hợp lệ và tồn tại
+                                if folder and os.path.exists(folder) and "..." not in folder:
+                                    # Lưu trữ đường dẫn đầy đủ trong tooltip
+                                    index = self.recent_folders_combo.count()
+                                    # Tạo hiển thị rút gọn nếu cần
+                                    max_length = 30
+                                    display_text = folder
+                                    if len(folder) > max_length:
+                                        display_text = folder[:max_length-3] + "..."
+                                        
+                                    self.recent_folders_combo.addItem(display_text)
+                                    self.recent_folders_combo.setItemData(index, folder, Qt.ToolTipRole)
+                elif isinstance(self.app.config, dict):
+                    # Dictionary approach
+                    if 'RECENT_FOLDERS' in self.app.config:
+                        # Load folders (up to 10)
+                        for i in range(10):
+                            option = f"folder_{i}"
+                            if option in self.app.config['RECENT_FOLDERS']:
+                                folder = self.app.config['RECENT_FOLDERS'][option]
+                                # Chỉ thêm các thư mục hợp lệ và tồn tại
+                                if folder and os.path.exists(folder) and "..." not in folder:
+                                    # Lưu trữ đường dẫn đầy đủ trong tooltip
+                                    index = self.recent_folders_combo.count()
+                                    # Tạo hiển thị rút gọn nếu cần
+                                    max_length = 30
+                                    display_text = folder
+                                    if len(folder) > max_length:
+                                        display_text = folder[:max_length-3] + "..."
+                                        
+                                    self.recent_folders_combo.addItem(display_text)
+                                    self.recent_folders_combo.setItemData(index, folder, Qt.ToolTipRole)
         except Exception as e:
-            logger.error(f"Error loading recent folders from config: {str(e)}")
+            logger.error(f"Error loading recent folders: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def save_recent_folders_to_config(self):
         """Save recent folders to config"""
@@ -1735,10 +1728,15 @@ class MainUI(QtWidgets.QMainWindow):
                         if option.startswith('folder_'):
                             self.app.config.remove_option('RECENT_FOLDERS', option)
                     
-                    # Save current folders
+                    # Save current folders - always get the full path from item data
                     for i in range(1, min(self.recent_folders_combo.count(), 11)):
-                        folder = self.recent_folders_combo.itemText(i)
-                        self.app.config.set('RECENT_FOLDERS', f"folder_{i-1}", folder)
+                        # Get full path from tooltip data, or use displayed text if no tooltip
+                        full_path = self.recent_folders_combo.itemData(i, Qt.ToolTipRole)
+                        if not full_path or not isinstance(full_path, str):
+                            full_path = self.recent_folders_combo.itemText(i)
+                            
+                        # Save full path, not the truncated display text
+                        self.app.config.set('RECENT_FOLDERS', f"folder_{i-1}", full_path)
                     
                     # Save config if config_manager available
                     if hasattr(self.app, 'config_manager'):
@@ -1757,10 +1755,15 @@ class MainUI(QtWidgets.QMainWindow):
                         if key.startswith('folder_'):
                             del self.app.config['RECENT_FOLDERS'][key]
                     
-                    # Save current folders
+                    # Save current folders - always get the full path from item data
                     for i in range(1, min(self.recent_folders_combo.count(), 11)):
-                        folder = self.recent_folders_combo.itemText(i)
-                        self.app.config['RECENT_FOLDERS'][f"folder_{i-1}"] = folder
+                        # Get full path from tooltip data, or use displayed text if no tooltip
+                        full_path = self.recent_folders_combo.itemData(i, Qt.ToolTipRole)
+                        if not full_path or not isinstance(full_path, str):
+                            full_path = self.recent_folders_combo.itemText(i)
+                            
+                        # Save full path, not the truncated display text
+                        self.app.config['RECENT_FOLDERS'][f"folder_{i-1}"] = full_path
                     
                     # Save config
                     if hasattr(self.app, 'config_manager'):
@@ -1786,10 +1789,15 @@ class MainUI(QtWidgets.QMainWindow):
                     if key.startswith('folder_'):
                         del config['RECENT_FOLDERS'][key]
                 
-                # Save current folders
+                # Save current folders - always get the full path from item data
                 for i in range(1, min(self.recent_folders_combo.count(), 11)):
-                    folder = self.recent_folders_combo.itemText(i)
-                    config['RECENT_FOLDERS'][f"folder_{i-1}"] = folder
+                    # Get full path from tooltip data, or use displayed text if no tooltip
+                    full_path = self.recent_folders_combo.itemData(i, Qt.ToolTipRole)
+                    if not full_path or not isinstance(full_path, str):
+                        full_path = self.recent_folders_combo.itemText(i)
+                        
+                    # Save full path, not the truncated display text
+                    config['RECENT_FOLDERS'][f"folder_{i-1}"] = full_path
                 
                 # Write to file
                 with open(config_path, 'w', encoding='utf-8') as f:
@@ -1841,17 +1849,51 @@ class MainUI(QtWidgets.QMainWindow):
         if not hasattr(self, 'recent_folders_combo'):
             return
             
-        # Check if folder already exists
+        # Normalize folder path to handle different path formats
+        folder = os.path.normpath(folder)
+            
+        # Check if folder already exists by comparing full paths
         for i in range(1, self.recent_folders_combo.count()):
-            if self.recent_folders_combo.itemText(i) == folder:
-                # Move to top
-                self.recent_folders_combo.removeItem(i)
-                self.recent_folders_combo.insertItem(1, folder)
-                self.save_recent_folders_to_config()
+            # Get full path from tooltip data, or use displayed text if no tooltip
+            existing_path = self.recent_folders_combo.itemData(i, Qt.ToolTipRole)
+            if not existing_path or not isinstance(existing_path, str):
+                existing_path = self.recent_folders_combo.itemText(i)
+            
+            # Normalize existing path for comparison
+            existing_path = os.path.normpath(existing_path)
+            
+            # If the paths are the same, just move to top
+            if existing_path == folder:
+                logger.debug(f"Folder already exists in recent list: {folder}")
+                # Move to top if not already there
+                if i > 1:
+                    self.recent_folders_combo.removeItem(i)
+                    
+                    # Check if the folder path needs to be truncated for display
+                    max_length = 30
+                    display_text = folder
+                    if len(folder) > max_length:
+                        display_text = folder[:max_length-3] + "..."
+                        # Store full path in tooltip
+                        self.recent_folders_combo.insertItem(1, display_text)
+                        self.recent_folders_combo.setItemData(1, folder, Qt.ToolTipRole)
+                    else:
+                        self.recent_folders_combo.insertItem(1, folder)
+                    
+                    # Save updated order
+                    self.save_recent_folders_to_config()
                 return
         
-        # Add to top
-        self.recent_folders_combo.insertItem(1, folder)
+        # Add to top with proper display formatting
+        max_length = 30
+        display_text = folder
+        if len(folder) > max_length:
+            display_text = folder[:max_length-3] + "..."
+            # Store full path in tooltip
+            self.recent_folders_combo.insertItem(1, display_text)
+            self.recent_folders_combo.setItemData(1, folder, Qt.ToolTipRole)
+        else:
+            self.recent_folders_combo.insertItem(1, folder)
         
         # Limit to 5 recent folders
         while self.recent_folders_combo.count() > 6:
@@ -1860,40 +1902,74 @@ class MainUI(QtWidgets.QMainWindow):
         # Save to config
         self.save_recent_folders_to_config()
 
+    # Cờ
+    _is_loading_folder = False
+            
     def load_recent_folder(self, index):
         """Load folder from recent folders combo box"""
+        # Ngăn chặn vòng lặp khi event được gọi nhiều lần
+        if self._is_loading_folder:
+            return
+            
         if index > 0:  # Skip first item (header)
-            folder = self.recent_folders_combo.itemText(index)
-            
-            # Hiển thị tooltip đầy đủ đường dẫn
-            self.recent_folders_combo.setToolTip(folder)
-            
-            # Clear existing previews first
-            clear_video_preview(self)
-            
-            # Set folder path in the edit box
-            self.folder_path_edit.setText(folder)
-            
-            # Show loading overlay
-            self.loading_overlay.show()
-            QtWidgets.QApplication.processEvents()
-            
-            # Set active item with ellipsis if needed
-            max_length = 30
-            display_text = folder
-            if len(folder) > max_length:
-                display_text = folder[:max_length-3] + "..."
-                # Đặt tooltip đầy đủ đường dẫn cho item đã chọn
-                self.recent_folders_combo.setItemData(index, folder, Qt.ToolTipRole)
-            
-            # Giữ folder đã chọn hiển thị trong dropdown
-            self.recent_folders_combo.setItemText(index, display_text)
-            
-            # Refresh folder asynchronously
-            QtCore.QTimer.singleShot(100, self.refresh_folder_with_loading)
-            
-            # Giữ folder đã chọn trong dropdown để người dùng biết đang chọn cái nào
-            self.recent_folders_combo.setCurrentIndex(index)
+            try:
+                # Đánh dấu đang xử lý để tránh vòng lặp
+                self._is_loading_folder = True
+                
+                # Lấy đường dẫn đầy đủ từ tooltip data nếu có, nếu không thì sử dụng text hiển thị
+                full_path = self.recent_folders_combo.itemData(index, Qt.ToolTipRole)
+                if not full_path or not isinstance(full_path, str):
+                    full_path = self.recent_folders_combo.itemText(index)
+                    
+                # Kiểm tra xem đường dẫn có hợp lệ không (không chứa "...")
+                if "..." in full_path:
+                    # Hiển thị thông báo lỗi
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Lỗi đường dẫn",
+                        "Đường dẫn không hợp lệ do bị cắt ngắn. Vui lòng chọn thư mục khác."
+                    )
+                    return
+                    
+                # Clear existing previews first
+                clear_video_preview(self)
+                
+                # Set folder path in the edit box
+                self.folder_path_edit.setText(full_path)
+                
+                # Show loading overlay
+                self.loading_overlay.show()
+                QtWidgets.QApplication.processEvents()
+                
+                # Lưu lại thứ tự được chọn
+                current_selected_index = index
+                
+                # Tạm thời ngắt kết nối tín hiệu để tránh vòng lặp
+                if hasattr(self, 'recent_folders_combo'):
+                    self.recent_folders_combo.blockSignals(True)
+                    
+                    # Tạo danh sách vị trí mới (không tự động di chuyển lên đầu)
+                    # Chỉ cập nhật hiển thị nếu cần
+                    max_length = 30
+                    display_text = full_path
+                    if len(full_path) > max_length:
+                        display_text = full_path[:max_length-3] + "..."
+                        # Đặt tooltip đầy đủ đường dẫn cho item đã chọn
+                        self.recent_folders_combo.setItemData(index, full_path, Qt.ToolTipRole)
+                    
+                    # Cập nhật hiển thị của item đã chọn nếu cần
+                    current_text = self.recent_folders_combo.itemText(index)
+                    if current_text != display_text:
+                        self.recent_folders_combo.setItemText(index, display_text)
+                    
+                    # Kích hoạt lại tín hiệu
+                    self.recent_folders_combo.blockSignals(False)
+                
+                # Refresh folder
+                QtCore.QTimer.singleShot(100, self.refresh_folder_with_loading)
+            finally:
+                # Đảm bảo rằng cờ luôn được đặt lại
+                self._is_loading_folder = False
 
     def count_video_files(self, folder_path):
         """

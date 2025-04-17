@@ -377,9 +377,13 @@ def clear_video_preview(main_ui):
             for widget in items_to_remove:
                 widget.deleteLater()
         
-        # Reset play button if exists
-        if hasattr(main_ui, 'play_button'):
-            main_ui.play_button.setStyleSheet("")
+        # Reset play button if exists and is valid
+        if hasattr(main_ui, 'play_button') and main_ui.play_button:
+            try:
+                main_ui.play_button.setStyleSheet("")
+            except RuntimeError as e:
+                # Nếu đối tượng đã bị xóa, bỏ qua không gây lỗi
+                logger.debug(f"PlayButton có thể đã bị xóa: {e}")
         
         # Clear information fields
         fields = ['fileNameValueLabel', 'durationValueLabel', 'resolutionValueLabel', 
