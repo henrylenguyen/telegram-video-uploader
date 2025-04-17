@@ -7,6 +7,9 @@ import logging
 import configparser
 import traceback
 import time
+import tempfile
+import math
+import numpy as np
 from PyQt5 import QtWidgets, QtCore, QtGui, uic
 from PyQt5.QtGui import QPainter, QColor, QPen, QPolygonF
 from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal
@@ -24,7 +27,8 @@ from utils.main_tab import (
     display_video_info,
     display_error_message,
     clear_video_preview,
-    clear_video_frames
+    clear_video_frames,
+    update_video_preview_ui
 )
 
 # Configure logging
@@ -32,38 +36,218 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("MainUI")
 
 class LoadingOverlay(QtWidgets.QWidget):
-    """Loading overlay widget to show during long operations"""
+    """Loading overlay với animation hiệu ứng tốt hơn"""
     
     def __init__(self, parent=None):
         super(LoadingOverlay, self).__init__(parent)
         
-        # Make the overlay semi-transparent
-        self.setStyleSheet("background-color: rgba(0, 0, 0, 150);")
+        # Làm cho overlay bán trong suốt với màu nền đẹp
+        self.setStyleSheet("""
+            background-color: rgba(0, 0, 0, 150);
+            border-radius: 10px;
+        """)
         
-        # Create loading spinner
-        self.spinner = QtWidgets.QLabel(self)
-        self.spinner.setAlignment(Qt.AlignCenter)
-        self.spinner.setStyleSheet("background-color: transparent; color: white; font-size: 16px;")
-        self.spinner.setText("Loading...")
+        # Tạo layout
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setAlignment(QtCore.Qt.AlignCenter)
         
-        # Center the spinner
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.spinner, 0, Qt.AlignCenter)
+        # Tạo container cho spinner và label
+        self.container = QtWidgets.QWidget()
+        self.container.setFixedSize(400, 200)
+        self.container.setStyleSheet("""
+            background-color: rgba(255, 255, 255, 90%);
+            border-radius: 10px;
+            border: 1px solid #3498DB;
+        """)
         
-        # Hide by default
+        # Layout cho container
+        container_layout = QtWidgets.QVBoxLayout(self.container)
+        container_layout.setContentsMargins(20, 20, 20, 20)
+        container_layout.setAlignment(QtCore.Qt.AlignCenter)
+        
+        # Tạo label cho spinner
+        self.spinner_label = QtWidgets.QLabel()
+        self.spinner_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.spinner_label.setFixedSize(50, 50)
+        self.spinner_label.setStyleSheet("background-color: transparent;")
+        
+        # Tạo spinner animation
+        self.spinner_movie = QtGui.QMovie()
+        self.spinner_movie.setFileName(self.get_spinner_path())
+        self.spinner_movie.setScaledSize(QtCore.QSize(50, 50))
+        self.spinner_label.setMovie(self.spinner_movie)
+        
+        # Tạo label cho message
+        self.message_label = QtWidgets.QLabel("Đang tải...")
+        self.message_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.message_label.setStyleSheet("""
+            color: #333333;
+            font-size: 16px;
+            font-weight: bold;
+            background-color: transparent;
+        """)
+        self.message_label.setWordWrap(True)
+        
+        # Thêm các widget vào container
+        container_layout.addWidget(self.spinner_label, alignment=QtCore.Qt.AlignCenter)
+        container_layout.addWidget(self.message_label, alignment=QtCore.Qt.AlignCenter)
+        
+        # Thêm container vào layout chính
+        self.layout.addWidget(self.container, alignment=QtCore.Qt.AlignCenter)
+        
+        # Ẩn mặc định
         self.hide()
+        
+        # Timer để cập nhật spinner khi không có file
+        self.dots_count = 0
+        self.dots_timer = None
+
+    def get_spinner_path(self):
+        """Tạo hoặc tìm spinner GIF ở thư mục tạm"""
+        try:
+            # Sử dụng spinner có sẵn nếu có
+            import os
+            import tempfile
+            import math
+            import numpy as np
+            
+            # Kiểm tra thư mục tạm cho spinner
+            temp_dir = os.path.join(tempfile.gettempdir(), "telegram_uploader")
+            if not os.path.exists(temp_dir):
+                os.makedirs(temp_dir)
+            
+            spinner_path = os.path.join(temp_dir, "spinner.gif")
+            
+            # Kiểm tra nếu spinner đã tồn tại
+            if os.path.exists(spinner_path):
+                return spinner_path
+            
+            # Tạo spinner đơn giản bằng PyQt
+            from PyQt5.QtCore import Qt, QSize
+            from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QImage
+            
+            # Tạo spinner GIF giả lập đơn giản
+            size = 40
+            frames = 8
+            images = []
+            
+            for i in range(frames):
+                # Tạo QImage mới cho mỗi frame
+                img = QImage(size, size, QImage.Format_ARGB32)
+                img.fill(Qt.transparent)
+                
+                # Tạo painter và vẽ spinner
+                painter = QPainter(img)
+                painter.setRenderHint(QPainter.Antialiasing)
+                
+                # Tính toán các thông số cho spinner
+                center = size / 2
+                radius = size / 2 - 5
+                start_angle = i * (360 / frames) * 16  # QPainter sử dụng 1/16 độ
+                
+                # Vẽ đường tròn nền mờ
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(QColor(200, 200, 200, 50)))
+                painter.drawEllipse(5, 5, size - 10, size - 10)
+                
+                # Vẽ phần spinner quay
+                gradient_colors = [(33, 150, 243, 50), (33, 150, 243, 255)]
+                for j in range(5):  # 5 chấm gradient
+                    angle = start_angle - j * 30 * 16
+                    x = center + radius * 0.8 * math.cos(math.radians(angle / 16))
+                    y = center + radius * 0.8 * math.sin(math.radians(angle / 16))
+                    
+                    alpha = 255 - j * 40  # Giảm dần độ mờ
+                    color = QColor(33, 150, 243, max(50, alpha))
+                    
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QBrush(color))
+                    painter.drawEllipse(int(x - 5 + j), int(y - 5 + j), 10 - j, 10 - j)
+                
+                painter.end()
+                images.append(img)
+            
+            # Lưu spinner thành GIF
+            import imageio
+            
+            # Chuyển đổi QImage sang numpy array
+            numpy_images = []
+            for img in images:
+                buffer = img.bits().asstring(img.width() * img.height() * 4)
+                numpy_img = np.frombuffer(buffer, dtype=np.uint8).reshape((img.height(), img.width(), 4))
+                numpy_img = numpy_img[:, :, [2, 1, 0, 3]]  # BGRA to RGBA
+                numpy_images.append(numpy_img)
+            
+            # Lưu thành GIF
+            imageio.mimsave(spinner_path, numpy_images, duration=0.1, loop=0)
+            
+            return spinner_path
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi tạo spinner: {str(e)}")
+            # Trả về None để sử dụng hiệu ứng chấm thay thế
+            return None
+    
+    def set_message(self, message):
+        """Thiết lập thông báo hiển thị"""
+        self.message_label.setText(message)
+    
+    def show_spinner(self, show=True):
+        """Hiển thị hoặc ẩn spinner"""
+        if show:
+            # Hiển thị spinner nếu có file
+            if self.spinner_movie.fileName():
+                self.spinner_movie.start()
+                self.spinner_label.show()
+            else:
+                # Sử dụng hiệu ứng chấm nếu không có file
+                if self.dots_timer is None:
+                    self.dots_timer = self.startTimer(500)  # Cập nhật mỗi 0.5 giây
+                self.spinner_label.setText("⏳")
+                self.spinner_label.setStyleSheet("font-size: 24px; color: #3498DB;")
+                self.spinner_label.show()
+        else:
+            # Dừng spinner
+            if self.spinner_movie.fileName():
+                self.spinner_movie.stop()
+            
+            # Dừng timer hiệu ứng chấm
+            if self.dots_timer is not None:
+                self.killTimer(self.dots_timer)
+                self.dots_timer = None
+            
+            self.spinner_label.hide()
+    
+    def timerEvent(self, event):
+        """Xử lý sự kiện timer cho hiệu ứng chấm"""
+        if self.dots_timer is not None and event.timerId() == self.dots_timer:
+            self.dots_count = (self.dots_count + 1) % 4
+            dots = "." * self.dots_count
+            
+            # Thay đổi biểu tượng spinner
+            if self.dots_count % 2 == 0:
+                self.spinner_label.setText("⏳")
+            else:
+                self.spinner_label.setText("⌛")
     
     def showEvent(self, event):
-        """Handle show event to center the spinner"""
-        self.spinner.setGeometry(0, 0, self.width(), self.height())
+        """Xử lý sự kiện hiện overlay"""
+        # Bắt đầu spinner nếu có
+        self.show_spinner(True)
         super(LoadingOverlay, self).showEvent(event)
     
+    def hideEvent(self, event):
+        """Xử lý sự kiện ẩn overlay"""
+        # Dừng spinner
+        self.show_spinner(False)
+        super(LoadingOverlay, self).hideEvent(event)
+    
     def resizeEvent(self, event):
-        """Handle resize event to update overlay size"""
-        self.spinner.setGeometry(0, 0, self.width(), self.height())
+        """Xử lý sự kiện thay đổi kích thước"""
+        # Cập nhật kích thước cho container
+        self.container.setFixedSize(min(self.width() - 40, 400), 200)
         super(LoadingOverlay, self).resizeEvent(event)
-
 class PlayButton(QtWidgets.QPushButton):
     """Custom play button with SVG-like triangle using QPainter"""
     
@@ -188,6 +372,290 @@ class MainUI(QtWidgets.QMainWindow):
             logger.error(f"Error initializing UI: {str(e)}")
             logger.error(traceback.format_exc())
             QtWidgets.QMessageBox.critical(self, "Error", f"Error initializing UI: {str(e)}")
+    
+    def update_video_preview_ui(self):
+        """
+        Cập nhật UI video_preview để thêm ScrollArea cho thông tin video
+        """
+        if not hasattr(self, 'video_preview'):
+            return
+            
+        try:
+            # Tìm info panel hiện tại
+            info_panel = self.video_preview.findChild(QtWidgets.QWidget, "infoPanel")
+            if not info_panel:
+                logger.error("Không tìm thấy info panel")
+                return
+            
+            # Lấy form layout hiện tại của info panel
+            form_layout = info_panel.layout()
+            if not form_layout or not isinstance(form_layout, QtWidgets.QFormLayout):
+                logger.error("Form layout không hợp lệ")
+                return
+            
+            # Tạo ScrollArea mới
+            scroll_area = QtWidgets.QScrollArea()
+            scroll_area.setObjectName("infoScrollArea")
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+            scroll_area.setStyleSheet("""
+                QScrollArea {
+                    background-color: transparent;
+                    border: none;
+                }
+                
+                QScrollBar:vertical {
+                    border: none;
+                    background: #F1F5F9;
+                    width: 8px;
+                    border-radius: 4px;
+                }
+                
+                QScrollBar::handle:vertical {
+                    background: #CBD5E1;
+                    min-height: 20px;
+                    border-radius: 4px;
+                }
+                
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    height: 0px;
+                }
+            """)
+            
+            # Tạo widget mới cho nội dung
+            content_widget = QtWidgets.QWidget()
+            content_widget.setObjectName("infoContent")
+            
+            # Chuyển layout từ info panel sang content widget
+            new_form_layout = QtWidgets.QFormLayout(content_widget)
+            new_form_layout.setHorizontalSpacing(30)
+            new_form_layout.setVerticalSpacing(15)
+            new_form_layout.setContentsMargins(15, 15, 15, 15)
+            
+            # Tạo các label mới với nội dung giới hạn chiều rộng
+            fields = [
+                ('fileNameLabel', 'fileNameValueLabel'), 
+                ('durationLabel', 'durationValueLabel'),
+                ('resolutionLabel', 'resolutionValueLabel'),
+                ('sizeLabel', 'sizeValueLabel'),
+                ('statusLabel', 'statusValueLabel'),
+                ('codecLabel', 'codecValueLabel')
+            ]
+            
+            for label_name, value_name in fields:
+                label = info_panel.findChild(QtWidgets.QLabel, label_name)
+                value = info_panel.findChild(QtWidgets.QLabel, value_name)
+                
+                if label and value:
+                    # Tạo bản sao của label
+                    new_label = QtWidgets.QLabel(label.text())
+                    new_label.setObjectName(label_name)
+                    new_label.setProperty("class", "infoLabel")
+                    
+                    # Tạo bản sao của value label với giới hạn chiều rộng
+                    new_value = QtWidgets.QLabel(value.text())
+                    new_value.setObjectName(value_name)
+                    new_value.setProperty("class", "valueLabel")
+                    new_value.setWordWrap(True)  # Cho phép ngắt dòng
+                    new_value.setMaximumWidth(250)  # Giới hạn chiều rộng tối đa
+                    
+                    # Thiết lập tooltip cho hiển thị đầy đủ nội dung
+                    if value.text():
+                        new_value.setToolTip(value.text())
+                    
+                    # Áp dụng stylesheet tương ứng
+                    if value_name == "statusValueLabel" and value.styleSheet():
+                        new_value.setStyleSheet(value.styleSheet())
+                    
+                    # Thêm vào layout mới
+                    new_form_layout.addRow(new_label, new_value)
+            
+            # Đặt widget nội dung vào scroll area
+            scroll_area.setWidget(content_widget)
+            
+            # Xóa widget info panel cũ và thay bằng scroll area
+            parent_layout = info_panel.parentWidget().layout()
+            parent_index = parent_layout.indexOf(info_panel)
+            
+            # Xóa widget cũ khỏi layout
+            parent_layout.removeWidget(info_panel)
+            info_panel.setParent(None)
+            
+            # Thêm scroll area vào vị trí cũ
+            parent_layout.insertWidget(parent_index, scroll_area)
+            
+            # Lưu tham chiếu mới
+            self.info_scroll_area = scroll_area
+            self.info_content = content_widget
+            
+            logger.info("Đã cập nhật thành công UI thông tin video với ScrollArea")
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi cập nhật UI thông tin video: {str(e)}")
+            logger.error(traceback.format_exc())
+    
+    def update_pagination_buttons(self, total_pages):
+        """
+        Cập nhật nút phân trang dựa trên tổng số trang - CẢI TIẾN
+        
+        Args:
+            total_pages: Tổng số trang
+        """
+        if not (hasattr(self, 'page1_button') and hasattr(self, 'page2_button')):
+            return
+        
+        # Tìm kiếm container cho phân trang
+        pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
+        if not pagination_frame:
+            logger.error("Không tìm thấy pagination frame")
+            return
+        
+        # Lấy hoặc tạo layout ngang cho nút phân trang
+        pagination_layout = None
+        for i in range(pagination_frame.layout().count()):
+            item = pagination_frame.layout().itemAt(i)
+            if isinstance(item.layout(), QtWidgets.QHBoxLayout):
+                # Tìm thấy layout ngang chứa nút phân trang
+                pagination_layout = item.layout()
+                break
+        
+        if not pagination_layout:
+            logger.error("Không tìm thấy layout chứa nút phân trang")
+            return
+        
+        # Xóa tất cả nút phân trang hiện tại ngoại trừ nút điều hướng (first, prev, next, last)
+        buttons_to_remove = []
+        for i in range(pagination_layout.count()):
+            item = pagination_layout.itemAt(i)
+            if item.widget() and isinstance(item.widget(), QtWidgets.QPushButton):
+                btn = item.widget()
+                if btn not in [self.first_page_button, self.prev_page_button, 
+                            self.next_page_button, self.last_page_button]:
+                    buttons_to_remove.append(btn)
+        
+        # Xóa các nút phân trang cũ
+        for btn in buttons_to_remove:
+            pagination_layout.removeWidget(btn)
+            btn.deleteLater()
+        
+        # Xác định số trang sẽ hiển thị và vị trí nút "..."
+        max_visible_pages = 5  # Tối đa số trang hiển thị (không tính nút điều hướng)
+        page_buttons = []
+        
+        if total_pages <= max_visible_pages:
+            # Hiển thị tất cả trang nếu tổng số <= max_visible_pages
+            visible_pages = list(range(1, total_pages + 1))
+            show_left_ellipsis = False
+            show_right_ellipsis = False
+        else:
+            # Tính toán trang hiển thị khi có nhiều trang
+            if self.current_page <= 3:
+                # Đang ở gần trang đầu
+                visible_pages = list(range(1, min(max_visible_pages, total_pages) + 1))
+                show_left_ellipsis = False
+                show_right_ellipsis = total_pages > max_visible_pages
+            elif self.current_page >= total_pages - 2:
+                # Đang ở gần trang cuối
+                visible_pages = list(range(max(1, total_pages - max_visible_pages + 1), total_pages + 1))
+                show_left_ellipsis = total_pages > max_visible_pages
+                show_right_ellipsis = False
+            else:
+                # Đang ở giữa
+                visible_pages = list(range(self.current_page - 1, min(self.current_page + 3, total_pages + 1)))
+                show_left_ellipsis = self.current_page > 3
+                show_right_ellipsis = self.current_page < total_pages - 2
+        
+        # Tìm vị trí để chèn nút trang
+        insert_pos = pagination_layout.indexOf(self.next_page_button)
+        
+        # Thêm nút "..." bên trái nếu cần
+        if show_left_ellipsis:
+            ellipsis_left = QtWidgets.QPushButton("...")
+            ellipsis_left.setFixedSize(30, 30)
+            ellipsis_left.setProperty("class", "pageButton")
+            ellipsis_left.setCursor(QtCore.Qt.PointingHandCursor)
+            ellipsis_left.clicked.connect(lambda: self.go_to_page(max(1, self.current_page - max_visible_pages)))
+            pagination_layout.insertWidget(insert_pos, ellipsis_left)
+        
+        # Tạo và thêm các nút trang
+        for page_num in visible_pages:
+            page_button = QtWidgets.QPushButton(str(page_num))
+            page_button.setFixedSize(30, 30)
+            page_button.setProperty("class", "pageButton" if page_num != self.current_page else "pageButtonActive")
+            page_button.setCursor(QtCore.Qt.PointingHandCursor)
+            if page_num == self.current_page:
+                page_button.setStyleSheet("background-color: #3498DB; color: white;")
+            
+            # Kết nối sự kiện
+            page_button.clicked.connect(lambda checked, p=page_num: self.go_to_page(p))
+            
+            # Thêm vào layout
+            pagination_layout.insertWidget(insert_pos, page_button)
+            page_buttons.append(page_button)
+        
+        # Thêm nút "..." bên phải nếu cần
+        if show_right_ellipsis:
+            ellipsis_right = QtWidgets.QPushButton("...")
+            ellipsis_right.setFixedSize(30, 30)
+            ellipsis_right.setProperty("class", "pageButton")
+            ellipsis_right.setCursor(QtCore.Qt.PointingHandCursor)
+            ellipsis_right.clicked.connect(lambda: self.go_to_page(min(total_pages, self.current_page + max_visible_pages)))
+            pagination_layout.insertWidget(insert_pos, ellipsis_right)
+        
+        # Lưu trữ tham chiếu đến các nút trang
+        self.page_buttons = page_buttons
+        
+        # Cập nhật trạng thái các nút điều hướng
+        self.prev_page_button.setEnabled(self.current_page > 1)
+        self.next_page_button.setEnabled(self.current_page < total_pages)
+        self.first_page_button.setEnabled(self.current_page > 1)
+        self.last_page_button.setEnabled(self.current_page < total_pages)
+        
+        # Cập nhật hàm cho nút Last để nhảy đến trang cuối
+        if hasattr(self.last_page_button, 'clicked'):
+            self.last_page_button.clicked.disconnect()
+        self.last_page_button.clicked.connect(lambda: self.go_to_page(total_pages))
+
+    def initialize_sort_dropdown(self):
+        """
+        Thiết lập dropdown sắp xếp video với tùy chọn mặc định
+        """
+        if not hasattr(self, 'sort_combo_box'):
+            return
+        
+        try:
+            # Xóa tất cả mục hiện tại
+            self.sort_combo_box.clear()
+            
+            # Thêm các tùy chọn sắp xếp
+            sort_options = [
+                "Sắp xếp theo tên (A-Z)",  # Mặc định
+                "Sắp xếp theo tên (Z-A)",
+                "Kích thước (lớn → nhỏ)",
+                "Kích thước (nhỏ → lớn)",
+                "Thời lượng video (dài → ngắn)",
+                "Thời lượng video (ngắn → dài)",
+                "Ngày tạo (mới → cũ)",
+                "Ngày tạo (cũ → mới)",
+                "Trạng thái"
+            ]
+            
+            for option in sort_options:
+                self.sort_combo_box.addItem(option)
+            
+            # Thiết lập tùy chọn mặc định (A-Z)
+            self.sort_combo_box.setCurrentIndex(0)
+            
+            # Kết nối sự kiện thay đổi
+            self.sort_combo_box.currentIndexChanged.connect(self.sort_videos)
+            
+            # Áp dụng sắp xếp mặc định
+            self.sort_videos(0)
+            
+            logger.info("Đã thiết lập dropdown sắp xếp thành công")
+        except Exception as e:
+            logger.error(f"Lỗi khi thiết lập dropdown sắp xếp: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def apply_global_stylesheet(self):
         """Apply global stylesheet to maintain the beautiful design"""
@@ -1427,56 +1895,118 @@ class MainUI(QtWidgets.QMainWindow):
             # Giữ folder đã chọn trong dropdown để người dùng biết đang chọn cái nào
             self.recent_folders_combo.setCurrentIndex(index)
 
-    def refresh_folder_with_loading(self):
-        """Refresh folder with loading indicator"""
+    def count_video_files(self, folder_path):
+        """
+        Đếm số lượng file video trong thư mục
+        
+        Args:
+            folder_path: Đường dẫn thư mục
+            
+        Returns:
+            int: Số lượng file video
+        """
+        video_extensions = ['.mp4', '.avi', '.mkv', '.mov', '.webm', '.m4v', '.flv', '.wmv']
+        count = 0
+        
         try:
-            # Set the cursor to wait
-            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-            
-            # Clear existing previews first
-            clear_video_preview(self)
-            
-            # Refresh folder
-            self.refresh_folder()
-            
-            # Reset cursor
-            QtWidgets.QApplication.restoreOverrideCursor()
-            
-            # Hide loading overlay
-            self.loading_overlay.hide()
+            for root, _, files in os.walk(folder_path):
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in video_extensions:
+                        count += 1
         except Exception as e:
-            logger.error(f"Error in refresh_folder_with_loading: {str(e)}")
-            logger.error(traceback.format_exc())
-            
-            # Reset cursor and hide loading overlay in case of error
-            QtWidgets.QApplication.restoreOverrideCursor()
-            self.loading_overlay.hide()
+            logger.error(f"Lỗi khi đếm file video: {str(e)}")
+        
+        return count
 
+    def check_ffmpeg_installed(self):
+        """
+        Kiểm tra xem FFmpeg có được cài đặt không
+        
+        Returns:
+            bool: True nếu FFmpeg được cài đặt, ngược lại False
+        """
+        try:
+            # Thử chạy lệnh ffmpeg -version
+            import subprocess
+            result = subprocess.run(
+                ["ffmpeg", "-version"], 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                timeout=2
+            )
+            return result.returncode == 0
+        except:
+            return False
+    
     def refresh_folder(self):
-        """Refresh video list from current folder"""
+        """Refresh danh sách video từ thư mục hiện tại - CẢI TIẾN"""
         folder_path = self.folder_path_edit.text()
         if not folder_path:
             return
-            
-        # Clear video preview first
+                
+        # Xóa thông tin video và frame hiện tại
         clear_video_preview(self)
+        clear_video_frames(self)
         
-        # Show busy cursor
-        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        # Reset selected video
+        self.selected_video = None
+        
+        # Hiển thị overlay loading
+        self.show_loading_overlay("Đang quét thư mục video...", show_spinner=True)
+        
+        # Sử dụng QTimer để tránh đóng băng UI
+        QtCore.QTimer.singleShot(100, self.refresh_folder_with_loading)
+
+    def show_loading_overlay(self, message="Đang tải...", show_spinner=True):
+        """
+        Hiển thị overlay loading với hiệu ứng nâng cao
+        
+        Args:
+            message: Thông báo hiển thị
+            show_spinner: Có hiển thị spinner hay không
+        """
+        # Đảm bảo overlay đã được tạo
+        if not hasattr(self, 'loading_overlay') or not self.loading_overlay:
+            self.loading_overlay = LoadingOverlay(self.central_widget)
+        
+        # Cập nhật kích thước
+        self.loading_overlay.resize(self.central_widget.size())
+        
+        # Thiết lập thông báo
+        self.loading_overlay.set_message(message)
+        
+        # Bật/tắt spinner
+        self.loading_overlay.show_spinner(show_spinner)
+        
+        # Hiển thị overlay
+        self.loading_overlay.show()
+        
+        # Cập nhật UI ngay lập tức
         QtWidgets.QApplication.processEvents()
-        
+
+    def refresh_folder_with_loading(self):
+        """Làm mới thư mục với hiệu ứng loading - CẢI TIẾN"""
         try:
-            # Count files in folder 
-            video_count = 0
-            for _, _, files in os.walk(folder_path):
-                for file in files:
-                    ext = os.path.splitext(file)[1].lower()
-                    if ext in ['.mp4', '.avi', '.mkv', '.mov', '.webm', '.m4v', '.flv', '.wmv']:
-                        video_count += 1
+            # Đặt con trỏ wait
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
             
-            # If there are many files, show a progress message and process in chunks
+            folder_path = self.folder_path_edit.text()
+            
+            # Hiển thị đang quét video
+            self.loading_overlay.set_message(f"Đang quét video trong thư mục...\n{folder_path}")
+            QtWidgets.QApplication.processEvents()
+            
+            # Đếm số file trong thư mục 
+            video_count = self.count_video_files(folder_path)
+            
+            # Hiển thị số lượng video đã tìm thấy
+            self.loading_overlay.set_message(f"Đã tìm thấy {video_count} video.\nĐang phân tích...")
+            QtWidgets.QApplication.processEvents()
+            
+            # Nếu có nhiều file, xử lý từng batch
             if video_count > 100:
-                # Create progress dialog
+                # Tạo progress dialog
                 progress_dialog = QtWidgets.QProgressDialog(
                     f"Đang quét {video_count} video trong thư mục...", 
                     "Hủy", 0, 100, self
@@ -1485,10 +2015,10 @@ class MainUI(QtWidgets.QMainWindow):
                 progress_dialog.setWindowModality(Qt.WindowModal)
                 progress_dialog.show()
                 
-                # Use the utility function to refresh video list with progress reporting
+                # Sử dụng hàm tiện ích để làm mới danh sách video với báo cáo tiến trình
                 self.all_videos = []
                 
-                # Process files in batches
+                # Xử lý file theo batch
                 total_files = 0
                 for root, _, files in os.walk(folder_path):
                     for file in files:
@@ -1514,6 +2044,10 @@ class MainUI(QtWidgets.QMainWindow):
                             progress = int((processed_files / total_files) * 100)
                             progress_dialog.setValue(progress)
                             
+                            # Cập nhật loading overlay
+                            self.loading_overlay.set_message(f"Đã quét {processed_files}/{total_files} video...")
+                            QtWidgets.QApplication.processEvents()
+                            
                             if progress_dialog.wasCanceled():
                                 break
                         
@@ -1525,33 +2059,45 @@ class MainUI(QtWidgets.QMainWindow):
                 
                 progress_dialog.close()
             else:
-                # Use the utility function to refresh video list
+                # Sử dụng hàm tiện ích để làm mới danh sách video
                 self.all_videos = refresh_video_list(self, folder_path)
             
-            # Update videos dictionary
+            # Kiểm tra nếu có FFmpeg để hiển thị frames
+            has_ffmpeg = self.check_ffmpeg_installed()
+            if not has_ffmpeg:
+                self.loading_overlay.set_message("Đang hoàn tất... (FFmpeg không có sẵn, không thể trích xuất khung hình)")
+                QtWidgets.QApplication.processEvents()
+                time.sleep(1)  # Cho phép người dùng đọc thông báo
+            
+            # Cập nhật từ điển video
             self.videos = {}
             for video in self.all_videos:
                 self.videos[video["name"]] = video["path"]
             
-            # Reset selected video
-            self.selected_video = None
-            
-            # Reset pagination to first page
+            # Reset phân trang về trang đầu tiên
             self.current_page = 1
             
-            # Reset selection counters
+            # Reset bộ đếm lựa chọn
             self.selected_video_count = 0
             self.selected_videos_size = 0
             
-            # Update UI
+            # Cập nhật UI
             self.update_video_list_ui()
+            
+            # Lưu thư mục vào danh sách gần đây
+            self.add_to_recent_folders(folder_path)
+            
         except Exception as e:
-            logger.error(f"Error refreshing folder: {str(e)}")
+            logger.error(f"Lỗi khi làm mới thư mục: {str(e)}")
             logger.error(traceback.format_exc())
+            
+            # Hiển thị thông báo lỗi
+            QtWidgets.QMessageBox.critical(self, "Lỗi", f"Không thể quét thư mục: {str(e)}")
         finally:
-            # Restore cursor
+            # Khôi phục con trỏ và ẩn loading overlay
             QtWidgets.QApplication.restoreOverrideCursor()
-
+            self.loading_overlay.hide()
+            
     def update_video_list_ui(self):
         """Update video list UI with current videos"""
         if not hasattr(self, 'video_list'):
@@ -1637,51 +2183,6 @@ class MainUI(QtWidgets.QMainWindow):
             size_str = self.format_file_size(total_size)
             self.folder_stats_label.setText(f"Tổng dung lượng: {size_str} | {len(self.all_videos)} videos")
 
-    def update_pagination_buttons(self, total_pages):
-        """Update pagination buttons based on total pages"""
-        if not (hasattr(self, 'page1_button') and hasattr(self, 'page2_button')):
-            return
-            
-        # Update visibility and appearance of page buttons
-        self.page1_button.setVisible(total_pages > 0)
-        self.page2_button.setVisible(total_pages > 1)
-        
-        # Update page button visibility for higher page counts
-        if total_pages > 2:
-            self.page2_button.setText("2")  # Make sure it says "2"
-            
-            # Show page buttons for current pages
-            if self.current_page > 2:
-                self.page2_button.setText(str(self.current_page))
-        
-        # Update active page indicators
-        self.page1_button.setProperty("class", "pageButton")
-        self.page2_button.setProperty("class", "pageButton")
-        
-        # Set styles for page buttons
-        if self.current_page == 1:
-            self.page1_button.setProperty("class", "pageButtonActive")
-            self.page1_button.setStyleSheet("background-color: #3498DB; color: white;")
-            self.page2_button.setStyleSheet("")
-        elif self.current_page == 2:
-            self.page2_button.setProperty("class", "pageButtonActive")
-            self.page2_button.setStyleSheet("background-color: #3498DB; color: white;")
-            self.page1_button.setStyleSheet("")
-        elif self.current_page > 2:
-            # If we're showing page numbers beyond 2, highlight the 2nd button (which now shows current page)
-            self.page2_button.setProperty("class", "pageButtonActive")
-            self.page2_button.setStyleSheet("background-color: #3498DB; color: white;")
-            self.page1_button.setStyleSheet("")
-        
-        # Update navigation buttons
-        if hasattr(self, 'prev_page_button') and hasattr(self, 'next_page_button'):
-            self.prev_page_button.setEnabled(self.current_page > 1)
-            self.next_page_button.setEnabled(self.current_page < total_pages)
-            
-            if hasattr(self, 'first_page_button') and hasattr(self, 'last_page_button'):
-                self.first_page_button.setEnabled(self.current_page > 1)
-                self.last_page_button.setEnabled(self.current_page < total_pages)
-
     def go_to_page(self, page):
         """Go to specific page"""
         items_per_page = 10
@@ -1734,25 +2235,59 @@ class MainUI(QtWidgets.QMainWindow):
         self.all_videos = saved_videos
 
     def sort_videos(self, index):
-        """Sort videos by selected criteria"""
-        if index == 0:  # Name (A-Z)
-            self.all_videos.sort(key=lambda v: v["name"].lower())
-        elif index == 1:  # Name (Z-A)
-            self.all_videos.sort(key=lambda v: v["name"].lower(), reverse=True)
-        elif index == 2:  # Size (large to small)
-            self.all_videos.sort(key=lambda v: v.get("file_size_bytes", 0), reverse=True)
-        elif index == 3:  # Size (small to large)
-            self.all_videos.sort(key=lambda v: v.get("file_size_bytes", 0))
-        elif index == 4:  # Duration
-            self.all_videos.sort(key=lambda v: v.get("duration", 0))
-        elif index == 6:  # Status
-            self.all_videos.sort(key=lambda v: v["status"])
+        """
+        Sắp xếp video theo tiêu chí đã chọn - ĐÃ CẢI TIẾN
         
-        # Reset to first page
-        self.current_page = 1
+        Args:
+            index: Chỉ số tùy chọn sắp xếp trong dropdown
+        """
+        if not hasattr(self, 'all_videos') or not self.all_videos:
+            return
         
-        # Update UI
-        self.update_video_list_ui()
+        try:
+            logger.info(f"Sắp xếp videos theo tùy chọn: {index}")
+            
+            # Lấy text option từ combobox nếu có
+            sort_text = self.sort_combo_box.currentText() if hasattr(self, 'sort_combo_box') else ""
+            
+            # Sắp xếp dựa trên tùy chọn
+            if index == 0 or "tên (A-Z)" in sort_text:  # Tên (A-Z)
+                self.all_videos.sort(key=lambda v: v.get("name", "").lower())
+            elif index == 1 or "tên (Z-A)" in sort_text:  # Tên (Z-A)
+                self.all_videos.sort(key=lambda v: v.get("name", "").lower(), reverse=True)
+            elif index == 2 or "lớn → nhỏ" in sort_text:  # Kích thước (lớn → nhỏ)
+                self.all_videos.sort(key=lambda v: v.get("file_size_bytes", 0), reverse=True)
+            elif index == 3 or "nhỏ → lớn" in sort_text:  # Kích thước (nhỏ → lớn)
+                self.all_videos.sort(key=lambda v: v.get("file_size_bytes", 0))
+            elif index == 4 or "dài → ngắn" in sort_text:  # Thời lượng (dài → ngắn)
+                self.all_videos.sort(key=lambda v: v.get("duration", 0), reverse=True)
+            elif index == 5 or "ngắn → dài" in sort_text:  # Thời lượng (ngắn → dài)
+                self.all_videos.sort(key=lambda v: v.get("duration", 0))
+            elif index == 6 or "mới → cũ" in sort_text:  # Ngày tạo (mới → cũ)
+                # Sử dụng os.path.getctime để lấy thời gian tạo file
+                self.all_videos.sort(
+                    key=lambda v: os.path.getctime(v.get("path", "")) if os.path.exists(v.get("path", "")) else 0, 
+                    reverse=True
+                )
+            elif index == 7 or "cũ → mới" in sort_text:  # Ngày tạo (cũ → mới)
+                self.all_videos.sort(
+                    key=lambda v: os.path.getctime(v.get("path", "")) if os.path.exists(v.get("path", "")) else 0
+                )
+            elif index == 8 or "Trạng thái" in sort_text:  # Trạng thái
+                # Sắp xếp theo trạng thái (uploaded, duplicate, new)
+                status_order = {"uploaded": 0, "duplicate": 1, "new": 2}
+                self.all_videos.sort(key=lambda v: status_order.get(v.get("status", "new"), 3))
+            
+            # Reset về trang đầu tiên
+            self.current_page = 1
+            
+            # Cập nhật UI
+            self.update_video_list_ui()
+            
+            logger.info(f"Đã sắp xếp {len(self.all_videos)} videos")
+        except Exception as e:
+            logger.error(f"Lỗi khi sắp xếp videos: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def view_video(self):
         """Open the currently selected video in a media player"""
