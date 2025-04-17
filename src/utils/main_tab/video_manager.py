@@ -31,22 +31,25 @@ def refresh_video_list(main_ui, folder_path):
     if not videos:
         # Update UI to show no videos
         logger.info("No videos found in folder")
+        # Update folder stats in UI
+        if hasattr(main_ui, 'folder_stats_label'):
+            main_ui.folder_stats_label.setText(f"Tổng dung lượng: 0 B | 0 videos")
         return []
     
     # Check for duplicates if enabled
-    if hasattr(main_ui, 'duplicateCheckBox') and main_ui.duplicateCheckBox.isChecked():
+    if hasattr(main_ui, 'duplicate_check_box') and main_ui.duplicate_check_box.isChecked():
         videos = check_duplicates(main_ui, videos)
     
     # Check upload history if enabled
-    if hasattr(main_ui, 'historyCheckBox') and main_ui.historyCheckBox.isChecked():
+    if hasattr(main_ui, 'history_check_box') and main_ui.history_check_box.isChecked():
         videos = check_upload_history(main_ui, videos)
     
     # Update folder stats in UI
-    total_size = sum(os.path.getsize(v["path"]) for v in videos)
+    total_size = sum(video.get("file_size_bytes", 0) for video in videos)
     size_str = format_file_size(total_size)
     
-    if hasattr(main_ui, 'folderStatsLabel'):
-        main_ui.folderStatsLabel.setText(f"Tổng dung lượng: {size_str} | {len(videos)} videos")
+    if hasattr(main_ui, 'folder_stats_label'):
+        main_ui.folder_stats_label.setText(f"Tổng dung lượng: {size_str} | {len(videos)} videos")
     
     logger.info(f"Found {len(videos)} videos in {folder_path}")
     return videos
@@ -76,15 +79,56 @@ def scan_folder_for_videos(folder_path):
             if os.path.isfile(file_path):
                 ext = os.path.splitext(file)[1].lower()
                 if ext in video_extensions:
-                    # Create video info dict
+                    # Get file size
+                    file_size = os.path.getsize(file_path)
+                    
+                    # Get video info
                     video_info = {
                         "name": file,
                         "path": file_path,
                         "status": "new",  # Default status (new, duplicate, uploaded)
                         "info": "",
                         "selected": False,
-                        "file_size": os.path.getsize(file_path)
+                        "file_size_bytes": file_size
                     }
+                    
+                    # Try to get more info with OpenCV
+                    try:
+                        cap = cv2.VideoCapture(file_path)
+                        if cap.isOpened():
+                            # Get video properties
+                            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            fps = cap.get(cv2.CAP_PROP_FPS)
+                            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                            duration = frame_count / fps if fps > 0 else 0
+                            
+                            # Format duration string
+                            hours = int(duration // 3600)
+                            minutes = int((duration % 3600) // 60)
+                            seconds = int(duration % 60)
+                            duration_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                            
+                            # Update video info
+                            video_info.update({
+                                "width": width,
+                                "height": height,
+                                "resolution": f"{width}x{height}",
+                                "fps": fps,
+                                "frame_count": frame_count,
+                                "duration": duration,
+                                "duration_str": duration_str,
+                            })
+                            
+                            # Release capture
+                            cap.release()
+                    except Exception as e:
+                        logger.error(f"Error getting video info for {file_path}: {str(e)}")
+                    
+                    # Format file size
+                    video_info["file_size"] = format_file_size(file_size)
+                    
+                    # Add to video list
                     video_files.append(video_info)
     except Exception as e:
         logger.error(f"Error scanning folder {folder_path}: {str(e)}")
@@ -334,7 +378,8 @@ def select_all_videos(main_ui):
         # Update all checkboxes in the UI
         for i in range(1, 11):  # Assuming we have up to 10 videos displayed at once
             checkbox = main_ui.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
-            if checkbox:
+            row = main_ui.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
+            if checkbox and row and row.isVisible():
                 checkbox.setChecked(True)
     logger.info("Selected all videos")
 
@@ -365,8 +410,9 @@ def select_unuploaded_videos(main_ui):
         for i in range(1, 11):
             status_label = main_ui.video_list.findChild(QtWidgets.QLabel, f"status{i}")
             checkbox = main_ui.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
+            row = main_ui.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
             
-            if status_label and checkbox:
+            if status_label and checkbox and row and row.isVisible():
                 # Check if the status is not "uploaded" (Đã tải)
                 is_uploaded = status_label.text() == "Đã tải"
                 checkbox.setChecked(not is_uploaded)

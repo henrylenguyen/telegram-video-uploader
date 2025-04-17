@@ -25,7 +25,9 @@ from .ui_helpers import (
     display_video_info,
     update_video_status,
     display_error_message,
-    create_progress_dialog
+    create_progress_dialog,
+    clear_video_preview,
+    clear_video_frames
 )
 
 __all__ = [
@@ -46,5 +48,7 @@ __all__ = [
     'display_video_info',
     'update_video_status',
     'display_error_message',
-    'create_progress_dialog'
+    'create_progress_dialog',
+    'clear_video_preview',
+    'clear_video_frames'
 ]

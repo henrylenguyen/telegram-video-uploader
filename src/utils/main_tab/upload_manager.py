@@ -69,8 +69,9 @@ def get_selected_videos(main_ui):
         for i in range(1, 11):  # Assuming we have up to 10 videos displayed at once
             checkbox = main_ui.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
             label = main_ui.video_list.findChild(QtWidgets.QLabel, f"label{i}")
+            row = main_ui.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
             
-            if checkbox and label and checkbox.isChecked():
+            if checkbox and label and row and row.isVisible() and checkbox.isChecked():
                 video_name = label.text()
                 
                 # Find video path from main_ui.videos dictionary if available
@@ -82,6 +83,17 @@ def get_selected_videos(main_ui):
                 
                 if os.path.exists(video_path):
                     selected_videos.append((video_name, video_path))
+    
+    # Update selection count and size
+    if hasattr(main_ui, 'selected_video_count'):
+        main_ui.selected_video_count = len(selected_videos)
+    
+    if hasattr(main_ui, 'selected_videos_size'):
+        total_size = 0
+        for _, video_path in selected_videos:
+            if os.path.exists(video_path):
+                total_size += os.path.getsize(video_path)
+        main_ui.selected_videos_size = total_size
     
     return selected_videos
 
@@ -147,8 +159,9 @@ def check_duplicates_and_uploaded(main_ui, selected_videos):
             checkbox = main_ui.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
             label = main_ui.video_list.findChild(QtWidgets.QLabel, f"label{i}")
             status = main_ui.video_list.findChild(QtWidgets.QLabel, f"status{i}")
+            row = main_ui.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
             
-            if checkbox and label and status and checkbox.isChecked():
+            if checkbox and label and status and row and row.isVisible() and checkbox.isChecked():
                 video_name = label.text()
                 
                 # Check status

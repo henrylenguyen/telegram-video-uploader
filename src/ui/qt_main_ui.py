@@ -4,6 +4,9 @@ Main UI module for Telegram Video Uploader PyQt5 version.
 import sys
 import os
 import logging
+import configparser
+import traceback
+import time
 from PyQt5 import QtWidgets, QtCore, QtGui, uic
 from PyQt5.QtGui import QPainter, QColor, QPen, QPolygonF
 from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal
@@ -19,12 +22,47 @@ from utils.main_tab import (
     upload_single_video,
     display_video_frames,
     display_video_info,
-    display_error_message
+    display_error_message,
+    clear_video_preview,
+    clear_video_frames
 )
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("MainUI")
+
+class LoadingOverlay(QtWidgets.QWidget):
+    """Loading overlay widget to show during long operations"""
+    
+    def __init__(self, parent=None):
+        super(LoadingOverlay, self).__init__(parent)
+        
+        # Make the overlay semi-transparent
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 150);")
+        
+        # Create loading spinner
+        self.spinner = QtWidgets.QLabel(self)
+        self.spinner.setAlignment(Qt.AlignCenter)
+        self.spinner.setStyleSheet("background-color: transparent; color: white; font-size: 16px;")
+        self.spinner.setText("Loading...")
+        
+        # Center the spinner
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.spinner, 0, Qt.AlignCenter)
+        
+        # Hide by default
+        self.hide()
+    
+    def showEvent(self, event):
+        """Handle show event to center the spinner"""
+        self.spinner.setGeometry(0, 0, self.width(), self.height())
+        super(LoadingOverlay, self).showEvent(event)
+    
+    def resizeEvent(self, event):
+        """Handle resize event to update overlay size"""
+        self.spinner.setGeometry(0, 0, self.width(), self.height())
+        super(LoadingOverlay, self).resizeEvent(event)
 
 class PlayButton(QtWidgets.QPushButton):
     """Custom play button with SVG-like triangle using QPainter"""
@@ -102,6 +140,9 @@ class MainUI(QtWidgets.QMainWindow):
         self.videos = {}      # Maps video names to paths
         self.selected_video = None  # Currently selected video
         self.frame_paths = []  # Paths to video frames
+        self.current_page = 1  # Current pagination page
+        self.selected_video_count = 0  # Number of selected videos
+        self.selected_videos_size = 0  # Total size of selected videos
 
         # Set window properties
         self.setWindowTitle("Telegram Video Uploader")
@@ -121,16 +162,32 @@ class MainUI(QtWidgets.QMainWindow):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        # Load UI components from .ui files
-        self.load_ui_components()
+        # Create loading overlay
+        self.loading_overlay = LoadingOverlay(self.central_widget)
+        self.loading_overlay.resize(self.central_widget.size())
 
-        # Connect signals
-        self.connect_signals()
+        try:
+            # Log module information
+            logger.info(f"Module path: {__file__}")
+            logger.info(f"PyQt5 imported: {QtWidgets.__file__}")
+            
+            # Load UI components from .ui files
+            self.load_ui_components()
 
-        # Initialize video list
-        self.initialize_folder()
+            # Connect signals
+            self.connect_signals()
+            
+            # Update cursor properties
+            self.update_cursor_properties()
 
-        logger.info("Main UI initialized successfully")
+            # Initialize video list
+            self.initialize_folder()
+
+            logger.info("Main UI initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing UI: {str(e)}")
+            logger.error(traceback.format_exc())
+            QtWidgets.QMessageBox.critical(self, "Error", f"Error initializing UI: {str(e)}")
 
     def apply_global_stylesheet(self):
         """Apply global stylesheet to maintain the beautiful design"""
@@ -142,10 +199,6 @@ class MainUI(QtWidgets.QMainWindow):
 
             QPushButton {
                 border-radius: 4px;
-            }
-
-            QPushButton:hover {
-                cursor: pointer;
             }
 
             QLineEdit {
@@ -189,6 +242,14 @@ class MainUI(QtWidgets.QMainWindow):
 
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 width: 0px;
+            }
+            
+            QToolTip {
+                background-color: #4a4a4a;
+                color: white;
+                border: 1px solid #343434;
+                border-radius: 4px;
+                padding: 4px;
             }
         """)
 
@@ -283,8 +344,6 @@ class MainUI(QtWidgets.QMainWindow):
             # Add buttons to group and set initial state
             for i, button in enumerate(tab_buttons):
                 tab_button_group.addButton(button, i)
-                button.setCursor(QtCore.Qt.PointingHandCursor)
-                
                 # Set first button as checked by default
                 if i == 0:
                     button.setChecked(True)
@@ -321,11 +380,16 @@ class MainUI(QtWidgets.QMainWindow):
             self.recent_folders_combo = folder_widget.findChild(QtWidgets.QComboBox, "recentFoldersComboBox")
             self.folder_stats_label = folder_widget.findChild(QtWidgets.QLabel, "folderStatsLabel")
             
-            # Add cursor pointer for buttons
-            if self.browse_button:
-                self.browse_button.setCursor(QtCore.Qt.PointingHandCursor)
-            if self.refresh_button:
-                self.refresh_button.setCursor(QtCore.Qt.PointingHandCursor)
+            # Clear mock data in recent folders combo
+            self.recent_folders_combo.clear()
+            self.recent_folders_combo.addItem("Thư mục gần đây")
+            
+            # Add tooltip to recent folders dropdown
+            self.recent_folders_combo.setToolTip("Chọn thư mục từ danh sách thư mục gần đây")
+            
+            # Clear folder stats
+            if self.folder_stats_label:
+                self.folder_stats_label.setText("Tổng dung lượng: 0 B | 0 videos")
 
             return folder_widget
         except Exception as e:
@@ -355,7 +419,6 @@ class MainUI(QtWidgets.QMainWindow):
             # Add buttons to group and set cursor
             for i, button in enumerate(tab_buttons):
                 tab_button_group.addButton(button, i)
-                button.setCursor(QtCore.Qt.PointingHandCursor)
                 button.setEnabled(True)  # Ensure all buttons are enabled
             
             # Store button group
@@ -382,14 +445,35 @@ class MainUI(QtWidgets.QMainWindow):
         try:
             uic.loadUi(fixed_ui_path, list_widget)
             logger.info("Video list UI loaded successfully")
-
-            # Make rows clickable
-            for i in range(1, 11):  # Up to 10 videos displayed at once
+            
+            # Clear mock data from video list
+            for i in range(1, 11):
                 videoItem = list_widget.findChild(QtWidgets.QFrame, f"videoItem{i}")
+                label = list_widget.findChild(QtWidgets.QLabel, f"label{i}")
+                status = list_widget.findChild(QtWidgets.QLabel, f"status{i}")
+                checkbox = list_widget.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
+                
                 if videoItem:
-                    # Make entire row clickable to toggle checkbox and select video
+                    videoItem.setVisible(False)  # Hide all rows initially
+                
+                if label:
+                    label.setText("")  # Clear label text
+                
+                if status:
+                    status.setText("")  # Clear status
+                
+                if checkbox:
+                    checkbox.setChecked(False)  # Uncheck all checkboxes
+                
+                # Make entire row clickable to toggle checkbox and select video
+                if videoItem:
                     videoItem.mousePressEvent = lambda event, idx=i: self.on_video_row_clicked(idx)
-                    videoItem.setCursor(QtCore.Qt.PointingHandCursor)
+
+            # Clear pagination info
+            if hasattr(list_widget, 'pagination_info_label'):
+                pagination_info = list_widget.findChild(QtWidgets.QLabel, "paginationInfoLabel")
+                if pagination_info:
+                    pagination_info.setText("Hiển thị 0-0 trên tổng 0 videos")
 
             # Store references to controls
             self.duplicate_check_box = list_widget.findChild(QtWidgets.QCheckBox, "duplicateCheckBox")
@@ -397,6 +481,32 @@ class MainUI(QtWidgets.QMainWindow):
             self.search_line_edit = list_widget.findChild(QtWidgets.QLineEdit, "searchLineEdit")
             self.sort_combo_box = list_widget.findChild(QtWidgets.QComboBox, "sortComboBox")
             self.pagination_info_label = list_widget.findChild(QtWidgets.QLabel, "paginationInfoLabel")
+            
+            # Get pagination buttons and connect them
+            self.page1_button = list_widget.findChild(QtWidgets.QPushButton, "page1Button")
+            self.page2_button = list_widget.findChild(QtWidgets.QPushButton, "page2Button")
+            self.next_page_button = list_widget.findChild(QtWidgets.QPushButton, "nextPageButton")
+            self.prev_page_button = list_widget.findChild(QtWidgets.QPushButton, "prevPageButton")
+            self.first_page_button = list_widget.findChild(QtWidgets.QPushButton, "firstPageButton")
+            self.last_page_button = list_widget.findChild(QtWidgets.QPushButton, "lastPageButton")
+            
+            # Hide page 2 button initially
+            if self.page2_button:
+                self.page2_button.setVisible(False)
+            
+            # Connect pagination buttons
+            if self.page1_button:
+                self.page1_button.clicked.connect(lambda: self.go_to_page(1))
+            if self.page2_button:
+                self.page2_button.clicked.connect(lambda: self.go_to_page(2))
+            if self.next_page_button:
+                self.next_page_button.clicked.connect(self.next_page)
+            if self.prev_page_button:
+                self.prev_page_button.clicked.connect(self.prev_page)
+            if self.first_page_button:
+                self.first_page_button.clicked.connect(lambda: self.go_to_page(1))
+            if self.last_page_button:
+                self.last_page_button.clicked.connect(self.last_page)
 
             # Add shadow effect
             shadow = QtWidgets.QGraphicsDropShadowEffect()
@@ -431,6 +541,13 @@ class MainUI(QtWidgets.QMainWindow):
         try:
             uic.loadUi(fixed_ui_path, preview_widget)
             logger.info("Video preview UI loaded successfully")
+            
+            # Clear mock data
+            for field in ['fileNameValueLabel', 'durationValueLabel', 'resolutionValueLabel', 
+                        'sizeValueLabel', 'statusValueLabel', 'codecValueLabel']:
+                label = preview_widget.findChild(QtWidgets.QLabel, field)
+                if label:
+                    label.setText("")
 
             # Add custom SVG play button
             play_button_container = preview_widget.findChild(QtWidgets.QWidget, "playButtonContainer")
@@ -455,16 +572,11 @@ class MainUI(QtWidgets.QMainWindow):
             # Store reference to important controls
             self.view_button = preview_widget.findChild(QtWidgets.QPushButton, "viewVideoButton")
             self.upload_this_button = preview_widget.findChild(QtWidgets.QPushButton, "uploadThisVideoButton")
-            
-            # Add cursor pointer for buttons
-            if self.view_button:
-                self.view_button.setCursor(QtCore.Qt.PointingHandCursor)
-            if self.upload_this_button:
-                self.upload_this_button.setCursor(QtCore.Qt.PointingHandCursor)
 
             return preview_widget
         except Exception as e:
             logger.error(f"Failed to load video preview UI: {str(e)}")
+            logger.error(traceback.format_exc())
             # Fallback to a basic video preview if loading fails
             return self.create_fallback_video_preview()
 
@@ -494,6 +606,22 @@ class MainUI(QtWidgets.QMainWindow):
                         padding: 15px;
                     }
                 """)
+
+            # Prepare frame widgets for easy access and clear any existing content
+            for i in range(1, 6):  # 5 frame containers
+                frame_widget = frames_widget.findChild(QtWidgets.QFrame, f"frame{i}")
+                if frame_widget:
+                    # Clear existing content and setup layout
+                    if frame_widget.layout():
+                        while frame_widget.layout().count():
+                            item = frame_widget.layout().takeAt(0)
+                            widget = item.widget()
+                            if widget:
+                                widget.deleteLater()
+                    else:
+                        layout = QtWidgets.QVBoxLayout(frame_widget)
+                        layout.setContentsMargins(0, 0, 0, 0)
+                        layout.setAlignment(QtCore.Qt.AlignCenter)
 
             # Add shadow effect
             shadow = QtWidgets.QGraphicsDropShadowEffect()
@@ -531,11 +659,9 @@ class MainUI(QtWidgets.QMainWindow):
             self.upload_button = action_bar_widget.findChild(QtWidgets.QPushButton, "uploadButton")
             self.selection_label = action_bar_widget.findChild(QtWidgets.QLabel, "selectionLabel")
             
-            # Add cursor pointer for buttons
-            for button in [self.select_all_button, self.deselect_all_button, 
-                          self.select_unuploaded_button, self.upload_button]:
-                if button:
-                    button.setCursor(QtCore.Qt.PointingHandCursor)
+            # Clear mock data
+            if self.selection_label:
+                self.selection_label.setText("Đã chọn: 0 video | Tổng dung lượng: 0 B")
 
             # Add shadow effect
             shadow = QtWidgets.QGraphicsDropShadowEffect()
@@ -570,6 +696,12 @@ class MainUI(QtWidgets.QMainWindow):
             # Fix orientation attributes
             content = content.replace('Qt::Orientation::Horizontal', 'Horizontal')
             content = content.replace('Qt::Orientation::Vertical', 'Vertical')
+            
+            # Fix property="cursor" issues
+            content = content.replace('property="cursor"', 'property="cursorShape"')
+            
+            # Fix alignment property for buttons
+            content = content.replace('property="alignment"', 'property="alignmentProperty"')
 
             # Create a temporary file with fixed content
             import tempfile
@@ -584,6 +716,73 @@ class MainUI(QtWidgets.QMainWindow):
         except Exception as e:
             logger.error(f"Error fixing UI file {ui_path}: {str(e)}")
             return ui_path
+
+    def update_cursor_properties(self):
+        """Update cursor properties for all interactive elements"""
+        # List of widgets that should have pointing hand cursor
+        if hasattr(self, 'browse_button'):
+            self.browse_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        if hasattr(self, 'refresh_button'):
+            self.refresh_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        if hasattr(self, 'view_button'):
+            self.view_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        if hasattr(self, 'play_button'):
+            self.play_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        if hasattr(self, 'upload_this_button'):
+            self.upload_this_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        if hasattr(self, 'select_all_button'):
+            self.select_all_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        if hasattr(self, 'deselect_all_button'):
+            self.deselect_all_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        if hasattr(self, 'select_unuploaded_button'):
+            self.select_unuploaded_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        if hasattr(self, 'upload_button'):
+            self.upload_button.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        # Handle video rows
+        if hasattr(self, 'video_list'):
+            for i in range(1, 11):
+                videoItem = self.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
+                if videoItem:
+                    videoItem.setCursor(QtCore.Qt.PointingHandCursor)
+        
+        # Handle video frames
+        if hasattr(self, 'video_frames'):
+            for i in range(1, 6):
+                frame = self.video_frames.findChild(QtWidgets.QFrame, f"frame{i}")
+                if frame:
+                    frame.setCursor(QtCore.Qt.PointingHandCursor)
+                    
+        # Handle pagination buttons  
+        if hasattr(self, 'page1_button'):
+            self.page1_button.setCursor(QtCore.Qt.PointingHandCursor)
+        if hasattr(self, 'page2_button'):
+            self.page2_button.setCursor(QtCore.Qt.PointingHandCursor) 
+        if hasattr(self, 'next_page_button'):
+            self.next_page_button.setCursor(QtCore.Qt.PointingHandCursor)
+        if hasattr(self, 'prev_page_button'):
+            self.prev_page_button.setCursor(QtCore.Qt.PointingHandCursor)
+        if hasattr(self, 'first_page_button'):
+            self.first_page_button.setCursor(QtCore.Qt.PointingHandCursor)
+        if hasattr(self, 'last_page_button'):
+            self.last_page_button.setCursor(QtCore.Qt.PointingHandCursor)
+            
+        # Handle tab buttons
+        if hasattr(self, 'header_tab_group'):
+            for button in self.header_tab_group.buttons():
+                button.setCursor(QtCore.Qt.PointingHandCursor)
+                
+        if hasattr(self, 'subtab_group'):
+            for button in self.subtab_group.buttons():
+                button.setCursor(QtCore.Qt.PointingHandCursor)
 
     def on_video_row_clicked(self, idx):
         """Handle click on a video row"""
@@ -608,37 +807,47 @@ class MainUI(QtWidgets.QMainWindow):
 
     def update_selection_count(self):
         """Update the selection count in the action bar"""
-        if hasattr(self, 'selection_label'):
-            selected_count = 0
-            total_size = 0
+        if not hasattr(self, 'selection_label'):
+            return
             
-            # Count selected videos
-            for i in range(1, 11):  # Assuming up to 10 videos displayed at once
-                checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
-                if checkbox and checkbox.isChecked():
-                    selected_count += 1
-                    
-                    # Find video info in all_videos
-                    label = self.video_list.findChild(QtWidgets.QLabel, f"label{i}")
-                    if label:
-                        video_name = label.text()
-                        for video in self.all_videos:
-                            if video.get("name") == video_name:
-                                total_size += video.get("file_size_bytes", 0)
-                                break
+        # Reset counters
+        self.selected_video_count = 0
+        self.selected_videos_size = 0
+        
+        # Count selected videos
+        for i in range(1, 11):  # Assuming up to 10 videos displayed at once
+            checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
+            row = self.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
             
-            # Format total size
-            if total_size < 1024:
-                size_str = f"{total_size} B"
-            elif total_size < 1024 * 1024:
-                size_str = f"{total_size / 1024:.1f} KB"
-            elif total_size < 1024 * 1024 * 1024:
-                size_str = f"{total_size / (1024 * 1024):.1f} MB"
-            else:
-                size_str = f"{total_size / (1024 * 1024 * 1024):.2f} GB"
-            
-            # Update label
-            self.selection_label.setText(f"Đã chọn: {selected_count} video | Tổng dung lượng: {size_str}")
+            # Only count if checkbox exists, is checked, and row is visible
+            if checkbox and row and checkbox.isChecked() and row.isVisible():
+                self.selected_video_count += 1
+                
+                # Find video info in all_videos
+                label = self.video_list.findChild(QtWidgets.QLabel, f"label{i}")
+                if label:
+                    video_name = label.text()
+                    for video in self.all_videos:
+                        if video.get("name") == video_name:
+                            self.selected_videos_size += video.get("file_size_bytes", 0)
+                            break
+        
+        # Format total size
+        size_str = self.format_file_size(self.selected_videos_size)
+        
+        # Update label
+        self.selection_label.setText(f"Đã chọn: {self.selected_video_count} video | Tổng dung lượng: {size_str}")
+
+    def format_file_size(self, size_in_bytes):
+        """Format file size in bytes to human-readable string"""
+        if size_in_bytes < 1024:
+            return f"{size_in_bytes} B"
+        elif size_in_bytes < 1024 * 1024:
+            return f"{size_in_bytes / 1024:.1f} KB"
+        elif size_in_bytes < 1024 * 1024 * 1024:
+            return f"{size_in_bytes / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size_in_bytes / (1024 * 1024 * 1024):.2f} GB"
 
     def display_selected_video(self):
         """Display information about the selected video"""
@@ -802,64 +1011,70 @@ class MainUI(QtWidgets.QMainWindow):
 
     def connect_signals(self):
         """Connect signals to slots"""
-        # Connect folder selection browse button if found
-        if hasattr(self, 'browse_button'):
-            self.browse_button.clicked.connect(self.browse_folder)
+        try:
+            # Connect folder selection browse button if found
+            if hasattr(self, 'browse_button'):
+                self.browse_button.clicked.connect(self.browse_folder)
 
-        # Connect refresh button
-        if hasattr(self, 'refresh_button'):
-            self.refresh_button.clicked.connect(self.refresh_folder)
+            # Connect refresh button
+            if hasattr(self, 'refresh_button'):
+                self.refresh_button.clicked.connect(self.refresh_folder)
 
-        # Connect view buttons
-        if hasattr(self, 'view_button'):
-            self.view_button.clicked.connect(self.view_video)
+            # Connect view buttons
+            if hasattr(self, 'view_button'):
+                self.view_button.clicked.connect(self.view_video)
 
-        if hasattr(self, 'play_button'):
-            self.play_button.clicked.connect(self.view_video)
+            if hasattr(self, 'play_button'):
+                self.play_button.clicked.connect(self.view_video)
 
-        # Connect upload buttons
-        if hasattr(self, 'upload_this_button'):
-            self.upload_this_button.clicked.connect(self.upload_current_video)
+            # Connect upload buttons
+            if hasattr(self, 'upload_this_button'):
+                self.upload_this_button.clicked.connect(self.upload_current_video)
 
-        if hasattr(self, 'upload_button'):
-            self.upload_button.clicked.connect(self.upload_selected_videos)
+            if hasattr(self, 'upload_button'):
+                self.upload_button.clicked.connect(self.upload_selected_videos)
 
-        # Connect selection buttons
-        if hasattr(self, 'select_all_button'):
-            self.select_all_button.clicked.connect(self.select_all_videos)
+            # Connect selection buttons
+            if hasattr(self, 'select_all_button'):
+                self.select_all_button.clicked.connect(self.select_all_videos)
 
-        if hasattr(self, 'deselect_all_button'):
-            self.deselect_all_button.clicked.connect(self.deselect_all_videos)
+            if hasattr(self, 'deselect_all_button'):
+                self.deselect_all_button.clicked.connect(self.deselect_all_videos)
 
-        if hasattr(self, 'select_unuploaded_button'):
-            self.select_unuploaded_button.clicked.connect(self.select_unuploaded_videos)
+            if hasattr(self, 'select_unuploaded_button'):
+                self.select_unuploaded_button.clicked.connect(self.select_unuploaded_videos)
+                
+            # Connect header tab buttons
+            if hasattr(self, 'header_tab_group'):
+                self.header_tab_group.buttonClicked.connect(self.header_tab_clicked)
+                
+            # Connect sub-tab buttons
+            if hasattr(self, 'subtab_group'):
+                self.subtab_group.buttonClicked.connect(self.subtab_clicked)
             
-        # Connect header tab buttons
-        if hasattr(self, 'header_tab_group'):
-            self.header_tab_group.buttonClicked.connect(self.header_tab_clicked)
-            
-        # Connect sub-tab buttons
-        if hasattr(self, 'subtab_group'):
-            self.subtab_group.buttonClicked.connect(self.subtab_clicked)
-        
-        # Connect check boxes for video filtering
-        if hasattr(self, 'duplicate_check_box'):
-            self.duplicate_check_box.stateChanged.connect(self.refresh_folder)
-            
-        if hasattr(self, 'history_check_box'):
-            self.history_check_box.stateChanged.connect(self.refresh_folder)
-            
-        # Connect recent folders combo box
-        if hasattr(self, 'recent_folders_combo'):
-            self.recent_folders_combo.currentIndexChanged.connect(self.load_recent_folder)
-            
-        # Connect search line edit
-        if hasattr(self, 'search_line_edit'):
-            self.search_line_edit.textChanged.connect(self.filter_videos)
-            
-        # Connect sort combo box
-        if hasattr(self, 'sort_combo_box'):
-            self.sort_combo_box.currentIndexChanged.connect(self.sort_videos)
+            # Connect check boxes for video filtering
+            if hasattr(self, 'duplicate_check_box'):
+                self.duplicate_check_box.stateChanged.connect(self.refresh_folder)
+                
+            if hasattr(self, 'history_check_box'):
+                self.history_check_box.stateChanged.connect(self.refresh_folder)
+                
+            # Connect recent folders combo box
+            if hasattr(self, 'recent_folders_combo'):
+                self.recent_folders_combo.currentIndexChanged.connect(self.load_recent_folder)
+                
+            # Connect search line edit
+            if hasattr(self, 'search_line_edit'):
+                self.search_line_edit.textChanged.connect(self.filter_videos)
+                
+            # Connect sort combo box
+            if hasattr(self, 'sort_combo_box'):
+                self.sort_combo_box.currentIndexChanged.connect(self.sort_videos)
+                
+            logger.info("All signals connected successfully")
+        except Exception as e:
+            logger.error(f"Error connecting signals: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def header_tab_clicked(self, button):
         """Handle header tab button clicks"""
@@ -867,10 +1082,31 @@ class MainUI(QtWidgets.QMainWindow):
         for btn in self.header_tab_group.buttons():
             btn.setChecked(btn == button)
         
-        # Switch stack widget based on button index
+        # Get the index of the clicked button
         index = self.header_tab_group.id(button)
+        
+        # Log the click
         logger.info(f"Header tab {index} clicked: {button.text()}")
         
+        # Handle different tabs
+        if index == 0:  # Upload tab
+            # Already on this tab, do nothing
+            pass
+        else:
+            # For other tabs, show development message
+            QtWidgets.QMessageBox.information(
+                self, 
+                "Chức năng đang phát triển", 
+                f"Chức năng '{button.text()}' đang được phát triển và sẽ có sẵn trong phiên bản tiếp theo."
+            )
+            
+            # Reset to upload tab
+            for btn in self.header_tab_group.buttons():
+                if self.header_tab_group.id(btn) == 0:
+                    btn.setChecked(True)
+                else:
+                    btn.setChecked(False)
+
     def subtab_clicked(self, button):
         """Handle sub-tab button clicks"""
         # Set clicked button as checked, others as unchecked
@@ -878,7 +1114,7 @@ class MainUI(QtWidgets.QMainWindow):
             if btn.objectName() == "activeTab":
                 btn.setObjectName("inactiveTab")
                 btn.setStyleSheet("")  # Remove any custom style
-            
+        
         # Set the clicked button as active
         button.setObjectName("activeTab")
         button.setStyleSheet("""
@@ -888,20 +1124,212 @@ class MainUI(QtWidgets.QMainWindow):
             font-weight: bold;
         """)
         
+        # Get the index of the clicked button
+        index = self.subtab_group.id(button)
+        
+        # Log the click
         logger.info(f"Sub-tab clicked: {button.text()}")
+        
+        # Handle different sub-tabs
+        if index == 0:  # Manual upload
+            # Already on this tab, do nothing
+            pass
+        else:
+            # For other sub-tabs, show development message
+            QtWidgets.QMessageBox.information(
+                self, 
+                "Chức năng đang phát triển", 
+                f"Chức năng '{button.text()}' đang được phát triển và sẽ có sẵn trong phiên bản tiếp theo."
+            )
+            
+            # Reset to manual upload tab
+            for btn in self.subtab_group.buttons():
+                if self.subtab_group.id(btn) == 0:
+                    btn.setObjectName("activeTab")
+                    btn.setStyleSheet("""
+                        color: #3498DB;
+                        border-bottom: 3px solid #3498DB;
+                        background-color: #EBF5FB;
+                        font-weight: bold;
+                    """)
+                else:
+                    btn.setObjectName("inactiveTab")
+                    btn.setStyleSheet("")
 
     # Event handler methods
     def initialize_folder(self):
         """Initialize folder from saved settings"""
+        # Load recent folders from config
+        self.load_recent_folders_from_config()
+        
         # Try to get folder from app config
         folder_path = ""
         if hasattr(self, 'app') and hasattr(self.app, 'config'):
-            folder_path = self.app.config.get('SETTINGS', {}).get('video_folder', '')
+            # Check if config is a ConfigParser object or a dictionary
+            if hasattr(self.app.config, 'get') and callable(self.app.config.get):
+                try:
+                    # Check if it's ConfigParser object
+                    if hasattr(self.app.config, 'has_section') and self.app.config.has_section('SETTINGS'):
+                        folder_path = self.app.config.get('SETTINGS', 'video_folder')
+                    # Otherwise treat as dictionary
+                    elif isinstance(self.app.config, dict) and 'SETTINGS' in self.app.config:
+                        settings = self.app.config.get('SETTINGS', {})
+                        if isinstance(settings, dict):
+                            folder_path = settings.get('video_folder', '')
+                except Exception as e:
+                    logger.error(f"Error getting folder path from config: {str(e)}")
         
         # Set folder path and refresh
         if folder_path and os.path.exists(folder_path) and os.path.isdir(folder_path):
             self.folder_path_edit.setText(folder_path)
             self.refresh_folder()
+
+    def load_recent_folders_from_config(self):
+        """Load recent folders from config"""
+        if not hasattr(self, 'recent_folders_combo'):
+            return
+                
+        # Clear existing items except the first one (header)
+        while self.recent_folders_combo.count() > 1:
+            self.recent_folders_combo.removeItem(1)
+        
+        # Try to get recent folders from config
+        try:
+            if hasattr(self, 'app') and hasattr(self.app, 'config'):
+                # Check if config is ConfigParser or dictionary
+                if hasattr(self.app.config, 'has_section') and callable(self.app.config.has_section):
+                    # ConfigParser approach
+                    if self.app.config.has_section('RECENT_FOLDERS'):
+                        # Load each folder from config
+                        for i in range(10):  # Load up to 10 recent folders
+                            key = f"folder_{i}"
+                            try:
+                                if self.app.config.has_option('RECENT_FOLDERS', key):
+                                    folder = self.app.config.get('RECENT_FOLDERS', key)
+                                    if folder and os.path.exists(folder):
+                                        self.recent_folders_combo.addItem(folder)
+                            except Exception as e:
+                                logger.error(f"Error loading folder {i} from config: {str(e)}")
+                
+                # Dictionary approach
+                elif isinstance(self.app.config, dict) and 'RECENT_FOLDERS' in self.app.config:
+                    recent_folders = self.app.config.get('RECENT_FOLDERS', {})
+                    if isinstance(recent_folders, dict):
+                        # Load each folder from config
+                        for i in range(10):  # Load up to 10 recent folders
+                            key = f"folder_{i}"
+                            if key in recent_folders:
+                                folder = recent_folders.get(key)
+                                if folder and os.path.exists(folder):
+                                    self.recent_folders_combo.addItem(folder)
+                
+                # If no RECENT_FOLDERS section exists yet and config_manager is available
+                elif hasattr(self.app, 'config_manager'):
+                    if isinstance(self.app.config, dict):
+                        self.app.config['RECENT_FOLDERS'] = {}
+                        self.app.config_manager.save_config(self.app.config)
+            
+            # Direct approach in case app or app.config is not available
+            else:
+                # Try to load directly from config.ini file
+                config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config.ini')
+                if os.path.exists(config_path):
+                    import configparser
+                    config = configparser.ConfigParser()
+                    config.read(config_path, encoding='utf-8')
+                    
+                    if 'RECENT_FOLDERS' in config:
+                        for i in range(10):
+                            key = f"folder_{i}"
+                            if config.has_option('RECENT_FOLDERS', key):
+                                folder = config.get('RECENT_FOLDERS', key)
+                                if folder and os.path.exists(folder):
+                                    self.recent_folders_combo.addItem(folder)
+        except Exception as e:
+            logger.error(f"Error loading recent folders from config: {str(e)}")
+
+    def save_recent_folders_to_config(self):
+        """Save recent folders to config"""
+        if not hasattr(self, 'recent_folders_combo'):
+            return
+                
+        # Try to save to app.config if available
+        try:
+            if hasattr(self, 'app') and hasattr(self.app, 'config'):
+                # Check if app.config is ConfigParser or dictionary
+                if hasattr(self.app.config, 'has_section') and callable(self.app.config.has_section):
+                    # ConfigParser approach
+                    if not self.app.config.has_section('RECENT_FOLDERS'):
+                        self.app.config.add_section('RECENT_FOLDERS')
+                    
+                    # Clear existing entries
+                    for option in self.app.config.options('RECENT_FOLDERS'):
+                        if option.startswith('folder_'):
+                            self.app.config.remove_option('RECENT_FOLDERS', option)
+                    
+                    # Save current folders
+                    for i in range(1, min(self.recent_folders_combo.count(), 11)):
+                        folder = self.recent_folders_combo.itemText(i)
+                        self.app.config.set('RECENT_FOLDERS', f"folder_{i-1}", folder)
+                    
+                    # Save config if config_manager available
+                    if hasattr(self.app, 'config_manager'):
+                        self.app.config_manager.save_config(self.app.config)
+                
+                # Dictionary approach
+                elif isinstance(self.app.config, dict):
+                    # Create RECENT_FOLDERS section if it doesn't exist
+                    if 'RECENT_FOLDERS' not in self.app.config:
+                        self.app.config['RECENT_FOLDERS'] = {}
+                    elif not isinstance(self.app.config['RECENT_FOLDERS'], dict):
+                        self.app.config['RECENT_FOLDERS'] = {}
+                    
+                    # Clear existing entries
+                    for key in list(self.app.config['RECENT_FOLDERS'].keys()):
+                        if key.startswith('folder_'):
+                            del self.app.config['RECENT_FOLDERS'][key]
+                    
+                    # Save current folders
+                    for i in range(1, min(self.recent_folders_combo.count(), 11)):
+                        folder = self.recent_folders_combo.itemText(i)
+                        self.app.config['RECENT_FOLDERS'][f"folder_{i-1}"] = folder
+                    
+                    # Save config
+                    if hasattr(self.app, 'config_manager'):
+                        self.app.config_manager.save_config(self.app.config)
+            
+            # Direct approach in case app or app.config is not available
+            else:
+                # Try to save directly to config.ini file
+                config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config.ini')
+                import configparser
+                config = configparser.ConfigParser()
+                
+                # Load existing config if available
+                if os.path.exists(config_path):
+                    config.read(config_path, encoding='utf-8')
+                
+                # Create RECENT_FOLDERS section if it doesn't exist
+                if 'RECENT_FOLDERS' not in config:
+                    config['RECENT_FOLDERS'] = {}
+                
+                # Clear existing entries
+                for key in list(config['RECENT_FOLDERS'].keys()):
+                    if key.startswith('folder_'):
+                        del config['RECENT_FOLDERS'][key]
+                
+                # Save current folders
+                for i in range(1, min(self.recent_folders_combo.count(), 11)):
+                    folder = self.recent_folders_combo.itemText(i)
+                    config['RECENT_FOLDERS'][f"folder_{i-1}"] = folder
+                
+                # Write to file
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    config.write(f)
+                    
+        except Exception as e:
+            logger.error(f"Error saving recent folders to config file: {str(e)}")
+            logger.error(traceback.format_exc())
 
     def browse_folder(self):
         """Open file dialog to browse for folder"""
@@ -922,45 +1350,183 @@ class MainUI(QtWidgets.QMainWindow):
             
             # Save to app config
             if hasattr(self, 'app') and hasattr(self.app, 'config') and hasattr(self.app, 'config_manager'):
-                if 'SETTINGS' not in self.app.config:
-                    self.app.config['SETTINGS'] = {}
-                self.app.config['SETTINGS']['video_folder'] = folder
-                self.app.config_manager.save_config(self.app.config)
+                try:
+                    # Check if config is ConfigParser or dictionary
+                    if hasattr(self.app.config, 'has_section') and callable(self.app.config.has_section):
+                        # ConfigParser approach
+                        if not self.app.config.has_section('SETTINGS'):
+                            self.app.config.add_section('SETTINGS')
+                        self.app.config.set('SETTINGS', 'video_folder', folder)
+                    else:
+                        # Dictionary approach
+                        if 'SETTINGS' not in self.app.config:
+                            self.app.config['SETTINGS'] = {}
+                        self.app.config['SETTINGS']['video_folder'] = folder
+                    
+                    # Save config
+                    self.app.config_manager.save_config(self.app.config)
+                except Exception as e:
+                    logger.error(f"Error saving folder to config: {str(e)}")
 
     def add_to_recent_folders(self, folder):
         """Add folder to recent folders combo box"""
-        if hasattr(self, 'recent_folders_combo'):
-            # Check if folder already exists
-            for i in range(1, self.recent_folders_combo.count()):
-                if self.recent_folders_combo.itemText(i) == folder:
-                    # Move to top
-                    self.recent_folders_combo.removeItem(i)
-                    self.recent_folders_combo.insertItem(1, folder)
-                    return
+        if not hasattr(self, 'recent_folders_combo'):
+            return
             
-            # Add to top
-            self.recent_folders_combo.insertItem(1, folder)
-            
-            # Limit to 5 recent folders
-            while self.recent_folders_combo.count() > 6:
-                self.recent_folders_combo.removeItem(6)
+        # Check if folder already exists
+        for i in range(1, self.recent_folders_combo.count()):
+            if self.recent_folders_combo.itemText(i) == folder:
+                # Move to top
+                self.recent_folders_combo.removeItem(i)
+                self.recent_folders_combo.insertItem(1, folder)
+                self.save_recent_folders_to_config()
+                return
+        
+        # Add to top
+        self.recent_folders_combo.insertItem(1, folder)
+        
+        # Limit to 5 recent folders
+        while self.recent_folders_combo.count() > 6:
+            self.recent_folders_combo.removeItem(6)
+        
+        # Save to config
+        self.save_recent_folders_to_config()
 
     def load_recent_folder(self, index):
         """Load folder from recent folders combo box"""
         if index > 0:  # Skip first item (header)
             folder = self.recent_folders_combo.itemText(index)
+            
+            # Hiển thị tooltip đầy đủ đường dẫn
+            self.recent_folders_combo.setToolTip(folder)
+            
+            # Clear existing previews first
+            clear_video_preview(self)
+            
+            # Set folder path in the edit box
             self.folder_path_edit.setText(folder)
+            
+            # Show loading overlay
+            self.loading_overlay.show()
+            QtWidgets.QApplication.processEvents()
+            
+            # Set active item with ellipsis if needed
+            max_length = 30
+            display_text = folder
+            if len(folder) > max_length:
+                display_text = folder[:max_length-3] + "..."
+                # Đặt tooltip đầy đủ đường dẫn cho item đã chọn
+                self.recent_folders_combo.setItemData(index, folder, Qt.ToolTipRole)
+            
+            # Giữ folder đã chọn hiển thị trong dropdown
+            self.recent_folders_combo.setItemText(index, display_text)
+            
+            # Refresh folder asynchronously
+            QtCore.QTimer.singleShot(100, self.refresh_folder_with_loading)
+            
+            # Giữ folder đã chọn trong dropdown để người dùng biết đang chọn cái nào
+            self.recent_folders_combo.setCurrentIndex(index)
+
+    def refresh_folder_with_loading(self):
+        """Refresh folder with loading indicator"""
+        try:
+            # Set the cursor to wait
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            
+            # Clear existing previews first
+            clear_video_preview(self)
+            
+            # Refresh folder
             self.refresh_folder()
             
-            # Reset selection to first item
-            self.recent_folders_combo.setCurrentIndex(0)
+            # Reset cursor
+            QtWidgets.QApplication.restoreOverrideCursor()
+            
+            # Hide loading overlay
+            self.loading_overlay.hide()
+        except Exception as e:
+            logger.error(f"Error in refresh_folder_with_loading: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # Reset cursor and hide loading overlay in case of error
+            QtWidgets.QApplication.restoreOverrideCursor()
+            self.loading_overlay.hide()
 
     def refresh_folder(self):
         """Refresh video list from current folder"""
         folder_path = self.folder_path_edit.text()
-        if folder_path:
-            # Use the utility function to refresh video list
-            self.all_videos = refresh_video_list(self, folder_path)
+        if not folder_path:
+            return
+            
+        # Clear video preview first
+        clear_video_preview(self)
+        
+        # Show busy cursor
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        QtWidgets.QApplication.processEvents()
+        
+        try:
+            # Count files in folder 
+            video_count = 0
+            for _, _, files in os.walk(folder_path):
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in ['.mp4', '.avi', '.mkv', '.mov', '.webm', '.m4v', '.flv', '.wmv']:
+                        video_count += 1
+            
+            # If there are many files, show a progress message and process in chunks
+            if video_count > 100:
+                # Create progress dialog
+                progress_dialog = QtWidgets.QProgressDialog(
+                    f"Đang quét {video_count} video trong thư mục...", 
+                    "Hủy", 0, 100, self
+                )
+                progress_dialog.setWindowTitle("Đang tải danh sách video")
+                progress_dialog.setWindowModality(Qt.WindowModal)
+                progress_dialog.show()
+                
+                # Use the utility function to refresh video list with progress reporting
+                self.all_videos = []
+                
+                # Process files in batches
+                total_files = 0
+                for root, _, files in os.walk(folder_path):
+                    for file in files:
+                        ext = os.path.splitext(file)[1].lower()
+                        if ext in ['.mp4', '.avi', '.mkv', '.mov', '.webm', '.m4v', '.flv', '.wmv']:
+                            total_files += 1
+                
+                processed_files = 0
+                for root, _, files in os.walk(folder_path):
+                    for file in files:
+                        ext = os.path.splitext(file)[1].lower()
+                        if ext in ['.mp4', '.avi', '.mkv', '.mov', '.webm', '.m4v', '.flv', '.wmv']:
+                            file_path = os.path.join(root, file)
+                            video_info = {
+                                "name": file,
+                                "path": file_path,
+                                "status": "new",
+                                "file_size_bytes": os.path.getsize(file_path)
+                            }
+                            self.all_videos.append(video_info)
+                            
+                            processed_files += 1
+                            progress = int((processed_files / total_files) * 100)
+                            progress_dialog.setValue(progress)
+                            
+                            if progress_dialog.wasCanceled():
+                                break
+                        
+                        if progress_dialog.wasCanceled():
+                            break
+                    
+                    if progress_dialog.wasCanceled():
+                        break
+                
+                progress_dialog.close()
+            else:
+                # Use the utility function to refresh video list
+                self.all_videos = refresh_video_list(self, folder_path)
             
             # Update videos dictionary
             self.videos = {}
@@ -970,16 +1536,41 @@ class MainUI(QtWidgets.QMainWindow):
             # Reset selected video
             self.selected_video = None
             
+            # Reset pagination to first page
+            self.current_page = 1
+            
+            # Reset selection counters
+            self.selected_video_count = 0
+            self.selected_videos_size = 0
+            
             # Update UI
             self.update_video_list_ui()
+        except Exception as e:
+            logger.error(f"Error refreshing folder: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            # Restore cursor
+            QtWidgets.QApplication.restoreOverrideCursor()
 
     def update_video_list_ui(self):
         """Update video list UI with current videos"""
         if not hasattr(self, 'video_list'):
             return
         
-        # Get number of videos to display (up to 10)
-        display_count = min(len(self.all_videos), 10)
+        # Calculate pagination
+        items_per_page = 10
+        total_pages = (len(self.all_videos) + items_per_page - 1) // items_per_page  # Ceiling division
+        
+        # Ensure current page is valid
+        self.current_page = min(max(1, self.current_page), max(1, total_pages))
+        
+        # Calculate start and end indices for current page
+        start_idx = (self.current_page - 1) * items_per_page
+        end_idx = min(start_idx + items_per_page, len(self.all_videos))
+        
+        # Get videos for current page
+        current_videos = self.all_videos[start_idx:end_idx]
+        display_count = len(current_videos)
         
         # Update each row
         for i in range(1, 11):
@@ -995,7 +1586,7 @@ class MainUI(QtWidgets.QMainWindow):
                     row.setVisible(True)
                     
                     # Get video info
-                    video = self.all_videos[i-1]
+                    video = current_videos[i-1]
                     
                     # Update label
                     label.setText(video["name"])
@@ -1026,13 +1617,103 @@ class MainUI(QtWidgets.QMainWindow):
             duplicate_count = sum(1 for v in self.all_videos if v["status"] == "duplicate")
             uploaded_count = sum(1 for v in self.all_videos if v["status"] == "uploaded")
             
-            self.pagination_info_label.setText(
-                f"Hiển thị 1-{display_count} trên tổng {len(self.all_videos)} videos, "
-                f"có {duplicate_count} video trùng, có {uploaded_count} đã tải lên"
-            )
+            if len(self.all_videos) > 0:
+                self.pagination_info_label.setText(
+                    f"Hiển thị {start_idx+1}-{end_idx} trên tổng {len(self.all_videos)} videos, "
+                    f"có {duplicate_count} video trùng, có {uploaded_count} đã tải lên"
+                )
+            else:
+                self.pagination_info_label.setText("Không có video nào trong thư mục này")
+        
+        # Update pagination buttons
+        self.update_pagination_buttons(total_pages)
         
         # Update selection count
         self.update_selection_count()
+        
+        # Update folder stats
+        if hasattr(self, 'folder_stats_label'):
+            total_size = sum(video.get("file_size_bytes", 0) for video in self.all_videos)
+            size_str = self.format_file_size(total_size)
+            self.folder_stats_label.setText(f"Tổng dung lượng: {size_str} | {len(self.all_videos)} videos")
+
+    def update_pagination_buttons(self, total_pages):
+        """Update pagination buttons based on total pages"""
+        if not (hasattr(self, 'page1_button') and hasattr(self, 'page2_button')):
+            return
+            
+        # Update visibility and appearance of page buttons
+        self.page1_button.setVisible(total_pages > 0)
+        self.page2_button.setVisible(total_pages > 1)
+        
+        # Update page button visibility for higher page counts
+        if total_pages > 2:
+            self.page2_button.setText("2")  # Make sure it says "2"
+            
+            # Show page buttons for current pages
+            if self.current_page > 2:
+                self.page2_button.setText(str(self.current_page))
+        
+        # Update active page indicators
+        self.page1_button.setProperty("class", "pageButton")
+        self.page2_button.setProperty("class", "pageButton")
+        
+        # Set styles for page buttons
+        if self.current_page == 1:
+            self.page1_button.setProperty("class", "pageButtonActive")
+            self.page1_button.setStyleSheet("background-color: #3498DB; color: white;")
+            self.page2_button.setStyleSheet("")
+        elif self.current_page == 2:
+            self.page2_button.setProperty("class", "pageButtonActive")
+            self.page2_button.setStyleSheet("background-color: #3498DB; color: white;")
+            self.page1_button.setStyleSheet("")
+        elif self.current_page > 2:
+            # If we're showing page numbers beyond 2, highlight the 2nd button (which now shows current page)
+            self.page2_button.setProperty("class", "pageButtonActive")
+            self.page2_button.setStyleSheet("background-color: #3498DB; color: white;")
+            self.page1_button.setStyleSheet("")
+        
+        # Update navigation buttons
+        if hasattr(self, 'prev_page_button') and hasattr(self, 'next_page_button'):
+            self.prev_page_button.setEnabled(self.current_page > 1)
+            self.next_page_button.setEnabled(self.current_page < total_pages)
+            
+            if hasattr(self, 'first_page_button') and hasattr(self, 'last_page_button'):
+                self.first_page_button.setEnabled(self.current_page > 1)
+                self.last_page_button.setEnabled(self.current_page < total_pages)
+
+    def go_to_page(self, page):
+        """Go to specific page"""
+        items_per_page = 10
+        total_pages = (len(self.all_videos) + items_per_page - 1) // items_per_page
+        
+        if 1 <= page <= total_pages:
+            self.current_page = page
+            self.update_video_list_ui()
+
+    def next_page(self):
+        """Go to next page"""
+        items_per_page = 10
+        total_pages = (len(self.all_videos) + items_per_page - 1) // items_per_page
+        
+        if self.current_page < total_pages:
+            self.current_page += 1
+            self.update_video_list_ui()
+
+    def prev_page(self):
+        """Go to previous page"""
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.update_video_list_ui()
+
+    def last_page(self):
+        """Go to last page"""
+        items_per_page = 10
+        total_pages = (len(self.all_videos) + items_per_page - 1) // items_per_page
+        
+        if self.current_page != total_pages:
+            self.current_page = total_pages
+            self.update_video_list_ui()
 
     def filter_videos(self, text):
         """Filter videos by name"""
@@ -1048,6 +1729,7 @@ class MainUI(QtWidgets.QMainWindow):
         # Replace all_videos temporarily for UI update
         saved_videos = self.all_videos
         self.all_videos = filtered_videos
+        self.current_page = 1  # Reset to first page
         self.update_video_list_ui()
         self.all_videos = saved_videos
 
@@ -1065,6 +1747,9 @@ class MainUI(QtWidgets.QMainWindow):
             self.all_videos.sort(key=lambda v: v.get("duration", 0))
         elif index == 6:  # Status
             self.all_videos.sort(key=lambda v: v["status"])
+        
+        # Reset to first page
+        self.current_page = 1
         
         # Update UI
         self.update_video_list_ui()
@@ -1145,6 +1830,12 @@ class MainUI(QtWidgets.QMainWindow):
         
         # Refresh folder after upload
         self.refresh_folder()
+
+    def resizeEvent(self, event):
+        """Handle resize event to update loading overlay size"""
+        if hasattr(self, 'loading_overlay'):
+            self.loading_overlay.resize(self.central_widget.size())
+        super(MainUI, self).resizeEvent(event)
 
 # Run the application if executed directly
 if __name__ == "__main__":
