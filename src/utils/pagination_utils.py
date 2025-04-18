@@ -33,8 +33,10 @@ class PaginationManager:
         self.last_page_button = None
         self.pagination_frame = None
         self.on_page_change_callback = None
+        self.button_container = None  # Container for page buttons
+        self.button_layout = None     # Layout for page buttons
         
-        # Cập nhật kích thước lớn hơn cho stylesheets
+        # Update styles - làm rõ với font bold hơn và kích thước lớn hơn
         self.active_page_style = """
             background-color: #3498DB; 
             color: white; 
@@ -69,6 +71,7 @@ class PaginationManager:
             max-height: 40px;
             font-size: 14px;
         """
+    
     def setup_pagination(self, pagination_frame, first_button, prev_button, next_button, last_button, on_page_change=None):
         """
         Setup pagination controls with improved error handling.
@@ -80,9 +83,6 @@ class PaginationManager:
             next_button: Next page button (>)
             last_button: Last page button (>>)
             on_page_change: Callback when page changes
-            
-        Returns:
-            bool: True if setup successful, False otherwise
         """
         try:
             self.pagination_frame = pagination_frame
@@ -136,11 +136,71 @@ class PaginationManager:
                 if btn:
                     btn.setCursor(QtCore.Qt.PointingHandCursor)
             
-            logger.info("Thiết lập pagination manager thành công")
+            # Tìm hoặc tạo layout cho paginator frame
+            pagination_layout = pagination_frame.layout()
+            if not pagination_layout:
+                pagination_layout = QtWidgets.QHBoxLayout(pagination_frame)
+                pagination_layout.setContentsMargins(15, 10, 15, 10)
+                pagination_layout.setSpacing(5)
+            
+            # Tạo container riêng cho các nút trang số
+            self.button_container = QtWidgets.QWidget(pagination_frame)
+            self.button_container.setObjectName("paginationButtonContainer")
+            # Đặt kích thước cho container để đảm bảo nó có đủ không gian
+            self.button_container.setMinimumWidth(200)
+            self.button_container.setMinimumHeight(40)
+            
+            # Tạo layout ngang cho container nút
+            self.button_layout = QtWidgets.QHBoxLayout(self.button_container)
+            self.button_layout.setContentsMargins(0, 0, 0, 0)
+            self.button_layout.setSpacing(5)
+            self.button_layout.setAlignment(Qt.AlignCenter)
+            
+            # Định vị container giữa prev_button và next_button
+            # Tìm vị trí của prev_button trong layout
+            for i in range(pagination_layout.count()):
+                if pagination_layout.itemAt(i).widget() == prev_button:
+                    # Chèn container vào sau prev_button
+                    pagination_layout.insertWidget(i+1, self.button_container)
+                    break
+            else:
+                # Nếu không tìm thấy, thử chèn vào vị trí phù hợp
+                info_label = None
+                for i in range(pagination_layout.count()):
+                    widget = pagination_layout.itemAt(i).widget()
+                    if widget and isinstance(widget, QtWidgets.QLabel):
+                        info_label = widget
+                        break
+                
+                if info_label:
+                    # Sắp xếp lại toàn bộ layout
+                    for i in range(pagination_layout.count()):
+                        widget = pagination_layout.itemAt(0).widget()
+                        if widget:
+                            pagination_layout.removeWidget(widget)
+                    
+                    # Thêm lại các widget theo thứ tự đúng
+                    pagination_layout.addWidget(info_label)  # Info label
+                    pagination_layout.addStretch(1)          # Spacer
+                    pagination_layout.addWidget(first_button)
+                    pagination_layout.addWidget(prev_button)
+                    pagination_layout.addWidget(self.button_container)
+                    pagination_layout.addWidget(next_button)
+                    pagination_layout.addWidget(last_button)
+                else:
+                    # Thêm vào cuối nếu không tìm thấy
+                    pagination_layout.addWidget(self.button_container)
+            
+            # Đảm bảo container hiển thị
+            self.button_container.setVisible(True)
+            
+            logger.info("Đã thiết lập pagination manager thành công")
             return True
             
         except Exception as e:
             logger.error(f"Lỗi khi thiết lập pagination manager: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def create_page_buttons(self, parent, total_pages=1):
@@ -153,43 +213,64 @@ class PaginationManager:
             total_pages: Maximum number of pages to create
         """
         try:
+            # Xóa các nút cũ
             self._clear_page_buttons()
             
-            # Create page number buttons (more than enough)
+            # Đảm bảo total_pages ít nhất là 1
+            total_pages = max(1, total_pages)
+            
+            # Tạo container cho các nút nếu chưa tồn tại
+            if not hasattr(self, 'button_container') or not self.button_container:
+                self.button_container = QtWidgets.QWidget(parent)
+                self.button_container.setObjectName("paginationButtonContainer")
+                self.button_container.setMinimumWidth(200)
+                self.button_container.setMinimumHeight(40)
+                
+                # Tạo layout cho container
+                self.button_layout = QtWidgets.QHBoxLayout(self.button_container)
+                self.button_layout.setContentsMargins(0, 0, 0, 0)
+                self.button_layout.setSpacing(5)
+                self.button_layout.setAlignment(Qt.AlignCenter)
+            
+            # Tạo nút số trang (tạo nhiều hơn để dự phòng)
             max_buttons = min(100, max(10, total_pages))
             for i in range(1, max_buttons + 1):
-                btn = QtWidgets.QPushButton(str(i), parent)
-                btn.setFixedSize(40, 40)  # Kích thước lớn hơn
+                btn = QtWidgets.QPushButton(str(i), self.button_container)
+                btn.setFixedSize(40, 40)
                 btn.setStyleSheet(self.inactive_page_style)
                 btn.setCursor(QtCore.Qt.PointingHandCursor)
-                btn.setVisible(False)  # Hide initially
-                btn.clicked.connect(lambda checked, p=i: self.go_to_page(p))
+                btn.setVisible(False)  # Ẩn ban đầu
+                btn.setObjectName(f"pageButton{i}")
+                
+                # Kết nối sự kiện với tham số cố định
+                btn.clicked.connect(lambda checked=False, page=i: self.go_to_page(page))
                 self.page_buttons.append(btn)
-            
-            # Create ellipsis labels
-            for i in range(2):  # We need at most 2 ellipsis
-                label = QtWidgets.QPushButton("...", parent)
-                label.setFixedSize(40, 40)  # Kích thước lớn hơn
+                
+            # Tạo nút dấu chấm lửng
+            for i in range(2):  # Chỉ cần tối đa 2 dấu chấm lửng
+                label = QtWidgets.QPushButton("...", self.button_container)
+                label.setFixedSize(40, 40)
                 label.setStyleSheet(self.inactive_page_style)
                 label.setCursor(QtCore.Qt.PointingHandCursor)
-                label.setVisible(False)  # Hide initially
+                label.setVisible(False)  # Ẩn ban đầu
+                label.setObjectName(f"ellipsisLabel{i}")
                 self.ellipsis_labels.append(label)
             
-            # Connect ellipsis clicks
+            # Kết nối sự kiện cho dấu chấm lửng
             if len(self.ellipsis_labels) >= 2:
-                # Left ellipsis jumps back
-                self.ellipsis_labels[0].clicked.connect(
-                    lambda: self.go_to_page(max(1, self.current_page - 5))
-                )
-                # Right ellipsis jumps forward 
-                self.ellipsis_labels[1].clicked.connect(
-                    lambda: self.go_to_page(min(self.total_pages, self.current_page + 5))
-                )
+                # Dấu chấm lửng bên trái nhảy lùi 5 trang
+                self.ellipsis_labels[0].clicked.connect(lambda: self.go_to_page(max(1, self.current_page - 5)))
+                # Dấu chấm lửng bên phải nhảy tới 5 trang
+                self.ellipsis_labels[1].clicked.connect(lambda: self.go_to_page(min(self.total_pages, self.current_page + 5)))
             
-            logger.info(f"Đã tạo {len(self.page_buttons)} nút trang và {len(self.ellipsis_labels)} nhãn dấu chấm lửng")
+            # Log để debug
+            logger.info(f"Đã tạo {len(self.page_buttons)} nút trang cho tổng số {total_pages} trang")
             
         except Exception as e:
             logger.error(f"Lỗi khi tạo các nút trang: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
     def update_pagination(self, current_page, total_pages):
         """
         Update pagination based on current page and total pages.
@@ -199,28 +280,35 @@ class PaginationManager:
             total_pages: Total number of pages
         """
         try:
-            # Ensure valid values
+            # Đảm bảo giá trị hợp lệ
             self.current_page = max(1, min(current_page, max(1, total_pages)))
             self.total_pages = max(1, total_pages)
             
-            logger.debug(f"Cập nhật phân trang: current={self.current_page}, total={self.total_pages}")
+            logger.info(f"Cập nhật phân trang: current={self.current_page}, total={self.total_pages}")
             
-            # Calculate visible pages
+            # Tính toán các trang hiển thị
             visible_pages = self._calculate_visible_pages()
-            logger.debug(f"Các trang hiển thị: {visible_pages}")
+            logger.info(f"Các trang sẽ hiển thị: {visible_pages}")
             
-            # Hide all buttons first
+            # Ẩn tất cả các nút
             self._hide_all_buttons()
             
-            # Position and show the needed buttons
-            self._position_buttons(visible_pages)
+            # Cập nhật layout nút
+            self._update_button_layout(visible_pages)
             
-            # Update navigation button states
+            # Cập nhật trạng thái các nút điều hướng
             self._update_navigation_button_states()
+            
+            # Đảm bảo container hiển thị
+            if hasattr(self, 'button_container'):
+                self.button_container.setVisible(True)
+                self.button_container.raise_()
             
         except Exception as e:
             logger.error(f"Lỗi cập nhật phân trang: {str(e)}")
-    
+            import traceback
+            logger.error(traceback.format_exc())
+        
     def _hide_all_buttons(self):
         """Hide all page buttons and ellipsis labels."""
         try:
@@ -235,74 +323,161 @@ class PaginationManager:
         except Exception as e:
             logger.error(f"Lỗi ẩn các nút: {str(e)}")
     
-    def _position_buttons(self, visible_pages):
+    def _update_button_layout(self, visible_pages):
         """
-        Position and show buttons according to visible pages.
+        Update button layout with visible page buttons and ellipsis labels.
         
         Args:
             visible_pages: List of page numbers and ellipses to show
         """
         try:
-            # We need the parent to get coordinates
-            if not self.pagination_frame or not self.prev_page_button:
-                logger.error("Không có pagination_frame hoặc prev_button để định vị nút")
+            if not self.button_layout:
+                logger.error("Button layout is not initialized")
                 return
-                
-            # Start position (after prev button)
-            start_x = self.prev_page_button.x() + self.prev_page_button.width() + 5
             
-            # Current position
-            current_x = start_x
+            # Xóa tất cả widget hiện tại từ layout
+            while self.button_layout.count():
+                item = self.button_layout.takeAt(0)
+                if item.widget():
+                    item.widget().setVisible(False)
             
-            # Process each visible page
+            # Log các trang sẽ hiển thị
+            logger.info(f"Cập nhật layout nút với các trang: {visible_pages}")
+            
+            # Thêm các nút trang và dấu chấm lửng vào layout
             for i, item in enumerate(visible_pages):
                 if item == "...":
-                    # Show and position ellipsis
+                    # Hiển thị dấu chấm lửng
                     ellipsis_index = 0 if i < len(visible_pages)/2 else 1
                     if ellipsis_index < len(self.ellipsis_labels):
                         label = self.ellipsis_labels[ellipsis_index]
-                        label.move(current_x, self.prev_page_button.y())
                         label.setVisible(True)
-                        current_x += label.width() + 5
+                        self.button_layout.addWidget(label)
                 else:
-                    # Show and position page button
+                    # Hiển thị nút số trang
                     page_num = item
-                    btn_index = page_num - 1  # 0-based index
+                    btn_index = page_num - 1  # Chỉ số 0-based
                     
                     if btn_index < len(self.page_buttons):
                         btn = self.page_buttons[btn_index]
                         btn.setText(str(page_num))
                         
-                        # Set active style for current page
+                        # Đặt kiểu cho trang hiện tại
                         if page_num == self.current_page:
                             btn.setStyleSheet(self.active_page_style)
                         else:
                             btn.setStyleSheet(self.inactive_page_style)
-                            
-                        # Position and show
-                        btn.move(current_x, self.prev_page_button.y())
-                        btn.setVisible(True)
                         
-                        # Update current_x for next button
-                        current_x += btn.width() + 5
+                        # Hiển thị nút
+                        btn.setVisible(True)
+                        self.button_layout.addWidget(btn)
+                        logger.debug(f"Hiển thị nút trang {page_num}")
                     else:
                         logger.warning(f"Chỉ số nút trang vượt quá: {btn_index} >= {len(self.page_buttons)}")
             
-            # Update next button position
-            if self.next_page_button:
-                self.next_page_button.move(current_x, self.next_page_button.y())
-                self.next_page_button.setVisible(True)
-                
-            # Update last button position
-            if self.last_page_button and self.next_page_button:
-                self.last_page_button.move(current_x + self.next_page_button.width() + 5, self.last_page_button.y())
-                self.last_page_button.setVisible(True)
-                
+            # Đảm bảo các nút hiển thị đúng cách
+            self.button_container.updateGeometry()
+            self.button_container.update()
+            
         except Exception as e:
-            logger.error(f"Lỗi định vị nút: {str(e)}")
+            logger.error(f"Lỗi cập nhật layout nút: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-    
+            
+    def setup_pagination(self, pagination_frame, first_button, prev_button, next_button, last_button, on_page_change=None):
+        """
+        Setup pagination controls with improved error handling.
+        
+        Args:
+            pagination_frame: Frame containing pagination controls
+            first_button: First page button (<<)
+            prev_button: Previous page button (<)
+            next_button: Next page button (>)
+            last_button: Last page button (>>)
+            on_page_change: Callback when page changes
+        """
+        try:
+            self.pagination_frame = pagination_frame
+            self.first_page_button = first_button
+            self.prev_page_button = prev_button
+            self.next_page_button = next_button
+            self.last_page_button = last_button
+            self.on_page_change_callback = on_page_change
+            
+            # Kết nối các tín hiệu cho các nút điều hướng
+            if self.first_page_button:
+                try:
+                    self.first_page_button.clicked.disconnect()  # Ngắt kết nối cũ
+                except:
+                    pass  # Bỏ qua nếu không có kết nối
+                self.first_page_button.clicked.connect(self.go_to_first_page)
+                self.first_page_button.setCursor(QtCore.Qt.PointingHandCursor)
+            
+            if self.prev_page_button:
+                try:
+                    self.prev_page_button.clicked.disconnect()
+                except:
+                    pass
+                self.prev_page_button.clicked.connect(self.go_to_prev_page)
+                self.prev_page_button.setCursor(QtCore.Qt.PointingHandCursor)
+            
+            if self.next_page_button:
+                try:
+                    self.next_page_button.clicked.disconnect()
+                except:
+                    pass
+                self.next_page_button.clicked.connect(self.go_to_next_page)
+                self.next_page_button.setCursor(QtCore.Qt.PointingHandCursor)
+            
+            if self.last_page_button:
+                try:
+                    self.last_page_button.clicked.disconnect()
+                except:
+                    pass
+                self.last_page_button.clicked.connect(self.go_to_last_page)
+                self.last_page_button.setCursor(QtCore.Qt.PointingHandCursor)
+            
+            # Thêm container nút trang vào layout
+            if hasattr(self, 'button_container') and self.button_container:
+                pag_layout = pagination_frame.layout()
+                if pag_layout:
+                    # Tìm vị trí chèn giữa prev và next button
+                    placeholder = None
+                    for i in range(pag_layout.count()):
+                        widget = pag_layout.itemAt(i).widget()
+                        if widget and widget.objectName() == "page_buttons_placeholder":
+                            placeholder = widget
+                            break
+                    
+                    if placeholder:
+                        idx = pag_layout.indexOf(placeholder)
+                        pag_layout.removeWidget(placeholder)
+                        placeholder.deleteLater()
+                        pag_layout.insertWidget(idx, self.button_container)
+                    else:
+                        # Tìm vị trí chèn sau prev_button
+                        for i in range(pag_layout.count()):
+                            widget = pag_layout.itemAt(i).widget()
+                            if widget == prev_button:
+                                pag_layout.insertWidget(i+1, self.button_container)
+                                break
+                        else:
+                            # Nếu không tìm thấy, thêm vào sau info_label
+                            pag_layout.insertWidget(1, self.button_container)
+            
+            # Đảm bảo container hiển thị
+            if hasattr(self, 'button_container'):
+                self.button_container.setVisible(True)
+            
+            logger.info("Thiết lập pagination manager thành công")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Lỗi khi thiết lập pagination manager: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+                
     def _calculate_visible_pages(self):
         """
         Calculate which page numbers and ellipses to show.

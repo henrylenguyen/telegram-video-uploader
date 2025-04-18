@@ -376,7 +376,7 @@ class MainUI(QtWidgets.QMainWindow):
             logger.error(f"Error initializing UI: {str(e)}")
             logger.error(traceback.format_exc())
             QtWidgets.QMessageBox.critical(self, "Error", f"Error initializing UI: {str(e)}")
-    
+            
     def update_video_preview_ui(self):
         """
         Cập nhật UI video_preview để thêm ScrollArea cho thông tin video
@@ -506,21 +506,93 @@ class MainUI(QtWidgets.QMainWindow):
             total_pages: Tổng số trang
         """
         try:
+            # Ghi log để debug
+            logger.info(f"_update_pagination_ui được gọi với tổng số trang: {total_pages}")
+            
             # Tìm pagination frame
             pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
             if not pagination_frame:
                 logger.error("Không tìm thấy pagination frame")
                 return
+                    
+            # Đảm bảo hiển thị frame phân trang
+            pagination_frame.setVisible(True)
+            pagination_frame.setMinimumHeight(60)
+            
+            # Tìm pagination info label nếu chưa có
+            if not hasattr(self, 'pagination_info_label') or not self.pagination_info_label:
+                self.pagination_info_label = pagination_frame.findChild(QtWidgets.QLabel, "paginationInfoLabel")
+            
+            # Đảm bảo hiển thị thông tin phân trang
+            if self.pagination_info_label:
+                self.pagination_info_label.setVisible(True)
                 
-            # Khởi tạo pagination manager nếu chưa tồn tại
+            # Các nút điều hướng - đảm bảo chúng tồn tại và hiển thị
+            if not self.first_page_button:
+                self.first_page_button = pagination_frame.findChild(QtWidgets.QPushButton, "firstPageButton")
+                if self.first_page_button:
+                    self.first_page_button.setVisible(True)
+                    
+            if not self.prev_page_button:
+                self.prev_page_button = pagination_frame.findChild(QtWidgets.QPushButton, "prevPageButton")
+                if self.prev_page_button:
+                    self.prev_page_button.setVisible(True)
+                    
+            if not self.next_page_button:
+                self.next_page_button = pagination_frame.findChild(QtWidgets.QPushButton, "nextPageButton")
+                if self.next_page_button:
+                    self.next_page_button.setVisible(True)
+                    
+            if not self.last_page_button:
+                self.last_page_button = pagination_frame.findChild(QtWidgets.QPushButton, "lastPageButton")
+                if self.last_page_button:
+                    self.last_page_button.setVisible(True)
+            
+            # Kiểm tra layout phân trang
+            pagination_layout = pagination_frame.layout()
+            if not pagination_layout or pagination_layout.count() == 0:
+                # Tạo layout mới
+                new_layout = QtWidgets.QHBoxLayout(pagination_frame)
+                new_layout.setContentsMargins(15, 10, 15, 10)
+                new_layout.setSpacing(5)
+                
+                # Thêm các thành phần cần thiết vào layout
+                if self.pagination_info_label:
+                    new_layout.addWidget(self.pagination_info_label)
+                    new_layout.addStretch(1)
+                    
+                if self.first_page_button:
+                    new_layout.addWidget(self.first_page_button)
+                    
+                if self.prev_page_button:
+                    new_layout.addWidget(self.prev_page_button)
+                    
+                # Tạo widget để chứa các nút trang
+                page_container = QtWidgets.QWidget(pagination_frame)
+                page_container.setObjectName("pageButtonsContainer")
+                page_container.setMinimumWidth(200)
+                page_layout = QtWidgets.QHBoxLayout(page_container)
+                page_layout.setContentsMargins(0, 0, 0, 0)
+                page_layout.setSpacing(5)
+                new_layout.addWidget(page_container)
+                
+                if self.next_page_button:
+                    new_layout.addWidget(self.next_page_button)
+                    
+                if self.last_page_button:
+                    new_layout.addWidget(self.last_page_button)
+                    
+                pagination_layout = new_layout
+            
+            # Khởi tạo pagination manager
             if not self.pagination_manager:
                 from utils.pagination_utils import PaginationManager
                 self.pagination_manager = PaginationManager(self)
                 
-                # Tạo các nút phân trang trong pagination frame
+                # Tạo các nút trang
                 self.pagination_manager.create_page_buttons(pagination_frame, total_pages)
                 
-                # Thiết lập các nút điều hướng
+                # Thiết lập pagination
                 setup_success = self.pagination_manager.setup_pagination(
                     pagination_frame=pagination_frame,
                     first_button=self.first_page_button,
@@ -533,17 +605,24 @@ class MainUI(QtWidgets.QMainWindow):
                 if not setup_success:
                     logger.error("Không thể thiết lập pagination manager")
                     return
-                
+                    
                 logger.info("Đã khởi tạo pagination manager thành công")
             
             # Cập nhật pagination với trang hiện tại và tổng số trang
             self.pagination_manager.update_pagination(self.current_page, total_pages)
             
+            # Đảm bảo hiển thị frame và các thành phần sau khi cập nhật
+            pagination_frame.update()
+            pagination_frame.show()
+            
+            # Log thông tin cập nhật
+            logger.info(f"Cập nhật phân trang hoàn tất: trang {self.current_page}/{total_pages}")
+                
         except Exception as e:
             logger.error(f"Lỗi cập nhật UI phân trang: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-
+            
     def handle_page_change(self, new_page):
         """
         Xử lý khi có thay đổi trang từ pagination manager
@@ -554,7 +633,6 @@ class MainUI(QtWidgets.QMainWindow):
         if self.current_page != new_page:
             self.current_page = new_page
             self.update_video_list_ui()
-
     def initialize_sort_dropdown(self):
         """
         Thiết lập dropdown sắp xếp video với tùy chọn mặc định
@@ -595,7 +673,6 @@ class MainUI(QtWidgets.QMainWindow):
         except Exception as e:
             logger.error(f"Lỗi khi thiết lập dropdown sắp xếp: {str(e)}")
             logger.error(traceback.format_exc())
-
     def apply_global_stylesheet(self):
         """Apply global stylesheet to maintain the beautiful design"""
         self.setStyleSheet("""
@@ -888,7 +965,7 @@ class MainUI(QtWidgets.QMainWindow):
             self.sort_combo_box = list_widget.findChild(QtWidgets.QComboBox, "sortComboBox")
             self.pagination_info_label = list_widget.findChild(QtWidgets.QLabel, "paginationInfoLabel")
             
-            # Get pagination buttons and đặt các nút phân trang cố định về None vì đã loại bỏ khỏi UI
+            # Get pagination buttons
             self.page1_button = None
             self.page2_button = None
             self.next_page_button = list_widget.findChild(QtWidgets.QPushButton, "nextPageButton")
@@ -916,6 +993,7 @@ class MainUI(QtWidgets.QMainWindow):
             logger.error(f"Failed to load video list UI: {str(e)}")
             # Fallback to a basic video list if loading fails
             return self.create_fallback_video_list()
+        
     def load_video_preview(self):
         """Load video preview component from .ui file"""
         ui_path = os.path.join(self.get_ui_dir(), "video_preview.ui")
@@ -1468,6 +1546,7 @@ class MainUI(QtWidgets.QMainWindow):
         except Exception as e:
             logger.error(f"Error connecting signals: {str(e)}")
             logger.error(traceback.format_exc())
+            
     def header_tab_clicked(self, button):
         """Handle header tab button clicks"""
         # Set clicked button as checked, others as unchecked
@@ -1562,7 +1641,7 @@ class MainUI(QtWidgets.QMainWindow):
                 try:
                     # Check if it's ConfigParser object
                     if hasattr(self.app.config, 'has_section') and self.app.config.has_section('SETTINGS'):
-                        folder_path = self.app.config.get('SETTINGS', 'video_folder')
+                        folder_path = self.app.config.get('SETTINGS', 'video_folder', fallback="")
                     # Otherwise treat as dictionary
                     elif isinstance(self.app.config, dict) and 'SETTINGS' in self.app.config:
                         settings = self.app.config.get('SETTINGS', {})
@@ -1575,7 +1654,92 @@ class MainUI(QtWidgets.QMainWindow):
         if folder_path and os.path.exists(folder_path) and os.path.isdir(folder_path):
             self.folder_path_edit.setText(folder_path)
             self.refresh_folder()
-
+            
+        # Khởi tạo dropdown sắp xếp
+        self.initialize_sort_dropdown()
+    
+    def load_recent_folder(self, index):
+        """Load folder from recent folders combo box"""
+        try:
+            # Ghi log để debug
+            logger.debug(f"load_recent_folder được gọi với index={index}, count={self.recent_folders_combo.count()}")
+            
+            # Không thực hiện hành động nếu người dùng chọn tiêu đề
+            if index <= 0:  # Tiêu đề "Thư mục gần đây"
+                return
+            
+            # Lấy đường dẫn đầy đủ từ userData (nếu có) hoặc từ text
+            folder = self.recent_folders_combo.itemData(index, Qt.UserRole)
+            if not folder:  # Nếu không có userData, sử dụng text hiển thị
+                folder = self.recent_folders_combo.itemText(index)
+            
+            logger.debug(f"Đã lấy folder từ combobox: {folder}")
+            
+            # Kiểm tra xem thư mục có tồn tại không
+            if not os.path.exists(folder):
+                # Hiển thị cảnh báo và xóa thư mục không tồn tại khỏi dropdown
+                result = QtWidgets.QMessageBox.warning(
+                    self, 
+                    "Lỗi", 
+                    f"Thư mục không tồn tại hoặc không hợp lệ:\n{folder}", 
+                    QtWidgets.QMessageBox.Ok
+                )
+                
+                # Xóa thư mục không hợp lệ khỏi dropdown và config
+                self.recent_folders_combo.removeItem(index)
+                self.save_recent_folders_to_config()
+                
+                # Đặt lại dropdown về item đầu tiên ("Đường dẫn gần đây")
+                self.recent_folders_combo.setCurrentIndex(0)
+                return
+            
+            # Hiển thị tooltip đầy đủ đường dẫn
+            self.recent_folders_combo.setToolTip(folder)
+            
+            # Clear existing previews first
+            clear_video_preview(self)
+            
+            # Set folder path in the edit box
+            self.folder_path_edit.setText(folder)
+            
+            # Block signals để tránh đệ quy
+            self.recent_folders_combo.blockSignals(True)
+            
+            # Nếu là một mục khác mục đầu tiên (sau title), hãy di chuyển nó lên đầu
+            if index > 1:
+                # Lưu đường dẫn đầy đủ và văn bản hiển thị
+                full_path = folder
+                display_text = self.truncate_path(full_path)
+                
+                # Xóa mục hiện tại
+                self.recent_folders_combo.removeItem(index)
+                
+                # Thêm vào đầu danh sách (sau title)
+                self.recent_folders_combo.insertItem(1, display_text)
+                self.recent_folders_combo.setItemData(1, full_path, Qt.UserRole)
+                self.recent_folders_combo.setCurrentIndex(1)
+                
+                logger.debug(f"Đã di chuyển thư mục '{folder}' lên vị trí đầu tiên")
+            
+            # Unblock signals
+            self.recent_folders_combo.blockSignals(False)
+            
+            # Lưu cấu hình 
+            self.save_recent_folders_to_config()
+            
+            # Làm mới thư mục
+            self.refresh_folder()
+            
+            logger.debug(f"Hoàn thành load_recent_folder với thư mục: {folder}")
+        except Exception as e:
+            logger.error(f"Lỗi khi tải thư mục gần đây: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # Đảm bảo unblock signals
+            if hasattr(self, 'recent_folders_combo'):
+                self.recent_folders_combo.blockSignals(False)
+                
     def load_recent_folders_from_config(self):
         """Load recent folders from config"""
         if not hasattr(self, 'recent_folders_combo'):
@@ -1829,77 +1993,78 @@ class MainUI(QtWidgets.QMainWindow):
         
     def truncate_path(self, path, max_length=30):
         """Cắt ngắn đường dẫn nếu quá dài để hiển thị"""
-        if len(path) > max_length:
-            return path[:max_length-3] + "..."
-        return path
-
-    def load_recent_folder(self, index):
-        """Load folder from recent folders combo box"""
-        # Không thực hiện hành động nếu người dùng chọn tiêu đề
-        if index <= 0:  # Tiêu đề "Thư mục gần đây"
+        if not path:
+            return ""
+        
+        try:
+            # Nếu đường dẫn quá dài, cắt phần giữa và thêm ...
+            if len(path) > max_length:
+                # Giữ lại phần đầu và phần cuối, thêm dấu ... ở giữa
+                half_length = (max_length - 3) // 2
+                return path[:half_length] + "..." + path[-half_length:]
+            return path
+        except Exception as e:
+            logger.error(f"Lỗi khi cắt ngắn đường dẫn: {str(e)}")
+            return path
+    def add_to_recent_folders(self, folder_path):
+        """Add folder to recent folders dropdown - IMPROVED"""
+        if not hasattr(self, 'recent_folders_combo'):
+            logger.error("recent_folders_combo không tồn tại")
             return
             
         try:
-            # Lấy đường dẫn đầy đủ từ userData (nếu có) hoặc từ text
-            folder = self.recent_folders_combo.itemData(index, Qt.UserRole)
-            if not folder:  # Nếu không có userData, sử dụng text hiển thị
-                folder = self.recent_folders_combo.itemText(index)
-                
-            # Kiểm tra xem thư mục có tồn tại không
-            if not os.path.exists(folder):
-                # Hiển thị cảnh báo và xóa thư mục không tồn tại khỏi dropdown
-                result = QtWidgets.QMessageBox.warning(
-                    self, 
-                    "Lỗi", 
-                    f"Thư mục không tồn tại hoặc không hợp lệ:\n{folder}", 
-                    QtWidgets.QMessageBox.Ok
-                )
-                
-                # Xóa thư mục không hợp lệ khỏi dropdown và config
-                self.recent_folders_combo.removeItem(index)
-                self.save_recent_folders_to_config()
-                
-                # Đặt lại dropdown về item đầu tiên ("Đường dẫn gần đây")
-                self.recent_folders_combo.setCurrentIndex(0)
+            # Đảm bảo đường dẫn đầy đủ - chuẩn hóa đường dẫn để tránh các phiên bản khác nhau của cùng đường dẫn
+            folder_path = os.path.normpath(os.path.abspath(folder_path))
+            
+            # Kiểm tra xem thư mục có tồn tại
+            if not os.path.isdir(folder_path):
+                logger.warning(f"Thư mục không tồn tại hoặc không phải thư mục: {folder_path}")
                 return
                 
-            # Hiển thị tooltip đầy đủ đường dẫn
-            self.recent_folders_combo.setToolTip(folder)
+            # Tạm thời ngắt kết nối tín hiệu để tránh kích hoạt đệ quy
+            self.recent_folders_combo.blockSignals(True)
             
-            # Clear existing previews first
-            clear_video_preview(self)
+            # Kiểm tra xem thư mục đã có trong danh sách chưa
+            found_index = -1
+            for i in range(1, self.recent_folders_combo.count()):
+                item_path = self.recent_folders_combo.itemData(i, Qt.UserRole)
+                if not item_path:  # Nếu không có userData, sử dụng text hiển thị
+                    item_path = self.recent_folders_combo.itemText(i)
+                    
+                # Chuẩn hóa đường dẫn để so sánh chính xác
+                if item_path and os.path.normpath(os.path.abspath(item_path)) == folder_path:
+                    found_index = i
+                    break
+                    
+            # Nếu đã tìm thấy, xóa nó (sẽ được thêm vào đầu danh sách)
+            if found_index != -1:
+                self.recent_folders_combo.removeItem(found_index)
+                
+            # Thêm vào đầu danh sách (ngay sau tiêu đề)
+            display_text = self.truncate_path(folder_path)
+            self.recent_folders_combo.insertItem(1, display_text)
+            self.recent_folders_combo.setItemData(1, folder_path, Qt.UserRole)  # Lưu đường dẫn đầy đủ vào user data
+            self.recent_folders_combo.setCurrentIndex(1)  # Chọn thư mục vừa thêm
             
-            # Set folder path in the edit box
-            self.folder_path_edit.setText(folder)
+            # Thiết lập tooltip để hiển thị đường dẫn đầy đủ
+            self.recent_folders_combo.setToolTip(folder_path)
             
-            # QUAN TRỌNG: Ngắt kết nối tạm thời để tránh gọi đệ quy khi setCurrentIndex
-            self.recent_folders_combo.currentIndexChanged.disconnect(self.load_recent_folder)
-            
-            # Lưu combobox index hiện tại để khôi phục sau
-            current_index = index
-            
-            # Kết nối lại sau khi hoàn thành
-            self.recent_folders_combo.currentIndexChanged.connect(self.load_recent_folder)
+            # Giới hạn số lượng thư mục gần đây đến 5 để tránh quá nhiều
+            while self.recent_folders_combo.count() > 6:  # 1 tiêu đề + 5 thư mục
+                self.recent_folders_combo.removeItem(self.recent_folders_combo.count() - 1)
+                
+            # Bật lại tín hiệu
+            self.recent_folders_combo.blockSignals(False)
+                
+            # Lưu vào config
+            self.save_recent_folders_to_config()
         except Exception as e:
-            logger.error(f"Lỗi khi tải thư mục gần đây: {str(e)}")
+            logger.error(f"Lỗi khi thêm thư mục vào danh sách gần đây: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            
-            # Show loading overlay
-            self.loading_overlay.show()
-            QtWidgets.QApplication.processEvents()
-            
-            # Set active item with ellipsis if needed
-            display_text = self.truncate_path(folder)
-            
-            # Lưu đường dẫn đầy đủ vào userData
-            self.recent_folders_combo.setItemData(index, folder, Qt.UserRole)
-            
-            # Giữ folder đã chọn hiển thị trong dropdown
-            self.recent_folders_combo.setItemText(index, display_text)
-            
-            # Refresh folder asynchronously
-            QtCore.QTimer.singleShot(100, self.refresh_folder_with_loading)
+            # Đảm bảo bật lại tín hiệu ngay cả khi có lỗi
+            if hasattr(self, 'recent_folders_combo'):
+                self.recent_folders_combo.blockSignals(False)
 
     def count_video_files(self, folder_path):
         """
@@ -2065,7 +2230,7 @@ class MainUI(QtWidgets.QMainWindow):
             logger.error(f"Lỗi khi debug video list: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-
+            
     def refresh_folder_with_loading(self):
         """Làm mới thư mục với hiệu ứng loading - CẢI TIẾN"""
         self.update_video_list_ui()
@@ -2265,18 +2430,27 @@ class MainUI(QtWidgets.QMainWindow):
                     
                     logger.debug(f"Ẩn hàng {i}")
             
-            # Update pagination info
-            if hasattr(self, 'pagination_info_label'):
+            # Đảm bảo pagination frame hiển thị
+            pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
+            if pagination_frame:
+                pagination_frame.setVisible(True)
+            
+            # Update pagination info - ĐẢM BẢO HIỂN THỊ THÔNG TIN TỔNG SỐ VIDEO
+            if hasattr(self, 'pagination_info_label') and self.pagination_info_label:
                 duplicate_count = sum(1 for v in self.all_videos if v.get("status") == "duplicate")
                 uploaded_count = sum(1 for v in self.all_videos if v.get("status") == "uploaded")
                 
                 if len(self.all_videos) > 0:
-                    self.pagination_info_label.setText(
-                        f"Hiển thị {start_idx+1}-{end_idx} trên tổng {len(self.all_videos)} videos, "
-                        f"có {duplicate_count} video trùng, có {uploaded_count} đã tải lên"
-                    )
+                    info_text = f"Hiển thị {start_idx+1}-{end_idx} trên tổng {len(self.all_videos)} videos"
+                    if duplicate_count > 0:
+                        info_text += f", có {duplicate_count} video trùng"
+                    if uploaded_count > 0:
+                        info_text += f", có {uploaded_count} đã tải lên"
+                    self.pagination_info_label.setText(info_text)
+                    self.pagination_info_label.setVisible(True)
                 else:
                     self.pagination_info_label.setText("Không có video nào trong thư mục này")
+                    self.pagination_info_label.setVisible(True)
             
             # Update pagination UI with improved approach
             self._update_pagination_ui(total_pages)
@@ -2289,11 +2463,13 @@ class MainUI(QtWidgets.QMainWindow):
                 total_size = sum(video.get("file_size_bytes", 0) for video in self.all_videos)
                 size_str = self.format_file_size(total_size)
                 self.folder_stats_label.setText(f"Tổng dung lượng: {size_str} | {len(self.all_videos)} videos")
+                self.folder_stats_label.setVisible(True)
         
         except Exception as e:
             logger.error(f"Lỗi trong update_video_list_ui: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
+            
     def go_to_page(self, page):
         """Go to specific page"""
         items_per_page = 10
