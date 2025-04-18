@@ -146,32 +146,28 @@ QFrame#paginationFrame {
     border-top: 1px solid #E2E8F0;
 }
 
-QPushButton.pageButton {
-    background-color: #FFFFFF;
-    color: #64748B;
-    border: 1px solid #E2E8F0;
+QPushButton.pageButton, QPushButton.pageButtonActive {
     border-radius: 4px;
-    padding: 5px 10px;
-    font-size: 12px;
-    min-width: 30px;
-    max-width: 30px;
-    min-height: 30px;
-    max-height: 30px;
+    padding: 0px;
+    font-size: 14px;
+    min-width: 40px;
+    max-width: 40px;
+    min-height: 40px;
+    max-height: 40px;
     qproperty-alignment: AlignCenter;
 }
 
+QPushButton.pageButton {
+    color: #64748B;
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+}
+
 QPushButton.pageButtonActive {
-    background-color: #3498DB;
     color: white;
-    border: 1px solid #3498DB;
-    border-radius: 4px;
-    padding: 5px 10px;
-    font-size: 12px;
-    min-width: 30px;
-    max-width: 30px;
-    min-height: 30px;
-    max-height: 30px;
-    qproperty-alignment: AlignCenter;
+    background-color: #3498DB;
+    border-color: #3498DB;
+    font-weight: bold;
 }
 
 QPushButton.pageButton:hover {
@@ -1241,14 +1237,14 @@ QLineEdit {
        <widget class="QPushButton" name="firstPageButton">
         <property name="minimumSize">
          <size>
-          <width>30</width>
-          <height>30</height>
+          <width>40</width>
+          <height>40</height>
          </size>
         </property>
         <property name="maximumSize">
          <size>
-          <width>30</width>
-          <height>30</height>
+          <width>40</width>
+          <height>40</height>
          </size>
         </property>
         <property name="class" stdset="0">
@@ -1263,14 +1259,14 @@ QLineEdit {
        <widget class="QPushButton" name="prevPageButton">
         <property name="minimumSize">
          <size>
-          <width>30</width>
-          <height>30</height>
+          <width>40</width>
+          <height>40</height>
          </size>
         </property>
         <property name="maximumSize">
          <size>
-          <width>30</width>
-          <height>30</height>
+          <width>40</width>
+          <height>40</height>
          </size>
         </property>
         <property name="class" stdset="0">
@@ -1282,61 +1278,17 @@ QLineEdit {
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="page1Button">
-        <property name="minimumSize">
-         <size>
-          <width>30</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>30</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="class" stdset="0">
-         <string>pageButtonActive</string>
-        </property>
-        <property name="text">
-         <string>1</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="page2Button">
-        <property name="minimumSize">
-         <size>
-          <width>30</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="maximumSize">
-         <size>
-          <width>30</width>
-          <height>30</height>
-         </size>
-        </property>
-        <property name="class" stdset="0">
-         <string>pageButton</string>
-        </property>
-        <property name="text">
-         <string>2</string>
-        </property>
-       </widget>
-      </item>
-      <item>
        <widget class="QPushButton" name="nextPageButton">
         <property name="minimumSize">
          <size>
-          <width>30</width>
-          <height>30</height>
+          <width>40</width>
+          <height>40</height>
          </size>
         </property>
         <property name="maximumSize">
          <size>
-          <width>30</width>
-          <height>30</height>
+          <width>40</width>
+          <height>40</height>
          </size>
         </property>
         <property name="class" stdset="0">
@@ -1351,14 +1303,14 @@ QLineEdit {
        <widget class="QPushButton" name="lastPageButton">
         <property name="minimumSize">
          <size>
-          <width>30</width>
-          <height>30</height>
+          <width>40</width>
+          <height>40</height>
          </size>
         </property>
         <property name="maximumSize">
          <size>
-          <width>30</width>
-          <height>30</height>
+          <width>40</width>
+          <height>40</height>
          </size>
         </property>
         <property name="class" stdset="0">

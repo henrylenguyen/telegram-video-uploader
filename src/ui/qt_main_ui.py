@@ -3,7 +3,6 @@ Main UI module for Telegram Video Uploader PyQt5 version.
 """
 import sys
 import os
-from utils.pagination_utils import PaginationManager
 import logging
 import configparser
 import traceback
@@ -249,6 +248,7 @@ class LoadingOverlay(QtWidgets.QWidget):
         # Cập nhật kích thước cho container
         self.container.setFixedSize(min(self.width() - 40, 400), 200)
         super(LoadingOverlay, self).resizeEvent(event)
+
 class PlayButton(QtWidgets.QPushButton):
     """Custom play button with SVG-like triangle using QPainter"""
     
@@ -328,6 +328,9 @@ class MainUI(QtWidgets.QMainWindow):
         self.current_page = 1  # Current pagination page
         self.selected_video_count = 0  # Number of selected videos
         self.selected_videos_size = 0  # Total size of selected videos
+
+        # Khởi tạo pagination manager
+        self.pagination_manager = None
 
         # Set window properties
         self.setWindowTitle("Telegram Video Uploader")
@@ -495,41 +498,52 @@ class MainUI(QtWidgets.QMainWindow):
             logger.error(f"Lỗi khi cập nhật UI thông tin video: {str(e)}")
             logger.error(traceback.format_exc())
     
-    def update_pagination_buttons(self, total_pages):
+    def _update_pagination_ui(self, total_pages):
         """
-        Cập nhật nút phân trang dựa trên tổng số trang - CẢI TIẾN
-        Sử dụng PaginationManager để hiển thị theo mẫu:
-        [<<] [<] [1] [2] ... [current-1] [current] [current+1] ... [last-1] [last] [>] [>>]
+        Cập nhật UI phân trang với cách tiếp cận đáng tin cậy hơn
         
         Args:
             total_pages: Tổng số trang
         """
-        # Kiểm tra điều kiện cho pagination
-        pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
-        if not pagination_frame:
-            logger.error("Không tìm thấy pagination frame")
-            return
-            
-        # Khởi tạo pagination manager nếu chưa tồn tại
-        if not hasattr(self, 'pagination_manager'):
-            self.pagination_manager = PaginationManager(self)
-            # Thiết lập pagination manager với các nút điều hướng
-            setup_success = self.pagination_manager.setup_pagination(
-                pagination_frame=pagination_frame,
-                first_button=self.first_page_button,
-                prev_button=self.prev_page_button,
-                next_button=self.next_page_button,
-                last_button=self.last_page_button,
-                on_page_change=self.handle_page_change
-            )
-            
-            if not setup_success:
-                logger.error("Không thể thiết lập pagination manager")
+        try:
+            # Tìm pagination frame
+            pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
+            if not pagination_frame:
+                logger.error("Không tìm thấy pagination frame")
                 return
-        
-        # Cập nhật pagination với trang hiện tại và tổng số trang
-        self.pagination_manager.update_pagination(self.current_page, total_pages)
-    
+                
+            # Khởi tạo pagination manager nếu chưa tồn tại
+            if not self.pagination_manager:
+                from utils.pagination_utils import PaginationManager
+                self.pagination_manager = PaginationManager(self)
+                
+                # Tạo các nút phân trang trong pagination frame
+                self.pagination_manager.create_page_buttons(pagination_frame, total_pages)
+                
+                # Thiết lập các nút điều hướng
+                setup_success = self.pagination_manager.setup_pagination(
+                    pagination_frame=pagination_frame,
+                    first_button=self.first_page_button,
+                    prev_button=self.prev_page_button,
+                    next_button=self.next_page_button,
+                    last_button=self.last_page_button,
+                    on_page_change=self.handle_page_change
+                )
+                
+                if not setup_success:
+                    logger.error("Không thể thiết lập pagination manager")
+                    return
+                
+                logger.info("Đã khởi tạo pagination manager thành công")
+            
+            # Cập nhật pagination với trang hiện tại và tổng số trang
+            self.pagination_manager.update_pagination(self.current_page, total_pages)
+            
+        except Exception as e:
+            logger.error(f"Lỗi cập nhật UI phân trang: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+
     def handle_page_change(self, new_page):
         """
         Xử lý khi có thay đổi trang từ pagination manager
@@ -537,7 +551,9 @@ class MainUI(QtWidgets.QMainWindow):
         Args:
             new_page: Trang mới đã chọn
         """
-        self.go_to_page(new_page)
+        if self.current_page != new_page:
+            self.current_page = new_page
+            self.update_video_list_ui()
 
     def initialize_sort_dropdown(self):
         """
@@ -861,10 +877,9 @@ class MainUI(QtWidgets.QMainWindow):
                     videoItem.mousePressEvent = lambda event, idx=i: self.on_video_row_clicked(idx)
 
             # Clear pagination info
-            if hasattr(list_widget, 'pagination_info_label'):
-                pagination_info = list_widget.findChild(QtWidgets.QLabel, "paginationInfoLabel")
-                if pagination_info:
-                    pagination_info.setText("Hiển thị 0-0 trên tổng 0 videos")
+            pagination_info = list_widget.findChild(QtWidgets.QLabel, "paginationInfoLabel")
+            if pagination_info:
+                pagination_info.setText("Hiển thị 0-0 trên tổng 0 videos")
 
             # Store references to controls
             self.duplicate_check_box = list_widget.findChild(QtWidgets.QCheckBox, "duplicateCheckBox")
@@ -873,31 +888,13 @@ class MainUI(QtWidgets.QMainWindow):
             self.sort_combo_box = list_widget.findChild(QtWidgets.QComboBox, "sortComboBox")
             self.pagination_info_label = list_widget.findChild(QtWidgets.QLabel, "paginationInfoLabel")
             
-            # Get pagination buttons and connect them
-            self.page1_button = list_widget.findChild(QtWidgets.QPushButton, "page1Button")
-            self.page2_button = list_widget.findChild(QtWidgets.QPushButton, "page2Button")
+            # Get pagination buttons and đặt các nút phân trang cố định về None vì đã loại bỏ khỏi UI
+            self.page1_button = None
+            self.page2_button = None
             self.next_page_button = list_widget.findChild(QtWidgets.QPushButton, "nextPageButton")
             self.prev_page_button = list_widget.findChild(QtWidgets.QPushButton, "prevPageButton")
             self.first_page_button = list_widget.findChild(QtWidgets.QPushButton, "firstPageButton")
             self.last_page_button = list_widget.findChild(QtWidgets.QPushButton, "lastPageButton")
-            
-            # Hide page 2 button initially
-            if self.page2_button:
-                self.page2_button.setVisible(False)
-            
-            # Connect pagination buttons
-            if self.page1_button:
-                self.page1_button.clicked.connect(lambda: self.go_to_page(1))
-            if self.page2_button:
-                self.page2_button.clicked.connect(lambda: self.go_to_page(2))
-            if self.next_page_button:
-                self.next_page_button.clicked.connect(self.next_page)
-            if self.prev_page_button:
-                self.prev_page_button.clicked.connect(self.prev_page)
-            if self.first_page_button:
-                self.first_page_button.clicked.connect(lambda: self.go_to_page(1))
-            if self.last_page_button:
-                self.last_page_button.clicked.connect(self.last_page)
 
             # Add shadow effect
             shadow = QtWidgets.QGraphicsDropShadowEffect()
@@ -919,7 +916,6 @@ class MainUI(QtWidgets.QMainWindow):
             logger.error(f"Failed to load video list UI: {str(e)}")
             # Fallback to a basic video list if loading fails
             return self.create_fallback_video_list()
-
     def load_video_preview(self):
         """Load video preview component from .ui file"""
         ui_path = os.path.join(self.get_ui_dir(), "video_preview.ui")
@@ -1111,31 +1107,31 @@ class MainUI(QtWidgets.QMainWindow):
     def update_cursor_properties(self):
         """Update cursor properties for all interactive elements"""
         # List of widgets that should have pointing hand cursor
-        if hasattr(self, 'browse_button'):
+        if hasattr(self, 'browse_button') and self.browse_button:
             self.browse_button.setCursor(QtCore.Qt.PointingHandCursor)
         
-        if hasattr(self, 'refresh_button'):
+        if hasattr(self, 'refresh_button') and self.refresh_button:
             self.refresh_button.setCursor(QtCore.Qt.PointingHandCursor)
         
-        if hasattr(self, 'view_button'):
+        if hasattr(self, 'view_button') and self.view_button:
             self.view_button.setCursor(QtCore.Qt.PointingHandCursor)
         
-        if hasattr(self, 'play_button'):
+        if hasattr(self, 'play_button') and self.play_button:
             self.play_button.setCursor(QtCore.Qt.PointingHandCursor)
         
-        if hasattr(self, 'upload_this_button'):
+        if hasattr(self, 'upload_this_button') and self.upload_this_button:
             self.upload_this_button.setCursor(QtCore.Qt.PointingHandCursor)
         
-        if hasattr(self, 'select_all_button'):
+        if hasattr(self, 'select_all_button') and self.select_all_button:
             self.select_all_button.setCursor(QtCore.Qt.PointingHandCursor)
         
-        if hasattr(self, 'deselect_all_button'):
+        if hasattr(self, 'deselect_all_button') and self.deselect_all_button:
             self.deselect_all_button.setCursor(QtCore.Qt.PointingHandCursor)
         
-        if hasattr(self, 'select_unuploaded_button'):
+        if hasattr(self, 'select_unuploaded_button') and self.select_unuploaded_button:
             self.select_unuploaded_button.setCursor(QtCore.Qt.PointingHandCursor)
         
-        if hasattr(self, 'upload_button'):
+        if hasattr(self, 'upload_button') and self.upload_button:
             self.upload_button.setCursor(QtCore.Qt.PointingHandCursor)
         
         # Handle video rows
@@ -1152,18 +1148,14 @@ class MainUI(QtWidgets.QMainWindow):
                 if frame:
                     frame.setCursor(QtCore.Qt.PointingHandCursor)
                     
-        # Handle pagination buttons  
-        if hasattr(self, 'page1_button'):
-            self.page1_button.setCursor(QtCore.Qt.PointingHandCursor)
-        if hasattr(self, 'page2_button'):
-            self.page2_button.setCursor(QtCore.Qt.PointingHandCursor) 
-        if hasattr(self, 'next_page_button'):
+        # Handle pagination buttons - Loại bỏ kiểm tra các nút không còn tồn tại
+        if hasattr(self, 'next_page_button') and self.next_page_button:
             self.next_page_button.setCursor(QtCore.Qt.PointingHandCursor)
-        if hasattr(self, 'prev_page_button'):
+        if hasattr(self, 'prev_page_button') and self.prev_page_button:
             self.prev_page_button.setCursor(QtCore.Qt.PointingHandCursor)
-        if hasattr(self, 'first_page_button'):
+        if hasattr(self, 'first_page_button') and self.first_page_button:
             self.first_page_button.setCursor(QtCore.Qt.PointingHandCursor)
-        if hasattr(self, 'last_page_button'):
+        if hasattr(self, 'last_page_button') and self.last_page_button:
             self.last_page_button.setCursor(QtCore.Qt.PointingHandCursor)
             
         # Handle tab buttons
@@ -1404,69 +1396,78 @@ class MainUI(QtWidgets.QMainWindow):
         """Connect signals to slots"""
         try:
             # Connect folder selection browse button if found
-            if hasattr(self, 'browse_button'):
+            if hasattr(self, 'browse_button') and self.browse_button:
                 self.browse_button.clicked.connect(self.browse_folder)
 
             # Connect refresh button
-            if hasattr(self, 'refresh_button'):
+            if hasattr(self, 'refresh_button') and self.refresh_button:
                 self.refresh_button.clicked.connect(self.refresh_folder)
 
             # Connect view buttons
-            if hasattr(self, 'view_button'):
+            if hasattr(self, 'view_button') and self.view_button:
                 self.view_button.clicked.connect(self.view_video)
 
-            if hasattr(self, 'play_button'):
+            if hasattr(self, 'play_button') and self.play_button:
                 self.play_button.clicked.connect(self.view_video)
 
             # Connect upload buttons
-            if hasattr(self, 'upload_this_button'):
+            if hasattr(self, 'upload_this_button') and self.upload_this_button:
                 self.upload_this_button.clicked.connect(self.upload_current_video)
 
-            if hasattr(self, 'upload_button'):
+            if hasattr(self, 'upload_button') and self.upload_button:
                 self.upload_button.clicked.connect(self.upload_selected_videos)
 
             # Connect selection buttons
-            if hasattr(self, 'select_all_button'):
+            if hasattr(self, 'select_all_button') and self.select_all_button:
                 self.select_all_button.clicked.connect(self.select_all_videos)
 
-            if hasattr(self, 'deselect_all_button'):
+            if hasattr(self, 'deselect_all_button') and self.deselect_all_button:
                 self.deselect_all_button.clicked.connect(self.deselect_all_videos)
 
-            if hasattr(self, 'select_unuploaded_button'):
+            if hasattr(self, 'select_unuploaded_button') and self.select_unuploaded_button:
                 self.select_unuploaded_button.clicked.connect(self.select_unuploaded_videos)
                 
             # Connect header tab buttons
-            if hasattr(self, 'header_tab_group'):
+            if hasattr(self, 'header_tab_group') and self.header_tab_group:
                 self.header_tab_group.buttonClicked.connect(self.header_tab_clicked)
                 
             # Connect sub-tab buttons
-            if hasattr(self, 'subtab_group'):
+            if hasattr(self, 'subtab_group') and self.subtab_group:
                 self.subtab_group.buttonClicked.connect(self.subtab_clicked)
             
             # Connect check boxes for video filtering
-            if hasattr(self, 'duplicate_check_box'):
+            if hasattr(self, 'duplicate_check_box') and self.duplicate_check_box:
                 self.duplicate_check_box.stateChanged.connect(self.refresh_folder)
                 
-            if hasattr(self, 'history_check_box'):
+            if hasattr(self, 'history_check_box') and self.history_check_box:
                 self.history_check_box.stateChanged.connect(self.refresh_folder)
                 
             # Connect recent folders combo box
-            if hasattr(self, 'recent_folders_combo'):
+            if hasattr(self, 'recent_folders_combo') and self.recent_folders_combo:
                 self.recent_folders_combo.currentIndexChanged.connect(self.load_recent_folder)
                 
             # Connect search line edit
-            if hasattr(self, 'search_line_edit'):
+            if hasattr(self, 'search_line_edit') and self.search_line_edit:
                 self.search_line_edit.textChanged.connect(self.filter_videos)
                 
             # Connect sort combo box
-            if hasattr(self, 'sort_combo_box'):
+            if hasattr(self, 'sort_combo_box') and self.sort_combo_box:
                 self.sort_combo_box.currentIndexChanged.connect(self.sort_videos)
+                
+            # Connect pagination buttons - loại bỏ các nút trang cố định và chỉ kết nối các nút điều hướng
+            if hasattr(self, 'next_page_button') and self.next_page_button:
+                self.next_page_button.clicked.connect(self.next_page)
+            if hasattr(self, 'prev_page_button') and self.prev_page_button:
+                self.prev_page_button.clicked.connect(self.prev_page)
+            if hasattr(self, 'first_page_button') and self.first_page_button:
+                self.first_page_button.clicked.connect(lambda: self.go_to_page(1))
+            if hasattr(self, 'last_page_button') and self.last_page_button:
+                self.last_page_button.clicked.connect(self.last_page)
                 
             logger.info("All signals connected successfully")
         except Exception as e:
             logger.error(f"Error connecting signals: {str(e)}")
             logger.error(traceback.format_exc())
-
     def header_tab_clicked(self, button):
         """Handle header tab button clicks"""
         # Set clicked button as checked, others as unchecked
@@ -1658,10 +1659,18 @@ class MainUI(QtWidgets.QMainWindow):
                         if option.startswith('folder_'):
                             self.app.config.remove_option('RECENT_FOLDERS', option)
                     
-                    # Save current folders
+                    # Save current folders - QUAN TRỌNG: bắt đầu từ 0 để đúng với định dạng folder_0, folder_1,... 
+                    folder_count = 0
                     for i in range(1, min(self.recent_folders_combo.count(), 11)):
-                        folder = self.recent_folders_combo.itemText(i)
-                        self.app.config.set('RECENT_FOLDERS', f"folder_{i-1}", folder)
+                        # Lấy đường dẫn đầy đủ từ userData, nếu không có thì lấy từ text
+                        folder = self.recent_folders_combo.itemData(i, Qt.UserRole)
+                        if not folder:  # Nếu không có userData
+                            folder = self.recent_folders_combo.itemText(i)
+                            
+                        # Kiểm tra đường dẫn hợp lệ trước khi lưu
+                        if folder and os.path.isdir(folder):
+                            self.app.config.set('RECENT_FOLDERS', f"folder_{folder_count}", os.path.normpath(folder))
+                            folder_count += 1
                     
                     # Save config if config_manager available
                     if hasattr(self.app, 'config_manager'):
@@ -1680,10 +1689,18 @@ class MainUI(QtWidgets.QMainWindow):
                         if key.startswith('folder_'):
                             del self.app.config['RECENT_FOLDERS'][key]
                     
-                    # Save current folders
+                    # Save current folders - QUAN TRỌNG: bắt đầu từ 0 để đúng với định dạng folder_0, folder_1,...
+                    folder_count = 0
                     for i in range(1, min(self.recent_folders_combo.count(), 11)):
-                        folder = self.recent_folders_combo.itemText(i)
-                        self.app.config['RECENT_FOLDERS'][f"folder_{i-1}"] = folder
+                        # Lấy đường dẫn đầy đủ từ userData, nếu không có thì lấy từ text
+                        folder = self.recent_folders_combo.itemData(i, Qt.UserRole)
+                        if not folder:  # Nếu không có userData
+                            folder = self.recent_folders_combo.itemText(i)
+                            
+                        # Kiểm tra đường dẫn hợp lệ trước khi lưu
+                        if folder and os.path.isdir(folder):
+                            self.app.config['RECENT_FOLDERS'][f"folder_{folder_count}"] = os.path.normpath(folder)
+                            folder_count += 1
                     
                     # Save config
                     if hasattr(self.app, 'config_manager'):
@@ -1711,7 +1728,10 @@ class MainUI(QtWidgets.QMainWindow):
                 
                 # Save current folders
                 for i in range(1, min(self.recent_folders_combo.count(), 11)):
-                    folder = self.recent_folders_combo.itemText(i)
+                    # Lấy đường dẫn đầy đủ từ userData, nếu không có thì lấy từ text
+                    folder = self.recent_folders_combo.itemData(i, Qt.UserRole)
+                    if not folder:  # Nếu không có userData
+                        folder = self.recent_folders_combo.itemText(i)
                     config['RECENT_FOLDERS'][f"folder_{i-1}"] = folder
                 
                 # Write to file
@@ -1759,35 +1779,90 @@ class MainUI(QtWidgets.QMainWindow):
                 except Exception as e:
                     logger.error(f"Error saving folder to config: {str(e)}")
 
-    def add_to_recent_folders(self, folder):
-        """Add folder to recent folders combo box"""
+    def add_to_recent_folders(self, folder_path):
+        """Add folder to recent folders dropdown - IMPROVED"""
         if not hasattr(self, 'recent_folders_combo'):
+            logger.error("recent_folders_combo không tồn tại")
             return
             
-        # Check if folder already exists
+        # Đảm bảo đường dẫn đầy đủ - chuẩn hóa đường dẫn để tránh các phiên bản khác nhau của cùng đường dẫn
+        folder_path = os.path.normpath(os.path.abspath(folder_path))
+        
+        # Kiểm tra xem thư mục có tồn tại
+        if not os.path.isdir(folder_path):
+            logger.warning(f"Thư mục không tồn tại hoặc không phải thư mục: {folder_path}")
+            return
+            
+        # Tạm thời ngắt kết nối tín hiệu để tránh kích hoạt đệ quy
+        try:
+            self.recent_folders_combo.blockSignals(True)  # Cách tốt hơn để tạm ngắt tín hiệu
+        except Exception as e:
+            logger.error(f"Lỗi khi blockSignals: {str(e)}")
+            
+        # Kiểm tra xem thư mục đã có trong danh sách chưa
+        found_index = -1
         for i in range(1, self.recent_folders_combo.count()):
-            if self.recent_folders_combo.itemText(i) == folder:
-                # Move to top
-                self.recent_folders_combo.removeItem(i)
-                self.recent_folders_combo.insertItem(1, folder)
-                self.save_recent_folders_to_config()
-                return
+            item_path = self.recent_folders_combo.itemData(i, Qt.UserRole)
+            if not item_path:  # Nếu không có userData, sử dụng text hiển thị
+                item_path = self.recent_folders_combo.itemText(i)
+                
+            # Chuẩn hóa đường dẫn để so sánh chính xác
+            if item_path and os.path.normpath(item_path) == folder_path:
+                found_index = i
+                break
+                
+        # Nếu đã tìm thấy, xóa nó (sẽ được thêm vào đầu danh sách)
+        if found_index != -1:
+            self.recent_folders_combo.removeItem(found_index)
+            
+        # Thêm vào đầu danh sách (ngay sau tiêu đề)
+        self.recent_folders_combo.insertItem(1, folder_path)
+        self.recent_folders_combo.setItemData(1, folder_path, Qt.UserRole)  # Lưu đường dẫn đầy đủ vào user data
         
-        # Add to top
-        self.recent_folders_combo.insertItem(1, folder)
+        # Giới hạn số lượng thư mục gần đây đến 5 để tránh quá nhiều
+        while self.recent_folders_combo.count() > 6:  # 1 tiêu đề + 5 thư mục
+            self.recent_folders_combo.removeItem(self.recent_folders_combo.count() - 1)
         
-        # Limit to 5 recent folders
-        while self.recent_folders_combo.count() > 6:
-            self.recent_folders_combo.removeItem(6)
-        
-        # Save to config
+        # Lưu cấu hình
+        # Lưu vào config
         self.save_recent_folders_to_config()
+        
+    def truncate_path(self, path, max_length=30):
+        """Cắt ngắn đường dẫn nếu quá dài để hiển thị"""
+        if len(path) > max_length:
+            return path[:max_length-3] + "..."
+        return path
 
     def load_recent_folder(self, index):
         """Load folder from recent folders combo box"""
-        if index > 0:  # Skip first item (header)
-            folder = self.recent_folders_combo.itemText(index)
+        # Không thực hiện hành động nếu người dùng chọn tiêu đề
+        if index <= 0:  # Tiêu đề "Thư mục gần đây"
+            return
             
+        try:
+            # Lấy đường dẫn đầy đủ từ userData (nếu có) hoặc từ text
+            folder = self.recent_folders_combo.itemData(index, Qt.UserRole)
+            if not folder:  # Nếu không có userData, sử dụng text hiển thị
+                folder = self.recent_folders_combo.itemText(index)
+                
+            # Kiểm tra xem thư mục có tồn tại không
+            if not os.path.exists(folder):
+                # Hiển thị cảnh báo và xóa thư mục không tồn tại khỏi dropdown
+                result = QtWidgets.QMessageBox.warning(
+                    self, 
+                    "Lỗi", 
+                    f"Thư mục không tồn tại hoặc không hợp lệ:\n{folder}", 
+                    QtWidgets.QMessageBox.Ok
+                )
+                
+                # Xóa thư mục không hợp lệ khỏi dropdown và config
+                self.recent_folders_combo.removeItem(index)
+                self.save_recent_folders_to_config()
+                
+                # Đặt lại dropdown về item đầu tiên ("Đường dẫn gần đây")
+                self.recent_folders_combo.setCurrentIndex(0)
+                return
+                
             # Hiển thị tooltip đầy đủ đường dẫn
             self.recent_folders_combo.setToolTip(folder)
             
@@ -1797,26 +1872,34 @@ class MainUI(QtWidgets.QMainWindow):
             # Set folder path in the edit box
             self.folder_path_edit.setText(folder)
             
+            # QUAN TRỌNG: Ngắt kết nối tạm thời để tránh gọi đệ quy khi setCurrentIndex
+            self.recent_folders_combo.currentIndexChanged.disconnect(self.load_recent_folder)
+            
+            # Lưu combobox index hiện tại để khôi phục sau
+            current_index = index
+            
+            # Kết nối lại sau khi hoàn thành
+            self.recent_folders_combo.currentIndexChanged.connect(self.load_recent_folder)
+        except Exception as e:
+            logger.error(f"Lỗi khi tải thư mục gần đây: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
             # Show loading overlay
             self.loading_overlay.show()
             QtWidgets.QApplication.processEvents()
             
             # Set active item with ellipsis if needed
-            max_length = 30
-            display_text = folder
-            if len(folder) > max_length:
-                display_text = folder[:max_length-3] + "..."
-                # Đặt tooltip đầy đủ đường dẫn cho item đã chọn
-                self.recent_folders_combo.setItemData(index, folder, Qt.ToolTipRole)
+            display_text = self.truncate_path(folder)
+            
+            # Lưu đường dẫn đầy đủ vào userData
+            self.recent_folders_combo.setItemData(index, folder, Qt.UserRole)
             
             # Giữ folder đã chọn hiển thị trong dropdown
             self.recent_folders_combo.setItemText(index, display_text)
             
             # Refresh folder asynchronously
             QtCore.QTimer.singleShot(100, self.refresh_folder_with_loading)
-            
-            # Giữ folder đã chọn trong dropdown để người dùng biết đang chọn cái nào
-            self.recent_folders_combo.setCurrentIndex(index)
 
     def count_video_files(self, folder_path):
         """
@@ -1875,6 +1958,13 @@ class MainUI(QtWidgets.QMainWindow):
         # Reset selected video
         self.selected_video = None
         
+        # Reset phân trang về trang đầu tiên
+        self.current_page = 1
+        
+        # Reset pagination manager nếu tồn tại
+        if self.pagination_manager:
+            self.pagination_manager.reset()
+        
         # Hiển thị overlay loading
         self.show_loading_overlay("Đang quét thư mục video...", show_spinner=True)
         
@@ -1908,8 +1998,78 @@ class MainUI(QtWidgets.QMainWindow):
         # Cập nhật UI ngay lập tức
         QtWidgets.QApplication.processEvents()
 
+    def debug_video_list_issue(self):
+        """
+        Hàm để kiểm tra và debug vấn đề chỉ hiển thị 1 video trong danh sách.
+        Gọi hàm này trước khi gọi update_video_list_ui().
+        """
+        try:
+            # Kiểm tra số lượng video trong all_videos
+            logger.info(f"Tổng số video trong all_videos: {len(self.all_videos)}")
+            
+            # Kiểm tra trạng thái hiển thị của các hàng video
+            visible_rows = 0
+            for i in range(1, 11):
+                row = self.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
+                if row and row.isVisible():
+                    visible_rows += 1
+            logger.info(f"Số hàng đang hiển thị: {visible_rows}")
+            
+            # Kiểm tra các video item có tồn tại không
+            missing_items = []
+            for i in range(1, 11):
+                row = self.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
+                if not row:
+                    missing_items.append(i)
+            
+            if missing_items:
+                logger.error(f"Thiếu các videoItem: {missing_items}")
+            else:
+                logger.info("Tất cả videoItem đều tồn tại")
+            
+            # Kiểm tra phân trang
+            items_per_page = 10
+            total_pages = max(1, (len(self.all_videos) + items_per_page - 1) // items_per_page)
+            logger.info(f"Trang hiện tại: {self.current_page}, Tổng số trang: {total_pages}")
+            
+            # Kiểm tra chỉ số bắt đầu và kết thúc
+            start_idx = (self.current_page - 1) * items_per_page
+            end_idx = min(start_idx + items_per_page, len(self.all_videos))
+            logger.info(f"Chỉ số bắt đầu: {start_idx}, Chỉ số kết thúc: {end_idx}")
+            
+            # Kiểm tra xem các hàng có được cập nhật đúng không
+            for i in range(1, 11):
+                if i <= end_idx - start_idx:
+                    row = self.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
+                    label = self.video_list.findChild(QtWidgets.QLabel, f"label{i}")
+                    
+                    if row and label:
+                        video_idx = start_idx + i - 1
+                        if video_idx < len(self.all_videos):
+                            video = self.all_videos[video_idx]
+                            logger.info(f"Hàng {i}: Dự kiến hiển thị video '{video['name']}'")
+                            logger.info(f"Hàng {i} thực tế: {label.text()}, Hiển thị: {row.isVisible()}")
+            
+            # Đảm bảo cập nhật trạng thái hiển thị của tất cả các hàng
+            for i in range(1, 11):
+                row = self.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
+                if row:
+                    if i <= end_idx - start_idx:
+                        row.setVisible(True)
+                        logger.info(f"Đặt hàng {i} thành hiển thị")
+                    else:
+                        row.setVisible(False)
+                        logger.info(f"Đặt hàng {i} thành ẩn")
+        
+        except Exception as e:
+            logger.error(f"Lỗi khi debug video list: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+
     def refresh_folder_with_loading(self):
         """Làm mới thư mục với hiệu ứng loading - CẢI TIẾN"""
+        self.update_video_list_ui()
+        self.debug_video_list_issue()
         try:
             # Đặt con trỏ wait
             QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
@@ -1997,9 +2157,6 @@ class MainUI(QtWidgets.QMainWindow):
             for video in self.all_videos:
                 self.videos[video["name"]] = video["path"]
             
-            # Reset phân trang về trang đầu tiên
-            self.current_page = 1
-            
             # Reset bộ đếm lựa chọn
             self.selected_video_count = 0
             self.selected_videos_size = 0
@@ -2021,91 +2178,122 @@ class MainUI(QtWidgets.QMainWindow):
             QtWidgets.QApplication.restoreOverrideCursor()
             self.loading_overlay.hide()
             
+
     def update_video_list_ui(self):
         """Update video list UI with current videos"""
         if not hasattr(self, 'video_list'):
             return
         
-        # Calculate pagination
-        items_per_page = 10
-        total_pages = (len(self.all_videos) + items_per_page - 1) // items_per_page  # Ceiling division
-        
-        # Ensure current page is valid
-        self.current_page = min(max(1, self.current_page), max(1, total_pages))
-        
-        # Calculate start and end indices for current page
-        start_idx = (self.current_page - 1) * items_per_page
-        end_idx = min(start_idx + items_per_page, len(self.all_videos))
-        
-        # Get videos for current page
-        current_videos = self.all_videos[start_idx:end_idx]
-        display_count = len(current_videos)
-        
-        # Update each row
-        for i in range(1, 11):
-            # Get widgets
-            row = self.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
-            label = self.video_list.findChild(QtWidgets.QLabel, f"label{i}")
-            status = self.video_list.findChild(QtWidgets.QLabel, f"status{i}")
-            checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
+        try:
+            # Calculate pagination
+            items_per_page = 10
+            total_pages = max(1, (len(self.all_videos) + items_per_page - 1) // items_per_page)
             
-            if row and label and status and checkbox:
+            # Ensure current page is valid
+            self.current_page = min(max(1, self.current_page), max(1, total_pages))
+            
+            # Calculate start and end indices for current page
+            start_idx = (self.current_page - 1) * items_per_page
+            end_idx = min(start_idx + items_per_page, len(self.all_videos))
+            
+            # Get videos for current page
+            current_videos = self.all_videos[start_idx:end_idx]
+            display_count = len(current_videos)
+            
+            # Debug log
+            logger.info(f"Hiển thị {display_count} video từ vị trí {start_idx} đến {end_idx}")
+            logger.info(f"Tổng số video: {len(self.all_videos)}")
+            
+            # Đảm bảo tất cả các hàng được xử lý (ẩn/hiện, cập nhật nội dung)
+            for i in range(1, 11):
+                # Get widgets
+                row = self.video_list.findChild(QtWidgets.QFrame, f"videoItem{i}")
+                label = self.video_list.findChild(QtWidgets.QLabel, f"label{i}")
+                status = self.video_list.findChild(QtWidgets.QLabel, f"status{i}")
+                checkbox = self.video_list.findChild(QtWidgets.QCheckBox, f"checkBox{i}")
+                
+                # Kiểm tra xem tất cả các widget cần thiết đã được tìm thấy chưa
+                if row is None or label is None or status is None or checkbox is None:
+                    logger.warning(f"Không tìm thấy đủ các widget cho hàng {i}")
+                    continue
+                    
+                # Xử lý hiển thị hoặc ẩn các hàng
                 if i <= display_count:
-                    # Show row
+                    # Hiển thị hàng
                     row.setVisible(True)
                     
-                    # Get video info
-                    video = current_videos[i-1]
-                    
-                    # Update label
-                    label.setText(video["name"])
-                    
-                    # Update status
-                    if video["status"] == "uploaded":
-                        status.setText("Đã tải")
-                        status.setProperty("class", "statusUploaded")
-                    elif video["status"] == "duplicate":
-                        status.setText("Trùng")
-                        status.setProperty("class", "statusDuplicate")
+                    # Lấy thông tin video và cập nhật nội dung
+                    video_idx = i - 1
+                    if video_idx < len(current_videos):
+                        video = current_videos[video_idx]
+                        
+                        # Cập nhật tên
+                        label.setText(video.get("name", ""))
+                        
+                        # Cập nhật trạng thái
+                        status_text = "Mới"
+                        status_class = "statusNew"
+                        
+                        if video.get("status") == "uploaded":
+                            status_text = "Đã tải"
+                            status_class = "statusUploaded"
+                        elif video.get("status") == "duplicate":
+                            status_text = "Trùng"
+                            status_class = "statusDuplicate"
+                        
+                        status.setText(status_text)
+                        status.setProperty("class", status_class)
+                        
+                        # Cập nhật style
+                        status.style().unpolish(status)
+                        status.style().polish(status)
+                        
+                        # Đặt trạng thái checkbox
+                        checkbox.setChecked(video.get("status") == "new")
+                        
+                        logger.debug(f"Hiển thị video {i}: {video.get('name')}, Trạng thái: {status_text}")
                     else:
-                        status.setText("Mới")
-                        status.setProperty("class", "statusNew")
-                    
-                    # Force style update
-                    status.style().unpolish(status)
-                    status.style().polish(status)
-                    
-                    # Default checkbox state (unchecked for uploaded/duplicate, checked for new)
-                    checkbox.setChecked(video["status"] == "new")
+                        logger.warning(f"Chỉ số video không hợp lệ: {video_idx} >= {len(current_videos)}")
                 else:
-                    # Hide row
+                    # Ẩn hàng
                     row.setVisible(False)
-        
-        # Update pagination info
-        if hasattr(self, 'pagination_info_label'):
-            duplicate_count = sum(1 for v in self.all_videos if v["status"] == "duplicate")
-            uploaded_count = sum(1 for v in self.all_videos if v["status"] == "uploaded")
+                    
+                    # Xóa nội dung hiện tại
+                    label.setText("")
+                    status.setText("")
+                    checkbox.setChecked(False)
+                    
+                    logger.debug(f"Ẩn hàng {i}")
             
-            if len(self.all_videos) > 0:
-                self.pagination_info_label.setText(
-                    f"Hiển thị {start_idx+1}-{end_idx} trên tổng {len(self.all_videos)} videos, "
-                    f"có {duplicate_count} video trùng, có {uploaded_count} đã tải lên"
-                )
-            else:
-                self.pagination_info_label.setText("Không có video nào trong thư mục này")
+            # Update pagination info
+            if hasattr(self, 'pagination_info_label'):
+                duplicate_count = sum(1 for v in self.all_videos if v.get("status") == "duplicate")
+                uploaded_count = sum(1 for v in self.all_videos if v.get("status") == "uploaded")
+                
+                if len(self.all_videos) > 0:
+                    self.pagination_info_label.setText(
+                        f"Hiển thị {start_idx+1}-{end_idx} trên tổng {len(self.all_videos)} videos, "
+                        f"có {duplicate_count} video trùng, có {uploaded_count} đã tải lên"
+                    )
+                else:
+                    self.pagination_info_label.setText("Không có video nào trong thư mục này")
+            
+            # Update pagination UI with improved approach
+            self._update_pagination_ui(total_pages)
+            
+            # Update selection count
+            self.update_selection_count()
+            
+            # Update folder stats
+            if hasattr(self, 'folder_stats_label'):
+                total_size = sum(video.get("file_size_bytes", 0) for video in self.all_videos)
+                size_str = self.format_file_size(total_size)
+                self.folder_stats_label.setText(f"Tổng dung lượng: {size_str} | {len(self.all_videos)} videos")
         
-        # Update pagination buttons
-        self.update_pagination_buttons(total_pages)
-        
-        # Update selection count
-        self.update_selection_count()
-        
-        # Update folder stats
-        if hasattr(self, 'folder_stats_label'):
-            total_size = sum(video.get("file_size_bytes", 0) for video in self.all_videos)
-            size_str = self.format_file_size(total_size)
-            self.folder_stats_label.setText(f"Tổng dung lượng: {size_str} | {len(self.all_videos)} videos")
-
+        except Exception as e:
+            logger.error(f"Lỗi trong update_video_list_ui: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
     def go_to_page(self, page):
         """Go to specific page"""
         items_per_page = 10
@@ -2116,11 +2304,6 @@ class MainUI(QtWidgets.QMainWindow):
         
         if self.current_page != page:
             self.current_page = page
-            
-            # Nếu đã khởi tạo pagination manager, cập nhật UI thông qua nó
-            if hasattr(self, 'pagination_manager'):
-                self.pagination_manager.update_pagination(self.current_page, total_pages)
-                
             self.update_video_list_ui()
 
     def next_page(self):
@@ -2128,45 +2311,24 @@ class MainUI(QtWidgets.QMainWindow):
         items_per_page = 10
         total_pages = (len(self.all_videos) + items_per_page - 1) // items_per_page
         
-        if hasattr(self, 'pagination_manager'):
-            # Sử dụng phương thức go_to_next_page của pagination manager
-            if self.current_page < total_pages:
-                self.pagination_manager.go_to_next_page()
-                # current_page được cập nhật thông qua handle_page_change
-        else:
-            # Fallback nếu không có pagination manager
-            if self.current_page < total_pages:
-                self.current_page += 1
-                self.update_video_list_ui()
+        if self.current_page < total_pages:
+            self.current_page += 1
+            self.update_video_list_ui()
 
     def prev_page(self):
         """Go to previous page"""
-        if hasattr(self, 'pagination_manager'):
-            # Sử dụng phương thức go_to_prev_page của pagination manager
-            if self.current_page > 1:
-                self.pagination_manager.go_to_prev_page()
-                # current_page được cập nhật thông qua handle_page_change
-        else:
-            # Fallback nếu không có pagination manager
-            if self.current_page > 1:
-                self.current_page -= 1
-                self.update_video_list_ui()
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.update_video_list_ui()
 
     def last_page(self):
         """Go to last page"""
         items_per_page = 10
         total_pages = (len(self.all_videos) + items_per_page - 1) // items_per_page
         
-        if hasattr(self, 'pagination_manager'):
-            # Sử dụng phương thức go_to_last_page của pagination manager
-            if self.current_page != total_pages:
-                self.pagination_manager.go_to_last_page()
-                # current_page được cập nhật thông qua handle_page_change
-        else:
-            # Fallback nếu không có pagination manager
-            if self.current_page != total_pages:
-                self.current_page = total_pages
-                self.update_video_list_ui()
+        if self.current_page != total_pages:
+            self.current_page = total_pages
+            self.update_video_list_ui()
 
     def filter_videos(self, text):
         """Filter videos by name"""
