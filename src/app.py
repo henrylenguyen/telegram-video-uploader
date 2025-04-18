@@ -99,7 +99,7 @@ class TelegramUploaderApp:
         
         try:
             # Import the Qt UI
-            from ui.qt_main_ui import MainUI
+            from ui.main_tab.main_ui import MainUI
             
             # Create Qt application instance if needed
             if QtWidgets.QApplication.instance() is None:
