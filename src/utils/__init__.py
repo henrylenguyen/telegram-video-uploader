@@ -5,6 +5,8 @@ Module tiện ích cho Telegram Video Uploader.
 from .telegram_api import TelegramAPI
 from .video_analyzer import VideoAnalyzer
 from .auto_uploader import AutoUploader, FileWatcher, BulkUploader
+from .pagination_utils import PaginationManager
+
 try:
     from .video_splitter import VideoSplitter
 except ImportError:
@@ -16,4 +18,4 @@ except ImportError:
     pass  # Bỏ qua nếu không có module telethon_uploader
 
 __all__ = ['TelegramAPI', 'VideoAnalyzer', 'AutoUploader', 'FileWatcher', 
-           'BulkUploader', 'VideoSplitter', 'TelethonUploader']
+           'BulkUploader', 'VideoSplitter', 'TelethonUploader', 'PaginationManager']
