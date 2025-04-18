@@ -37,11 +37,11 @@ def refresh_video_list(main_ui, folder_path):
         return []
     
     # Check for duplicates if enabled
-    if hasattr(main_ui, 'duplicate_check_box') and main_ui.duplicate_check_box.isChecked():
+    if hasattr(main_ui, 'duplicate_check_box') and main_ui.duplicate_check_box is not None and main_ui.duplicate_check_box.isChecked():
         videos = check_duplicates(main_ui, videos)
     
     # Check upload history if enabled
-    if hasattr(main_ui, 'history_check_box') and main_ui.history_check_box.isChecked():
+    if hasattr(main_ui, 'history_check_box') and main_ui.history_check_box is not None and main_ui.history_check_box.isChecked():
         videos = check_upload_history(main_ui, videos)
     
     # Update folder stats in UI

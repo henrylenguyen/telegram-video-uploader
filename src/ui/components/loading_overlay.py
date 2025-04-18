@@ -6,55 +6,129 @@ import os
 import tempfile
 import math
 import numpy as np
+import time
 from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 
 logger = logging.getLogger(__name__)
 
+class SpinnerWidget(QtWidgets.QWidget):
+    """Custom spinner widget with animation"""
+    
+    def __init__(self, parent=None, size=50, color=QtGui.QColor("#3498DB")):
+        super(SpinnerWidget, self).__init__(parent)
+        self.setFixedSize(size, size)
+        self.color = color
+        self.angle = 0
+        self.dots = 8
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.rotate)
+        self.timer.start(50)  # Update every 50ms
+        self.setStyleSheet("background-color: transparent;")
+    
+    def rotate(self):
+        """Rotate the spinner"""
+        self.angle = (self.angle + 10) % 360
+        self.update()
+    
+    def paintEvent(self, event):
+        """Paint the spinner"""
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        center = self.width() / 2
+        outer_radius = (self.width() - 10) / 2
+        inner_radius = outer_radius * 0.6
+        
+        # Draw a light background circle
+        background_color = QtGui.QColor(self.color)
+        background_color.setAlpha(30)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(background_color)
+        painter.drawEllipse(5, 5, self.width() - 10, self.height() - 10)
+        
+        # Draw dots with varying alpha
+        for i in range(self.dots):
+            dot_angle = self.angle - i * (360 / self.dots)
+            alpha = 255 - (i * 255 / self.dots)
+            
+            dot_color = QtGui.QColor(self.color)
+            dot_color.setAlpha(int(alpha))
+            
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(dot_color)
+            
+            x = center + outer_radius * math.cos(math.radians(dot_angle))
+            y = center + outer_radius * math.sin(math.radians(dot_angle))
+            
+            dot_size = 8 - (i * 4 / self.dots)
+            painter.drawEllipse(x - dot_size/2, y - dot_size/2, dot_size, dot_size)
+        
+        painter.end()
+    
+    def start(self):
+        """Start the animation"""
+        if not self.timer.isActive():
+            self.timer.start(50)
+    
+    def stop(self):
+        """Stop the animation"""
+        if self.timer.isActive():
+            self.timer.stop()
+
 class LoadingOverlay(QtWidgets.QWidget):
-    """Loading overlay với animation hiệu ứng tốt hơn"""
+    """Loading overlay with improved animation effects"""
     
     def __init__(self, parent=None):
         super(LoadingOverlay, self).__init__(parent)
         
-        # Làm cho overlay bán trong suốt với màu nền đẹp
+        # Make overlay semi-transparent with nice background
         self.setStyleSheet("""
-            background-color: rgba(0, 0, 0, 150);
+            background-color: rgba(0, 0, 0, 120);
             border-radius: 10px;
         """)
         
-        # Tạo layout
+        # Create layout
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setAlignment(QtCore.Qt.AlignCenter)
         
-        # Tạo container cho spinner và label
+        # Create container for spinner and label
         self.container = QtWidgets.QWidget()
         self.container.setFixedSize(400, 200)
         self.container.setStyleSheet("""
-            background-color: rgba(255, 255, 255, 90%);
+            background-color: rgba(255, 255, 255, 95%);
             border-radius: 10px;
             border: 1px solid #3498DB;
         """)
         
-        # Layout cho container
+        # Layout for container
         container_layout = QtWidgets.QVBoxLayout(self.container)
         container_layout.setContentsMargins(20, 20, 20, 20)
         container_layout.setAlignment(QtCore.Qt.AlignCenter)
         
-        # Tạo label cho spinner
+        # Create spinner widgets - both GIF and custom
         self.spinner_label = QtWidgets.QLabel()
         self.spinner_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.spinner_label.setFixedSize(50, 50)
+        self.spinner_label.setFixedSize(60, 60)
         self.spinner_label.setStyleSheet("background-color: transparent;")
         
-        # Tạo spinner animation
-        self.spinner_movie = QtGui.QMovie()
-        self.spinner_movie.setFileName(self.get_spinner_path())
-        self.spinner_movie.setScaledSize(QtCore.QSize(50, 50))
-        self.spinner_label.setMovie(self.spinner_movie)
+        # Create custom spinner widget
+        self.custom_spinner = SpinnerWidget(size=60, color=QtGui.QColor("#3498DB"))
+        self.custom_spinner.hide()
         
-        # Tạo label cho message
+        # Create GIF spinner if available
+        self.spinner_movie = QtGui.QMovie()
+        spinner_path = self.get_spinner_path()
+        if spinner_path:
+            self.spinner_movie.setFileName(spinner_path)
+            self.spinner_movie.setScaledSize(QtCore.QSize(60, 60))
+            self.spinner_label.setMovie(self.spinner_movie)
+            self.has_gif = True
+        else:
+            self.has_gif = False
+        
+        # Create message label
         self.message_label = QtWidgets.QLabel("Đang tải...")
         self.message_label.setAlignment(QtCore.Qt.AlignCenter)
         self.message_label.setStyleSheet("""
@@ -65,162 +139,97 @@ class LoadingOverlay(QtWidgets.QWidget):
         """)
         self.message_label.setWordWrap(True)
         
-        # Thêm các widget vào container
+        # Add widgets to container layout
         container_layout.addWidget(self.spinner_label, alignment=QtCore.Qt.AlignCenter)
+        container_layout.addWidget(self.custom_spinner, alignment=QtCore.Qt.AlignCenter)
         container_layout.addWidget(self.message_label, alignment=QtCore.Qt.AlignCenter)
         
-        # Thêm container vào layout chính
+        # Add container to main layout
         self.layout.addWidget(self.container, alignment=QtCore.Qt.AlignCenter)
         
-        # Ẩn mặc định
-        self.hide()
+        # Add fade-in animation
+        self.fade_anim = QPropertyAnimation(self, b"windowOpacity")
+        self.fade_anim.setDuration(300)
+        self.fade_anim.setStartValue(0.0)
+        self.fade_anim.setEndValue(1.0)
+        self.fade_anim.setEasingCurve(QEasingCurve.InOutCubic)
         
-        # Timer để cập nhật spinner khi không có file
-        self.dots_count = 0
-        self.dots_timer = None
+        # Hide by default
+        self.hide()
 
     def get_spinner_path(self):
-        """Tạo hoặc tìm spinner GIF ở thư mục tạm"""
+        """Attempt to locate or create a spinner GIF"""
         try:
-            # Sử dụng spinner có sẵn nếu có
-            import os
-            import tempfile
-            import math
-            import numpy as np
-            
-            # Kiểm tra thư mục tạm cho spinner
+            # Check temp directory for spinner
             temp_dir = os.path.join(tempfile.gettempdir(), "telegram_uploader")
             if not os.path.exists(temp_dir):
                 os.makedirs(temp_dir)
             
             spinner_path = os.path.join(temp_dir, "spinner.gif")
             
-            # Kiểm tra nếu spinner đã tồn tại
+            # Check if spinner exists
             if os.path.exists(spinner_path):
                 return spinner_path
             
-            # Tạo spinner đơn giản bằng PyQt
-            from PyQt5.QtCore import Qt, QSize
-            from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QImage
-            
-            # Tạo spinner GIF giả lập đơn giản
-            size = 40
-            frames = 8
-            images = []
-            
-            for i in range(frames):
-                # Tạo QImage mới cho mỗi frame
-                img = QImage(size, size, QImage.Format_ARGB32)
-                img.fill(Qt.transparent)
+            # Check for a local spinner in resources
+            local_spinner = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
+                                          "..", "..", "resources", "spinner.gif")
+            if os.path.exists(local_spinner):
+                return local_spinner
                 
-                # Tạo painter và vẽ spinner
-                painter = QPainter(img)
-                painter.setRenderHint(QPainter.Antialiasing)
-                
-                # Tính toán các thông số cho spinner
-                center = size / 2
-                radius = size / 2 - 5
-                start_angle = i * (360 / frames) * 16  # QPainter sử dụng 1/16 độ
-                
-                # Vẽ đường tròn nền mờ
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(QColor(200, 200, 200, 50)))
-                painter.drawEllipse(5, 5, size - 10, size - 10)
-                
-                # Vẽ phần spinner quay
-                gradient_colors = [(33, 150, 243, 50), (33, 150, 243, 255)]
-                for j in range(5):  # 5 chấm gradient
-                    angle = start_angle - j * 30 * 16
-                    x = center + radius * 0.8 * math.cos(math.radians(angle / 16))
-                    y = center + radius * 0.8 * math.sin(math.radians(angle / 16))
-                    
-                    alpha = 255 - j * 40  # Giảm dần độ mờ
-                    color = QColor(33, 150, 243, max(50, alpha))
-                    
-                    painter.setPen(Qt.NoPen)
-                    painter.setBrush(QBrush(color))
-                    painter.drawEllipse(int(x - 5 + j), int(y - 5 + j), 10 - j, 10 - j)
-                
-                painter.end()
-                images.append(img)
-            
-            # Lưu spinner thành GIF
-            import imageio
-            
-            # Chuyển đổi QImage sang numpy array
-            numpy_images = []
-            for img in images:
-                buffer = img.bits().asstring(img.width() * img.height() * 4)
-                numpy_img = np.frombuffer(buffer, dtype=np.uint8).reshape((img.height(), img.width(), 4))
-                numpy_img = numpy_img[:, :, [2, 1, 0, 3]]  # BGRA to RGBA
-                numpy_images.append(numpy_img)
-            
-            # Lưu thành GIF
-            imageio.mimsave(spinner_path, numpy_images, duration=0.1, loop=0)
-            
-            return spinner_path
+            # We don't try to generate a GIF here anymore - we'll use the custom spinner
+            return None
             
         except Exception as e:
-            logger.error(f"Lỗi khi tạo spinner: {str(e)}")
-            # Trả về None để sử dụng hiệu ứng chấm thay thế
+            logger.error(f"Error locating spinner: {str(e)}")
             return None
     
     def set_message(self, message):
-        """Thiết lập thông báo hiển thị"""
+        """Set the message to display"""
         self.message_label.setText(message)
     
     def show_spinner(self, show=True):
-        """Hiển thị hoặc ẩn spinner"""
+        """Show or hide the spinner"""
         if show:
-            # Hiển thị spinner nếu có file
-            if self.spinner_movie.fileName():
+            if self.has_gif:
+                # Use GIF spinner if available
                 self.spinner_movie.start()
                 self.spinner_label.show()
+                self.custom_spinner.hide()
             else:
-                # Sử dụng hiệu ứng chấm nếu không có file
-                if self.dots_timer is None:
-                    self.dots_timer = self.startTimer(500)  # Cập nhật mỗi 0.5 giây
-                self.spinner_label.setText("⏳")
-                self.spinner_label.setStyleSheet("font-size: 24px; color: #3498DB;")
-                self.spinner_label.show()
+                # Use custom spinner widget
+                self.spinner_label.hide()
+                self.custom_spinner.show()
+                self.custom_spinner.start()
         else:
-            # Dừng spinner
-            if self.spinner_movie.fileName():
+            # Stop both spinners
+            if self.has_gif:
                 self.spinner_movie.stop()
-            
-            # Dừng timer hiệu ứng chấm
-            if self.dots_timer is not None:
-                self.killTimer(self.dots_timer)
-                self.dots_timer = None
+            self.custom_spinner.stop()
             
             self.spinner_label.hide()
-    
-    def timerEvent(self, event):
-        """Xử lý sự kiện timer cho hiệu ứng chấm"""
-        if self.dots_timer is not None and event.timerId() == self.dots_timer:
-            self.dots_count = (self.dots_count + 1) % 4
-            dots = "." * self.dots_count
-            
-            # Thay đổi biểu tượng spinner
-            if self.dots_count % 2 == 0:
-                self.spinner_label.setText("⏳")
-            else:
-                self.spinner_label.setText("⌛")
+            self.custom_spinner.hide()
     
     def showEvent(self, event):
-        """Xử lý sự kiện hiện overlay"""
-        # Bắt đầu spinner nếu có
+        """Handle show event"""
+        # Start spinner
         self.show_spinner(True)
+        
+        # Play fade-in animation
+        self.fade_anim.setDirection(QPropertyAnimation.Forward)
+        self.fade_anim.start()
+        
         super(LoadingOverlay, self).showEvent(event)
     
     def hideEvent(self, event):
-        """Xử lý sự kiện ẩn overlay"""
-        # Dừng spinner
+        """Handle hide event"""
+        # Stop spinner
         self.show_spinner(False)
+        
         super(LoadingOverlay, self).hideEvent(event)
     
     def resizeEvent(self, event):
-        """Xử lý sự kiện thay đổi kích thước"""
-        # Cập nhật kích thước cho container
+        """Handle resize event"""
+        # Make sure container is properly sized and centered
         self.container.setFixedSize(min(self.width() - 40, 400), 200)
         super(LoadingOverlay, self).resizeEvent(event)

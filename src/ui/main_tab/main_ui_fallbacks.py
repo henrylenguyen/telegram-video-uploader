@@ -113,7 +113,7 @@ def create_fallback_video_preview(self):
     
     layout = QtWidgets.QVBoxLayout(widget)
     
-    title = QtWidgets.QLabel("Xem trước video")
+    title = QtWidgets.QLabel("Xem trước video - Chọn video ở bảng danh sách bên trái")
     title.setStyleSheet("font-size: 20px; font-weight: bold;")
     layout.addWidget(title)
     

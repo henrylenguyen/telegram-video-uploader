@@ -72,7 +72,7 @@ from ui.main_tab.main_ui_video import (
     initialize_sort_dropdown,
     sort_videos,
     filter_videos,
-    _update_pagination_ui,
+    update_pagination_ui,
     handle_page_change,
     go_to_page,
     next_page,
@@ -211,7 +211,7 @@ class MainUI(QtWidgets.QMainWindow):
     initialize_sort_dropdown = initialize_sort_dropdown
     sort_videos = sort_videos
     filter_videos = filter_videos
-    _update_pagination_ui = _update_pagination_ui
+    _update_pagination_ui = update_pagination_ui
     handle_page_change = handle_page_change
     go_to_page = go_to_page
     next_page = next_page

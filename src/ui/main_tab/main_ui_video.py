@@ -69,8 +69,29 @@ def update_video_list_ui(self):
                 if video_idx < len(current_videos):
                     video = current_videos[video_idx]
                     
-                    # Cập nhật tên
-                    label.setText(video.get("name", ""))
+                    # Cập nhật tên và thiết lập tooltip hiển thị đầy đủ
+                    video_name = video.get("name", "")
+                    
+                    # Lưu trữ tên đầy đủ của video vào thuộc tính của label
+                    label.setProperty("fullVideoName", video_name)
+                    
+                    # Để các tên file dài sẽ hiển thị theo max-width 800px trong CSS
+                    # Chỉ rút gọn nếu quá dài (trên 120 ký tự, tương đương với khoảng 800px)
+                    MAX_FILENAME_LENGTH = 120  # Tăng độ dài tối đa trước khi cắt ngắn (tương ứng với 800px)
+                    
+                    # Chỉ cắt ngắn nếu tên file quá dài
+                    if len(video_name) > MAX_FILENAME_LENGTH:
+                        # Cắt giữa với dấu 3 chấm rõ ràng (hiển thị đầu và cuối của filename)
+                        start_length = MAX_FILENAME_LENGTH * 2 // 3  # Hiển thị nhiều hơn ở đầu
+                        end_length = MAX_FILENAME_LENGTH - start_length - 3  # 3 là dộ dài của dấu "..."
+                        display_name = video_name[:start_length] + "..." + video_name[-end_length:]
+                        label.setText(display_name)
+                    else:
+                        # Tên file đủ ngắn để hiển thị hoàn toàn
+                        label.setText(video_name)
+                    
+                    # Luôn thiết lập tooltip để hiển thị tên đầy đủ khi hover
+                    label.setToolTip(video_name)
                     
                     # Cập nhật trạng thái
                     status_text = "Mới"
@@ -130,7 +151,7 @@ def update_video_list_ui(self):
                 self.pagination_info_label.setVisible(True)
         
         # Update pagination UI with improved approach
-        self._update_pagination_ui(total_pages)
+        self._update_pagination_ui(total_pages)  # Changed back to _update_pagination_ui
         
         # Update selection count
         self.update_selection_count()
@@ -270,12 +291,18 @@ def on_video_row_clicked(self, idx):
         # Update selection count
         self.update_selection_count()
     
-    # Get video name
+    # Get video name (use the full name stored in property instead of displayed text)
     label = self.video_list.findChild(QtWidgets.QLabel, f"label{idx}")
     if label:
-        video_name = label.text()
-        self.selected_video = video_name
-        logger.info(f"Selected video: {video_name}")
+        # Lấy tên đầy đủ của video từ thuộc tính đã lưu trữ
+        full_video_name = label.property("fullVideoName")
+        
+        # Nếu không có thuộc tính, sử dụng text hiển thị (cho trường hợp cần tương thích ngược)
+        if not full_video_name:
+            full_video_name = label.text()
+            
+        self.selected_video = full_video_name
+        logger.info(f"Selected video: {full_video_name}")
         
         # Display video information
         self.display_selected_video()
@@ -319,9 +346,6 @@ def view_video(self):
         return
     
     # Open video with default player
-    import subprocess
-    import platform
-    
     system = platform.system()
     
     try:
@@ -493,7 +517,7 @@ def filter_videos(self, text):
     self.update_video_list_ui()
     self.all_videos = saved_videos
 
-def _update_pagination_ui(self, total_pages):
+def update_pagination_ui(self, total_pages):
     """
     Cập nhật UI phân trang với cách tiếp cận đáng tin cậy hơn
     
@@ -502,121 +526,140 @@ def _update_pagination_ui(self, total_pages):
     """
     try:
         # Ghi log để debug
-        logger.info(f"_update_pagination_ui được gọi với tổng số trang: {total_pages}")
+        logger.info(f"update_pagination_ui được gọi với tổng số trang: {total_pages}")
         
-        # Tìm pagination frame
-        pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
+        # Find and validate pagination frame
+        pagination_frame = self._find_pagination_frame()
         if not pagination_frame:
-            logger.error("Không tìm thấy pagination frame")
             return
-                
-        # Đảm bảo hiển thị frame phân trang
-        pagination_frame.setVisible(True)
-        pagination_frame.setMinimumHeight(60)
         
-        # Tìm pagination info label nếu chưa có
-        if not hasattr(self, 'pagination_info_label') or not self.pagination_info_label:
-            self.pagination_info_label = pagination_frame.findChild(QtWidgets.QLabel, "paginationInfoLabel")
+        # Ensure UI elements exist
+        self._ensure_pagination_elements(pagination_frame)
         
-        # Đảm bảo hiển thị thông tin phân trang
-        if self.pagination_info_label:
-            self.pagination_info_label.setVisible(True)
-            
-        # Các nút điều hướng - đảm bảo chúng tồn tại và hiển thị
-        if not self.first_page_button:
-            self.first_page_button = pagination_frame.findChild(QtWidgets.QPushButton, "firstPageButton")
-            if self.first_page_button:
-                self.first_page_button.setVisible(True)
-                
-        if not self.prev_page_button:
-            self.prev_page_button = pagination_frame.findChild(QtWidgets.QPushButton, "prevPageButton")
-            if self.prev_page_button:
-                self.prev_page_button.setVisible(True)
-                
-        if not self.next_page_button:
-            self.next_page_button = pagination_frame.findChild(QtWidgets.QPushButton, "nextPageButton")
-            if self.next_page_button:
-                self.next_page_button.setVisible(True)
-                
-        if not self.last_page_button:
-            self.last_page_button = pagination_frame.findChild(QtWidgets.QPushButton, "lastPageButton")
-            if self.last_page_button:
-                self.last_page_button.setVisible(True)
+        # Initialize pagination manager if needed
+        self._init_pagination_manager(pagination_frame, total_pages)
         
-        # Kiểm tra layout phân trang
-        pagination_layout = pagination_frame.layout()
-        if not pagination_layout or pagination_layout.count() == 0:
-            # Tạo layout mới
-            new_layout = QtWidgets.QHBoxLayout(pagination_frame)
-            new_layout.setContentsMargins(15, 10, 15, 10)
-            new_layout.setSpacing(5)
-            
-            # Thêm các thành phần cần thiết vào layout
-            if self.pagination_info_label:
-                new_layout.addWidget(self.pagination_info_label)
-                new_layout.addStretch(1)
-                
-            if self.first_page_button:
-                new_layout.addWidget(self.first_page_button)
-                
-            if self.prev_page_button:
-                new_layout.addWidget(self.prev_page_button)
-                
-            # Tạo widget để chứa các nút trang
-            page_container = QtWidgets.QWidget(pagination_frame)
-            page_container.setObjectName("pageButtonsContainer")
-            page_container.setMinimumWidth(200)
-            page_layout = QtWidgets.QHBoxLayout(page_container)
-            page_layout.setContentsMargins(0, 0, 0, 0)
-            page_layout.setSpacing(5)
-            new_layout.addWidget(page_container)
-            
-            if self.next_page_button:
-                new_layout.addWidget(self.next_page_button)
-                
-            if self.last_page_button:
-                new_layout.addWidget(self.last_page_button)
-                
-            pagination_layout = new_layout
+        # Update the pagination with current state
+        if self.pagination_manager:
+            self.pagination_manager.update_pagination(self.current_page, total_pages)
         
-        # Khởi tạo pagination manager
-        if not self.pagination_manager:
-            from utils.pagination_utils import PaginationManager
-            self.pagination_manager = PaginationManager(self)
-            
-            # Tạo các nút trang
-            self.pagination_manager.create_page_buttons(pagination_frame, total_pages)
-            
-            # Thiết lập pagination
-            setup_success = self.pagination_manager.setup_pagination(
-                pagination_frame=pagination_frame,
-                first_button=self.first_page_button,
-                prev_button=self.prev_page_button,
-                next_button=self.next_page_button,
-                last_button=self.last_page_button,
-                on_page_change=self.handle_page_change
-            )
-            
-            if not setup_success:
-                logger.error("Không thể thiết lập pagination manager")
-                return
-                
-            logger.info("Đã khởi tạo pagination manager thành công")
-        
-        # Cập nhật pagination với trang hiện tại và tổng số trang
-        self.pagination_manager.update_pagination(self.current_page, total_pages)
-        
-        # Đảm bảo hiển thị frame và các thành phần sau khi cập nhật
+        # Ensure frame visibility
         pagination_frame.update()
         pagination_frame.show()
         
-        # Log thông tin cập nhật
+        # Log update completion
         logger.info(f"Cập nhật phân trang hoàn tất: trang {self.current_page}/{total_pages}")
             
     except Exception as e:
         logger.error(f"Lỗi cập nhật UI phân trang: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
+
+def _find_pagination_frame(self):
+    """Find and validate the pagination frame"""
+    pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
+    if not pagination_frame:
+        logger.error("Không tìm thấy pagination frame")
+        return None
+    
+    # Ensure frame is visible with proper height
+    pagination_frame.setVisible(True)
+    pagination_frame.setMinimumHeight(60)
+    return pagination_frame
+
+def _ensure_pagination_elements(self, pagination_frame):
+    """Ensure all pagination UI elements exist and are visible"""
+    # Find or initialize pagination info label
+    if not hasattr(self, 'pagination_info_label') or not self.pagination_info_label:
+        self.pagination_info_label = pagination_frame.findChild(QtWidgets.QLabel, "paginationInfoLabel")
+        if self.pagination_info_label:
+            self.pagination_info_label.setVisible(True)
+    
+    # Find or initialize navigation buttons
+    self._ensure_navigation_button(pagination_frame, 'first_page_button', "firstPageButton")
+    self._ensure_navigation_button(pagination_frame, 'prev_page_button', "prevPageButton")
+    self._ensure_navigation_button(pagination_frame, 'next_page_button', "nextPageButton")
+    self._ensure_navigation_button(pagination_frame, 'last_page_button', "lastPageButton")
+    
+    # Ensure proper layout
+    self._ensure_pagination_layout(pagination_frame)
+
+def _ensure_navigation_button(self, parent, attr_name, object_name):
+    """Ensure a specific navigation button exists and is visible"""
+    if not getattr(self, attr_name, None):
+        button = parent.findChild(QtWidgets.QPushButton, object_name)
+        if button:
+            setattr(self, attr_name, button)
+            button.setVisible(True)
+
+def _ensure_pagination_layout(self, pagination_frame):
+    """Ensure pagination frame has a proper layout"""
+    pagination_layout = pagination_frame.layout()
+    if not pagination_layout:
+        # Create a new layout if one doesn't exist
+        pagination_layout = QtWidgets.QHBoxLayout(pagination_frame)
+        pagination_layout.setContentsMargins(15, 10, 15, 10)
+        pagination_layout.setSpacing(5)
+        
+        # Add basic elements to the layout
+        self._setup_fresh_pagination_layout(pagination_layout)
+
+def _setup_fresh_pagination_layout(self, layout):
+    """Set up a new pagination layout with basic elements"""
+    # Add info label if it exists
+    if self.pagination_info_label:
+        layout.addWidget(self.pagination_info_label)
+        layout.addStretch(1)
+    
+    # Add navigation buttons
+    if self.first_page_button:
+        layout.addWidget(self.first_page_button)
+    
+    if self.prev_page_button:
+        layout.addWidget(self.prev_page_button)
+    
+    # Add placeholder for page buttons
+    page_buttons_placeholder = QtWidgets.QWidget()
+    page_buttons_placeholder.setObjectName("page_buttons_placeholder")
+    page_buttons_placeholder.setMinimumWidth(300)  # Space for page buttons
+    layout.addWidget(page_buttons_placeholder)
+    
+    # Add remaining navigation buttons
+    if self.next_page_button:
+        layout.addWidget(self.next_page_button)
+    
+    if self.last_page_button:
+        layout.addWidget(self.last_page_button)
+
+def _init_pagination_manager(self, pagination_frame, total_pages):
+    """Initialize or update the pagination manager"""
+    if not self.pagination_manager:
+        # Import and create pagination manager
+        from utils.pagination_utils import PaginationManager
+        self.pagination_manager = PaginationManager(self)
+        
+        # Create page buttons
+        self.pagination_manager.create_page_buttons(pagination_frame, total_pages)
+        
+        # Set up pagination manager
+        setup_success = self.pagination_manager.setup_pagination(
+            pagination_frame=pagination_frame,
+            first_button=self.first_page_button,
+            prev_button=self.prev_page_button,
+            next_button=self.next_page_button,
+            last_button=self.last_page_button,
+            on_page_change=self.handle_page_change
+        )
+        
+        if not setup_success:
+            logger.error("Không thể thiết lập pagination manager")
+            return
+            
+        logger.info("Đã khởi tạo pagination manager thành công")
+    else:
+        # Update existing pagination manager if needed
+        if len(self.pagination_manager.page_buttons) < total_pages:
+            self.pagination_manager.create_page_buttons(pagination_frame, total_pages)
 
 def handle_page_change(self, new_page):
     """
@@ -679,7 +722,13 @@ def update_video_preview_ui(self):
             logger.error("Không tìm thấy info panel")
             return
         
-        # Lấy form layout hiện tại của info panel
+        # Đảm bảo chúng ta chỉ thay đổi một lần - kiểm tra nếu đã có scroll area
+        scroll_area = self.video_preview.findChild(QtWidgets.QScrollArea, "infoScrollArea")
+        if scroll_area:
+            logger.info("ScrollArea đã tồn tại, không cần cập nhật lại")
+            return
+        
+        # Lấy layout của info panel
         form_layout = info_panel.layout()
         if not form_layout or not isinstance(form_layout, QtWidgets.QFormLayout):
             logger.error("Form layout không hợp lệ")
@@ -690,6 +739,8 @@ def update_video_preview_ui(self):
         scroll_area.setObjectName("infoScrollArea")
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         scroll_area.setStyleSheet("""
             QScrollArea {
                 background-color: transparent;
@@ -718,13 +769,13 @@ def update_video_preview_ui(self):
         content_widget = QtWidgets.QWidget()
         content_widget.setObjectName("infoContent")
         
-        # Chuyển layout từ info panel sang content widget
+        # Tạo layout mới cho nội dung
         new_form_layout = QtWidgets.QFormLayout(content_widget)
         new_form_layout.setHorizontalSpacing(30)
         new_form_layout.setVerticalSpacing(15)
         new_form_layout.setContentsMargins(15, 15, 15, 15)
         
-        # Tạo các label mới với nội dung giới hạn chiều rộng
+        # Tạo các label mới với nội dung giới hạn chiều rộng và ngắt dòng
         fields = [
             ('fileNameLabel', 'fileNameValueLabel'), 
             ('durationLabel', 'durationValueLabel'),
@@ -744,20 +795,112 @@ def update_video_preview_ui(self):
                 new_label.setObjectName(label_name)
                 new_label.setProperty("class", "infoLabel")
                 
-                # Tạo bản sao của value label với giới hạn chiều rộng
-                new_value = QtWidgets.QLabel(value.text())
+                # Xử lý văn bản hợp lý cho label
+                text_value = value.text()
+                tooltip_text = text_value  # Lưu trữ toàn bộ text cho tooltip
+                
+                # Tạo bản sao của value label với xử lý text tốt hơn
+                new_value = QtWidgets.QLabel(text_value)
                 new_value.setObjectName(value_name)
                 new_value.setProperty("class", "valueLabel")
-                new_value.setWordWrap(True)  # Cho phép ngắt dòng
-                new_value.setMaximumWidth(250)  # Giới hạn chiều rộng tối đa
+                new_value.setTextInteractionFlags(Qt.TextSelectableByMouse)  # Cho phép select text
                 
-                # Thiết lập tooltip cho hiển thị đầy đủ nội dung
-                if value.text():
-                    new_value.setToolTip(value.text())
+                # Cấu hình hiển thị nhất quán cho tất cả các trường
+                # Mặc định các trường chỉ dùng 1 dòng với ellipsis
+                metrics = QtGui.QFontMetrics(new_value.font())
+                use_ellipsis = True
+                use_word_wrap = False
+                field_height = 22
+                max_width = 300
                 
-                # Áp dụng stylesheet tương ứng
+                # Xử lý đặc biệt cho tất cả các trường thông tin
+                # Tất cả các trường sẽ là một dòng duy nhất với ellipsis
+                field_height = 22
+                
+                # Xử lý trường trạng thái Trùng với để rút gọn quá dài
+                if value_name == "statusValueLabel" and "Trùng với:" in text_value:
+                    # Tạo văn bản rút gọn
+                    parts = text_value.split("Trùng với: ")
+                    if len(parts) > 1:
+                        prefix = "Trùng với: "
+                        items = parts[1].split(", ")
+                        
+                        if len(items) > 2:
+                            # Chỉ giải gọn lại file đầu tiên, dùng ký tự ... thể hiện bị cắt
+                            shortened_text = prefix + items[0] + "..."
+                            new_value.setText(shortened_text)
+                            
+                # Tùy chỉnh cấu hình và style theo loại trường
+                if value_name == "fileNameValueLabel":
+                    # Cắt giữa cho tên file với 3 chấm ở giữa
+                    # Tính toán độ dài và tạo text đã cắt bởi QFontMetrics
+                    new_value.setText(metrics.elidedText(new_value.text(), Qt.ElideMiddle, 250))
+                
+                elif value_name == "statusValueLabel":
+                    # Đảm bảo trường trạng thái hiển thị đúng với text dài 
+                    # Giữa nguyên style màu sắc của trạng thái khi áp dụng ellipsis mới
+                    original_style = ""
+                    if value.styleSheet():
+                        original_style = value.styleSheet()
+                    
+                    # Áp dụng style đặc biệt cho trường status - chỉ định rõ max-width
+                    new_value.setStyleSheet(original_style + """
+                        QLabel {
+                            text-overflow: ellipsis;
+                            overflow: hidden; 
+                            white-space: nowrap;
+                            max-width: 250px;
+                        }
+                    """)
+                    
+                    # Tạo text cắt bởi QFontMetrics - đảm bảo phần elide (3 chấm) hiển thị rõ ràng
+                    # Chỉ cắt nếu chưa cắt trước đó (kiểm tra xem đã có dấu ... chưa)
+                    if not new_value.text().endswith("..."):
+                        new_value.setText(metrics.elidedText(new_value.text(), Qt.ElideRight, 230))
+                else:
+                    # Các trường thông tin khác - cắt phần cuối với ellipsis
+                    new_value.setText(metrics.elidedText(new_value.text(), Qt.ElideRight, 250))
+                
+                # Thiết lập các thuộc tính chung
+                new_value.setWordWrap(use_word_wrap)
+                new_value.setMinimumHeight(field_height)
+                new_value.setMaximumHeight(field_height)
+                
+                # Các thiết lập bổ sung cho field
+                new_value.setMinimumWidth(250)
+                new_value.setMaximumWidth(400)  # Chiều rộng phù hợp với text đã cắt ngắn
+                
+                # Luôn thiết lập tooltip để hiển thị đầy đủ nội dung
+                if text_value:
+                    new_value.setToolTip(tooltip_text)
+                
+                # Style cải tiến cho các trường thông thường
+                new_value.setStyleSheet("""
+                    QLabel {
+                        line-height: 125%;
+                        margin-top: 1px;
+                        margin-bottom: 1px;
+                        padding-top: 1px;
+                        padding-bottom: 1px;
+                        white-space: nowrap;
+                        text-overflow: ellipsis;
+                        overflow: hidden;
+                    }
+                """)
+                
+                # Áp dụng stylesheet tương ứng cho status label
                 if value_name == "statusValueLabel" and value.styleSheet():
-                    new_value.setStyleSheet(value.styleSheet())
+                    # Kết hợp stylesheet mới với stylesheet trạng thái
+                    current_style = value.styleSheet()
+                    new_value.setStyleSheet("""
+                        QLabel {
+                            line-height: 125%;
+                            margin-top: 1px;
+                            margin-bottom: 1px;
+                            padding-top: 1px;
+                            padding-bottom: 1px;
+                        }
+                    """ + current_style)
                 
                 # Thêm vào layout mới
                 new_form_layout.addRow(new_label, new_value)
@@ -772,6 +915,7 @@ def update_video_preview_ui(self):
         # Xóa widget cũ khỏi layout
         parent_layout.removeWidget(info_panel)
         info_panel.setParent(None)
+        info_panel.deleteLater()
         
         # Thêm scroll area vào vị trí cũ
         parent_layout.insertWidget(parent_index, scroll_area)

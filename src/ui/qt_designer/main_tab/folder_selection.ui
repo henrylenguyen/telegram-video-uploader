@@ -10,6 +10,12 @@
     <height>70</height>
    </rect>
   </property>
+  <property name="minimumSize">
+   <size>
+    <width>1000</width>
+    <height>70</height>
+   </size>
+  </property>
   <property name="windowTitle">
    <string>Form</string>
   </property>
@@ -87,7 +93,10 @@ QLabel#folderStatsLabel {
     padding: 5px 10px;
 }</string>
   </property>
-  <layout class="QHBoxLayout" name="horizontalLayout">
+  <layout class="QHBoxLayout" name="horizontalLayout" stretch="0,10,0,0,0,0,0">
+   <property name="spacing">
+    <number>10</number>
+   </property>
    <property name="leftMargin">
     <number>20</number>
    </property>
@@ -102,6 +111,18 @@ QLabel#folderStatsLabel {
    </property>
    <item>
     <widget class="QLabel" name="folderLabel">
+     <property name="minimumSize">
+      <size>
+       <width>70</width>
+       <height>0</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>70</width>
+       <height>16777215</height>
+      </size>
+     </property>
      <property name="text">
       <string>Thư mục</string>
      </property>
@@ -111,7 +132,13 @@ QLabel#folderStatsLabel {
     <widget class="QLineEdit" name="directoryLineEdit">
      <property name="minimumSize">
       <size>
-       <width>700</width>
+       <width>0</width>
+       <height>40</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
        <height>40</height>
       </size>
      </property>
@@ -143,7 +170,7 @@ QLabel#folderStatsLabel {
     <widget class="QComboBox" name="recentFoldersComboBox">
      <property name="minimumSize">
       <size>
-       <width>250</width>
+       <width>200</width>
        <height>40</height>
       </size>
      </property>
@@ -199,18 +226,24 @@ QLabel#folderStatsLabel {
    </item>
    <item>
     <widget class="QLabel" name="folderStatsLabel">
-     <property name="minimumSize">
-      <size>
-       <width>250</width>
-       <height>40</height>
-      </size>
-     </property>
-     <property name="text">
-      <string>Tổng dung lượng: 1.2 GB | 24 videos</string>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
-     </property>
+        <property name="minimumSize">
+        <size>
+        <width>300</width>
+        <height>40</height>
+        </size>
+        </property>
+        <property name="maximumSize">
+        <size>
+        <width>300</width>
+        <height>40</height>
+        </size>
+        </property>
+        <property name="text">
+        <string>Tổng dung lượng: 1.2 GB | 24 videos</string>
+        </property>
+        <property name="alignment">
+        <set>Qt::AlignCenter</set>
+        </property>
     </widget>
    </item>
    <item>
@@ -218,9 +251,12 @@ QLabel#folderStatsLabel {
      <property name="orientation">
       <enum>Qt::Horizontal</enum>
      </property>
+     <property name="sizeType">
+      <enum>QSizePolicy::Fixed</enum>
+     </property>
      <property name="sizeHint" stdset="0">
       <size>
-       <width>40</width>
+       <width>10</width>
        <height>20</height>
       </size>
      </property>

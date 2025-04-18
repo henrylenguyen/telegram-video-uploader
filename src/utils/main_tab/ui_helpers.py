@@ -776,10 +776,10 @@ def display_video_frames_placeholder(main_ui, message="Không thể hiển thị
     except Exception as e:
         logger.error(f"Lỗi hiển thị frame placeholder: {str(e)}")
         logger.error(traceback.format_exc())
-
+    
 def display_video_frames_from_paths(main_ui, frame_paths):
     """
-    Display video frames from a list of image paths - UPDATED
+    Display video frames from a list of image paths with improved scaling to fill containers
     
     Args:
         main_ui: MainUI instance
@@ -807,8 +807,10 @@ def display_video_frames_from_paths(main_ui, frame_paths):
             # Create or get layout for frame widget
             layout = frame_widget.layout()
             if layout is None:
+                # Use QVBoxLayout with zero margins to maximize image size
                 layout = QtWidgets.QVBoxLayout(frame_widget)
                 layout.setContentsMargins(0, 0, 0, 0)
+                layout.setSpacing(0)
                 layout.setAlignment(Qt.AlignCenter)
             else:
                 # Clear existing layout
@@ -818,43 +820,63 @@ def display_video_frames_from_paths(main_ui, frame_paths):
                     if widget:
                         widget.deleteLater()
             
-            # Create label for frame image
+            # Create label for frame image with stretch
             label = QtWidgets.QLabel()
             label.setAlignment(Qt.AlignCenter)
             label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            label.setStyleSheet("background: transparent;")
+            label.setMinimumSize(frame_widget.width(), frame_widget.height())
+            label.setStyleSheet("""
+                background: transparent;
+                padding: 0px;
+                margin: 0px;
+            """)
             
             # Load image into pixmap
             pixmap = QtGui.QPixmap(frame_path)
             if not pixmap.isNull():
                 logger.debug(f"Frame image loaded successfully: {frame_path}")
                 
-                # Set fixed size for the label to match the frame
-                label.setMinimumSize(frame_widget.width()-10, frame_widget.height()-10)
+                # Get the frame widget's dimensions
+                frame_width = frame_widget.width() 
+                frame_height = frame_widget.height()
                 
-                # Scale pixmap to fill the label while maintaining aspect ratio
+                # Scale pixmap to completely fill the frame
+                # Use IgnoreAspectRatio to ensure complete filling
                 scaled_pixmap = pixmap.scaled(
-                    frame_widget.width()-10,
-                    frame_widget.height()-10,
+                    frame_width,
+                    frame_height,
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation
                 )
                 
                 label.setPixmap(scaled_pixmap)
                 
-                # Set style to show full frames with border
-                label.setStyleSheet("""
-                    background: transparent;
-                    border: 1px solid #E2E8F0;
-                    border-radius: 4px;
-                    padding: 0px;
-                """)
+                # Create a resize event handler
+                def handle_resize(event, label=label, original_pixmap=pixmap):
+                    """Handle resize events to fill the frame"""
+                    width = event.size().width()
+                    height = event.size().height()
+                    
+                    # Update the label size to match the container
+                    label.setMinimumSize(width, height)
+                    
+                    # Rescale the image to fill the new size
+                    scaled_px = original_pixmap.scaled(
+                        width,
+                        height,
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation
+                    )
+                    label.setPixmap(scaled_px)
+                
+                # Connect resize event
+                frame_widget.resizeEvent = lambda event, label=label, pixmap=pixmap: handle_resize(event)
             else:
                 logger.error(f"Failed to load frame image: {frame_path}")
                 label.setText("Error loading")
             
-            # Add label to layout
-            layout.addWidget(label)
+            # Add label to layout with stretch
+            layout.addWidget(label, 1) # The stretch factor of 1 makes it take all available space
             
             # Make frame clickable
             frame_widget.mousePressEvent = lambda event, path=frame_path: show_frame_fullscreen(main_ui, path)
@@ -868,6 +890,99 @@ def display_video_frames_from_paths(main_ui, frame_paths):
         logger.error(f"Error displaying video frames from paths: {str(e)}")
         logger.error(traceback.format_exc())
 
+def show_frame_fullscreen(main_ui, frame_path):
+    """
+    Display a frame in fullscreen mode
+    
+    Args:
+        main_ui: MainUI instance
+        frame_path: Path to the frame image
+    """
+    try:
+        # Create fullscreen dialog
+        dialog = QtWidgets.QDialog(main_ui)
+        dialog.setWindowTitle("Frame Preview")
+        dialog.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.WindowMaximizeButtonHint | QtCore.Qt.WindowCloseButtonHint)
+        dialog.resize(800, 600)
+        
+        # Create layout
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Create scroll area for large images
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        
+        # Create image label
+        image_label = QtWidgets.QLabel()
+        image_label.setAlignment(Qt.AlignCenter)
+        image_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        
+        # Load and display image
+        pixmap = QtGui.QPixmap(frame_path)
+        if not pixmap.isNull():
+            # Set pixmap to label
+            image_label.setPixmap(pixmap)
+            
+            # Set content widget for scroll area
+            scroll_area.setWidget(image_label)
+        else:
+            # Show error message
+            image_label.setText("Error loading image")
+            layout.addWidget(image_label)
+        
+        # Add scroll area to layout
+        layout.addWidget(scroll_area)
+        
+        # Add close button
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+        
+        close_button = QtWidgets.QPushButton("Close")
+        close_button.setMinimumSize(120, 40)
+        close_button.clicked.connect(dialog.close)
+        button_layout.addWidget(close_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Show dialog
+        dialog.exec_()
+        
+    except Exception as e:
+        logger.error(f"Error showing frame fullscreen: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+def resize_frame(event, label, original_pixmap):
+    """
+    Resize the frame image when the container is resized
+    
+    Args:
+        event: Resize event
+        label: QLabel containing the image
+        original_pixmap: Original image pixmap
+    """
+    try:
+        # Get new size
+        new_width = event.size().width() - 4  # Subtract margin
+        new_height = event.size().height() - 4  # Subtract margin
+        
+        # Scale pixmap to new size while maintaining aspect ratio
+        scaled_pixmap = original_pixmap.scaled(
+            new_width,
+            new_height,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        
+        # Update label pixmap
+        label.setPixmap(scaled_pixmap)
+        
+        # Update label size
+        label.setMinimumSize(new_width, new_height)
+        
+    except Exception as e:
+        logger.error(f"Error resizing frame: {str(e)}")
+        
 def show_frame_fullscreen(main_ui, frame_path):
     """
     Shows a frame in a larger dialog

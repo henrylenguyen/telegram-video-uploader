@@ -83,11 +83,22 @@ QWidget#infoPanel {
 QLabel.infoLabel {
     font-size: 16px;
     color: #64748B;
+    line-height: 1.5;
 }
 
 QLabel.valueLabel {
     font-size: 16px;
     color: #334155;
+    min-width: 150px;
+    max-width: 300px;
+    line-height: 120%;
+    margin-top: 0px;
+    margin-bottom: 0px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+    white-space: nowrap; /* Critical for ellipsis to work */
+    text-overflow: ellipsis;
+    overflow: hidden;
 }</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -106,7 +117,10 @@ QLabel.valueLabel {
    <item>
     <widget class="QLabel" name="titleLabel">
      <property name="text">
-      <string>Xem trước video</string>
+      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;span style=" font-size:20px; font-weight:600;"&gt;Xem trước video&lt;/span&gt; &lt;span style=" font-size:13px; color:#666;"&gt;- Chọn video ở bảng danh sách bên trái&lt;/span&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     </property>
+     <property name="textFormat">
+      <enum>Qt::RichText</enum>
      </property>
     </widget>
    </item>
@@ -201,150 +215,241 @@ QLabel.valueLabel {
     </widget>
    </item>
    <item>
-    <widget class="QWidget" name="infoPanel" native="true">
-     <layout class="QFormLayout" name="formLayout">
-      <property name="horizontalSpacing">
-       <number>30</number>
+    <widget class="QScrollArea" name="infoScrollArea">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>150</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>150</height>
+      </size>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::NoFrame</enum>
+     </property>
+     <property name="verticalScrollBarPolicy">
+      <enum>Qt::ScrollBarAsNeeded</enum>
+     </property>
+     <property name="horizontalScrollBarPolicy">
+      <enum>Qt::ScrollBarAlwaysOff</enum>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="scrollAreaWidgetContents">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>380</width>
+        <height>150</height>
+       </rect>
       </property>
-      <property name="verticalSpacing">
-       <number>30</number>
+      <property name="styleSheet">
+       <string notr="true">background-color: transparent;</string>
       </property>
-      <property name="leftMargin">
-       <number>15</number>
-      </property>
-      <property name="topMargin">
-       <number>15</number>
-      </property>
-      <property name="rightMargin">
-       <number>15</number>
-      </property>
-      <property name="bottomMargin">
-       <number>15</number>
-      </property>
-      <item row="0" column="0">
-       <widget class="QLabel" name="fileNameLabel">
-        <property name="class" stdset="0">
-         <string>infoLabel</string>
-        </property>
-        <property name="text">
-         <string>Tên file:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="1">
-       <widget class="QLabel" name="fileNameValueLabel">
-        <property name="class" stdset="0">
-         <string>valueLabel</string>
-        </property>
-        <property name="text">
-         <string>family_picnic.mp4</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="0">
-       <widget class="QLabel" name="durationLabel">
-        <property name="class" stdset="0">
-         <string>infoLabel</string>
-        </property>
-        <property name="text">
-         <string>Thời lượng:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="QLabel" name="durationValueLabel">
-        <property name="class" stdset="0">
-         <string>valueLabel</string>
-        </property>
-        <property name="text">
-         <string>00:03:45</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="0">
-       <widget class="QLabel" name="resolutionLabel">
-        <property name="class" stdset="0">
-         <string>infoLabel</string>
-        </property>
-        <property name="text">
-         <string>Độ phân giải:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="1">
-       <widget class="QLabel" name="resolutionValueLabel">
-        <property name="class" stdset="0">
-         <string>valueLabel</string>
-        </property>
-        <property name="text">
-         <string>1920 x 1080</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="sizeLabel">
-        <property name="class" stdset="0">
-         <string>infoLabel</string>
-        </property>
-        <property name="text">
-         <string>Kích thước:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="1">
-       <widget class="QLabel" name="sizeValueLabel">
-        <property name="class" stdset="0">
-         <string>valueLabel</string>
-        </property>
-        <property name="text">
-         <string>42.5 MB</string>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="0">
-       <widget class="QLabel" name="statusLabel">
-        <property name="class" stdset="0">
-         <string>infoLabel</string>
-        </property>
-        <property name="text">
-         <string>Trạng thái:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="1">
-       <widget class="QLabel" name="statusValueLabel">
-        <property name="class" stdset="0">
-         <string>valueLabel</string>
-        </property>
-        <property name="text">
-         <string>Chưa tải lên</string>
-        </property>
-        <property name="styleSheet">
-         <string notr="true">color: #10B981;</string>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="0">
-       <widget class="QLabel" name="codecLabel">
-        <property name="class" stdset="0">
-         <string>infoLabel</string>
-        </property>
-        <property name="text">
-         <string>Codec:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="1">
-       <widget class="QLabel" name="codecValueLabel">
-        <property name="class" stdset="0">
-         <string>valueLabel</string>
-        </property>
-        <property name="text">
-         <string>H.264</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
+      <layout class="QVBoxLayout" name="verticalLayout_3">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="QWidget" name="infoPanel" native="true">
+         <layout class="QFormLayout" name="formLayout">
+          <property name="horizontalSpacing">
+           <number>20</number>
+          </property>
+          <property name="verticalSpacing">
+           <number>15</number>
+          </property>
+          <property name="leftMargin">
+           <number>15</number>
+          </property>
+          <property name="topMargin">
+           <number>15</number>
+          </property>
+          <property name="rightMargin">
+           <number>15</number>
+          </property>
+          <property name="bottomMargin">
+           <number>15</number>
+          </property>
+          <item row="0" column="0">
+           <widget class="QLabel" name="fileNameLabel">
+            <property name="class" stdset="0">
+             <string>infoLabel</string>
+            </property>
+            <property name="text">
+             <string>Tên file:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLabel" name="fileNameValueLabel">
+            <property name="class" stdset="0">
+             <string>valueLabel</string>
+            </property>
+            <property name="text">
+             <string>family_picnic.mp4</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="margin">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="durationLabel">
+            <property name="class" stdset="0">
+             <string>infoLabel</string>
+            </property>
+            <property name="text">
+             <string>Thời lượng:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLabel" name="durationValueLabel">
+            <property name="class" stdset="0">
+             <string>valueLabel</string>
+            </property>
+            <property name="text">
+             <string>00:03:45</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="margin">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="resolutionLabel">
+            <property name="class" stdset="0">
+             <string>infoLabel</string>
+            </property>
+            <property name="text">
+             <string>Độ phân giải:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLabel" name="resolutionValueLabel">
+            <property name="class" stdset="0">
+             <string>valueLabel</string>
+            </property>
+            <property name="text">
+             <string>1920 x 1080</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="margin">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="sizeLabel">
+            <property name="class" stdset="0">
+             <string>infoLabel</string>
+            </property>
+            <property name="text">
+             <string>Kích thước:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLabel" name="sizeValueLabel">
+            <property name="class" stdset="0">
+             <string>valueLabel</string>
+            </property>
+            <property name="text">
+             <string>42.5 MB</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="margin">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="statusLabel">
+            <property name="class" stdset="0">
+             <string>infoLabel</string>
+            </property>
+            <property name="text">
+             <string>Trạng thái:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLabel" name="statusValueLabel">
+            <property name="class" stdset="0">
+             <string>valueLabel</string>
+            </property>
+            <property name="text">
+             <string>Chưa tải lên</string>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">color: #10B981;</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="margin">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="codecLabel">
+            <property name="class" stdset="0">
+             <string>infoLabel</string>
+            </property>
+            <property name="text">
+             <string>Codec:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLabel" name="codecValueLabel">
+            <property name="class" stdset="0">
+             <string>valueLabel</string>
+            </property>
+            <property name="text">
+             <string>H.264</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="margin">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>

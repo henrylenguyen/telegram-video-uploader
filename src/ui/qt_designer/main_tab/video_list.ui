@@ -100,6 +100,11 @@ QLabel.videoName {
     font-size: 14px;
     color: #1E293B;
     background-color: transparent;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 800px;
+    min-width: 300px;
 }
 
 QLabel.statusNew {

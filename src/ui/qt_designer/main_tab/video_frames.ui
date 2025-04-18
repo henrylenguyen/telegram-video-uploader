@@ -58,8 +58,10 @@ QFrame.frameItem {
     min-height: 300px;
     max-height: 300px;
     background-color: #FFFFFF;
-    border: 2px solid #E2E8F0;
+    border: 1px solid #E2E8F0;
     border-radius: 6px;
+    padding: 0px;
+    margin: 0px;
 }</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -138,6 +140,15 @@ QFrame.frameItem {
            <height>300</height>
           </size>
          </property>
+         <property name="styleSheet">
+          <string notr="true">padding: 0px; margin: 0px;</string>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
          <property name="class" stdset="0">
           <string>frameItem</string>
          </property>
@@ -156,6 +167,15 @@ QFrame.frameItem {
            <width>16777215</width>
            <height>300</height>
           </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">padding: 0px; margin: 0px;</string>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
          </property>
          <property name="class" stdset="0">
           <string>frameItem</string>
@@ -176,6 +196,15 @@ QFrame.frameItem {
            <height>300</height>
           </size>
          </property>
+         <property name="styleSheet">
+          <string notr="true">padding: 0px; margin: 0px;</string>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
          <property name="class" stdset="0">
           <string>frameItem</string>
          </property>
@@ -195,6 +224,15 @@ QFrame.frameItem {
            <height>300</height>
           </size>
          </property>
+         <property name="styleSheet">
+          <string notr="true">padding: 0px; margin: 0px;</string>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
          <property name="class" stdset="0">
           <string>frameItem</string>
          </property>
@@ -213,6 +251,15 @@ QFrame.frameItem {
            <width>16777215</width>
            <height>300</height>
           </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">padding: 0px; margin: 0px;</string>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
          </property>
          <property name="class" stdset="0">
           <string>frameItem</string>
