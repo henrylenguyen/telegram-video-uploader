@@ -12,6 +12,7 @@ import shutil
 import time
 import threading
 from pathlib import Path
+from datetime import timedelta
 
 logger = logging.getLogger("FFmpegManager")
 
@@ -57,6 +58,16 @@ class FFmpegManager:
         self.is_downloading = False
         self.download_progress = 0
         self.download_status = "Chưa tải"
+        
+        # Thông tin về tốc độ tải
+        self.download_speed = 0  # Bytes/giây
+        self.estimated_time = "Đang tính..."  # Thời gian hoàn thành dự kiến
+        self.total_size = 0  # Tổng kích thước file
+        self.downloaded_size = 0  # Kích thước đã tải
+        
+        # Theo dõi thời gian tải
+        self.last_update_time = 0
+        self.last_download_size = 0
         
         # Tạo thư mục nếu chưa tồn tại
         os.makedirs(self.ffmpeg_dir, exist_ok=True)
@@ -137,6 +148,37 @@ class FFmpegManager:
         
         return False
     
+    def _format_size(self, size_bytes):
+        """Định dạng kích thước file thành chuỗi dễ đọc"""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes/1024:.1f} KB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes/(1024*1024):.1f} MB"
+        else:
+            return f"{size_bytes/(1024*1024*1024):.2f} GB"
+    
+    def _format_speed(self, speed_bytes):
+        """Định dạng tốc độ tải thành chuỗi dễ đọc"""
+        if speed_bytes < 1024:
+            return f"{speed_bytes:.1f} B/s"
+        elif speed_bytes < 1024 * 1024:
+            return f"{speed_bytes/1024:.1f} KB/s"
+        else:
+            return f"{speed_bytes/(1024*1024):.1f} MB/s"
+    
+    def _format_time(self, seconds):
+        """Định dạng thời gian thành chuỗi dễ đọc"""
+        if seconds < 60:
+            return f"{seconds:.0f} giây"
+        elif seconds < 3600:
+            return f"{seconds//60:.0f} phút {seconds%60:.0f} giây"
+        else:
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            return f"{hours:.0f} giờ {minutes:.0f} phút"
+    
     def _download_ffmpeg(self):
         """Tải FFmpeg từ internet"""
         current_os = platform.system().lower()
@@ -147,7 +189,7 @@ class FFmpegManager:
         
         url = self.FFMPEG_URLS[current_os]
         self.is_downloading = True
-        self.download_status = "Đang tải FFmpeg..."
+        self.download_status = "Đang chuẩn bị tải FFmpeg..."
         
         try:
             # Tạo thư mục tạm
@@ -162,15 +204,51 @@ class FFmpegManager:
             class DownloadProgressReporter:
                 def __init__(self, manager):
                     self.manager = manager
-                    self.total_size = 0
+                    self.manager.last_update_time = time.time()
+                    self.manager.last_download_size = 0
                 
                 def __call__(self, block_num, block_size, total_size):
-                    self.total_size = total_size
+                    self.manager.total_size = total_size
                     downloaded = block_num * block_size
+                    self.manager.downloaded_size = downloaded
+                    
                     if total_size > 0:
+                        # Tính phần trăm hoàn thành
                         percent = min(100, downloaded * 100 / total_size)
                         self.manager.download_progress = percent
-                        self.manager.download_status = f"Đang tải FFmpeg: {percent:.1f}%"
+                        
+                        # Tính tốc độ tải
+                        current_time = time.time()
+                        time_diff = current_time - self.manager.last_update_time
+                        
+                        if time_diff >= 0.5:  # Cập nhật mỗi 0.5 giây
+                            size_diff = downloaded - self.manager.last_download_size
+                            
+                            if time_diff > 0:
+                                speed = size_diff / time_diff
+                                self.manager.download_speed = speed
+                                
+                                # Tính thời gian còn lại
+                                if speed > 0:
+                                    remaining_bytes = total_size - downloaded
+                                    est_time = remaining_bytes / speed
+                                    self.manager.estimated_time = self.manager._format_time(est_time)
+                                else:
+                                    self.manager.estimated_time = "Đang tính..."
+                            
+                            # Cập nhật trạng thái
+                            status = f"Đang tải: {percent:.1f}% - "
+                            status += f"{self.manager._format_size(downloaded)}/{self.manager._format_size(total_size)} - "
+                            status += f"{self.manager._format_speed(self.manager.download_speed)}"
+                            
+                            if percent < 100:
+                                status += f" - Còn: {self.manager.estimated_time}"
+                                
+                            self.manager.download_status = status
+                            
+                            # Cập nhật các giá trị theo dõi
+                            self.manager.last_update_time = current_time
+                            self.manager.last_download_size = downloaded
             
             # Tải file
             progress_reporter = DownloadProgressReporter(self)
@@ -198,65 +276,52 @@ class FFmpegManager:
                 for root, dirs, files in os.walk(temp_dir):
                     if 'bin' in dirs:
                         bin_dir = os.path.join(root, 'bin')
+                        
+                        # Tìm ffmpeg.exe và ffprobe.exe
                         for file in os.listdir(bin_dir):
-                            if file in ['ffmpeg.exe', 'ffprobe.exe']:
-                                src = os.path.join(bin_dir, file)
-                                dst = os.path.join(self.ffmpeg_dir, file)
-                                shutil.copy2(src, dst)
-                                logger.info(f"Đã sao chép {file} vào {dst}")
+                            if file.startswith('ffmpeg') or file.startswith('ffprobe'):
+                                src_file = os.path.join(bin_dir, file)
+                                dst_file = os.path.join(self.ffmpeg_dir, file)
+                                shutil.copy2(src_file, dst_file)
+                        break
             elif current_os == 'darwin':
-                # macOS thường giải nén trực tiếp thành ffmpeg
+                # macOS: Tìm ffmpeg và ffprobe
                 for root, dirs, files in os.walk(temp_dir):
                     for file in files:
-                        if file in ['ffmpeg', 'ffprobe']:
-                            src = os.path.join(root, file)
-                            dst = os.path.join(self.ffmpeg_dir, file)
-                            shutil.copy2(src, dst)
-                            # Đặt quyền thực thi
-                            os.chmod(dst, 0o755)
-                            logger.info(f"Đã sao chép {file} vào {dst}")
-            else:  # Linux
-                # Tìm thư mục bin sau khi giải nén
+                        if file == 'ffmpeg' or file == 'ffprobe':
+                            src_file = os.path.join(root, file)
+                            dst_file = os.path.join(self.ffmpeg_dir, file)
+                            shutil.copy2(src_file, dst_file)
+                            os.chmod(dst_file, 0o755)  # Thêm quyền thực thi
+            else:
+                # Linux: Tìm ffmpeg và ffprobe
                 for root, dirs, files in os.walk(temp_dir):
-                    if 'bin' in dirs:
-                        bin_dir = os.path.join(root, 'bin')
-                        for file in os.listdir(bin_dir):
-                            if file in ['ffmpeg', 'ffprobe']:
-                                src = os.path.join(bin_dir, file)
-                                dst = os.path.join(self.ffmpeg_dir, file)
-                                shutil.copy2(src, dst)
-                                # Đặt quyền thực thi
-                                os.chmod(dst, 0o755)
-                                logger.info(f"Đã sao chép {file} vào {dst}")
+                    for file in files:
+                        if file == 'ffmpeg' or file == 'ffprobe':
+                            src_file = os.path.join(root, file)
+                            dst_file = os.path.join(self.ffmpeg_dir, file)
+                            shutil.copy2(src_file, dst_file)
+                            os.chmod(dst_file, 0o755)  # Thêm quyền thực thi
             
-            # Dọn dẹp file tạm
+            # Dọn dẹp thư mục tạm
             shutil.rmtree(temp_dir)
             
-            # Kiểm tra lại
+            # Kiểm tra xem đã có FFmpeg chưa
             if self._check_bundled_ffmpeg():
                 self._add_to_path()
-                self.download_status = "Đã cài đặt FFmpeg thành công"
-                logger.info("Đã cài đặt FFmpeg thành công")
+                self.download_status = "Đã tải và cài đặt FFmpeg thành công"
+                logger.info("Đã tải và cài đặt FFmpeg thành công")
+                return True
             else:
-                self.download_status = "Lỗi: Không tìm thấy FFmpeg sau khi tải về"
-                logger.error("Không tìm thấy FFmpeg sau khi tải về")
-            
+                self.download_status = "Lỗi không tìm thấy FFmpeg sau khi tải"
+                logger.error("Lỗi không tìm thấy FFmpeg sau khi tải")
+                return False
+                
         except Exception as e:
+            self.is_downloading = False
             self.download_status = f"Lỗi khi tải FFmpeg: {str(e)}"
             logger.error(f"Lỗi khi tải FFmpeg: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
             return False
-        finally:
-            self.is_downloading = False
-            # Đảm bảo xóa thư mục tạm nếu còn
-            if os.path.exists(temp_dir):
-                try:
-                    shutil.rmtree(temp_dir)
-                except:
-                    pass
-        
-        return self.is_available
     
     def _add_to_path(self):
         """Thêm thư mục FFmpeg vào PATH"""

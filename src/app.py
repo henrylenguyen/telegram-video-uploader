@@ -7,21 +7,11 @@ Main application to upload videos to Telegram with advanced features.
 import os
 import sys
 import logging
-import tkinter as tk
-from tkinter import ttk, messagebox
-import threading
 from queue import Queue
+import traceback
 
-# Define variable to decide whether to use Qt or Tkinter
-USE_QT_UI = True  # True = use Qt, False = use Tkinter
-
-# Import PyQt5 if using Qt UI
-if USE_QT_UI:
-    try:
-        from PyQt5 import QtWidgets
-    except ImportError:
-        USE_QT_UI = False
-        logging.warning("Could not import PyQt5, switching to Tkinter")
+# Import PyQt5
+from PyQt5 import QtWidgets, QtCore
 
 # Configure logging
 logging.basicConfig(
@@ -34,8 +24,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("TelegramUploader")
 
-# Import UI modules conditionally
-from ui.splash_screen import show_splash_screen
+# Import UI modules
+from ui.splash_screen import show_splash_screen, SplashScreen
+from ui.main_tab.main_ui import MainUI
 
 # Import core modules
 from core.config_manager import ConfigManager
@@ -50,25 +41,20 @@ class TelegramUploaderApp:
     """
     Main application for uploading videos to Telegram.
     """
-    def __init__(self, root=None):
+    def __init__(self):
         """
         Initialize the application.
-        
-        Args:
-            root: Tkinter root window (optional, only used in Tkinter mode)
         """
-        self.root = root
         self.qt_app = None
-        self.qt_main_window = None
+        self.main_window = None
+        self.is_uploading = False
+        self.splash_screen = None
+        
+        # Khởi tạo ứng dụng Qt trước khi tiếp tục
+        self.qt_app = QtWidgets.QApplication(sys.argv)
         
         # Set up components
         self._initialize_components()
-        
-        # Set up UI based on mode
-        if USE_QT_UI:
-            self._setup_qt_ui()
-        else:
-            self._setup_tkinter_ui()
     
     def _initialize_components(self):
         """Initialize core components"""
@@ -88,206 +74,72 @@ class TelegramUploaderApp:
         history_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'upload_history.json')
         self.upload_history = UploadHistory(history_file)
         
+        # Initialize task queue
+        self.task_queue = Queue()
+        
         # Initialize Telegram connection
         self.telegram_connector = TelegramConnector(self)
         self.telegram_api = self.telegram_connector.telegram_api
         self.telethon_uploader = self.telegram_connector.telethon_uploader
     
-    def _setup_qt_ui(self):
-        """Set up the Qt UI"""
-        logger.info("Setting up Qt UI")
-        
+    def _setup_ui(self):
+        """Set up application UI - only create the main window, don't show it yet"""
         try:
-            # Import the Qt UI
-            from ui.main_tab.main_ui import MainUI
-            
-            # Create Qt application instance if needed
-            if QtWidgets.QApplication.instance() is None:
-                self.qt_app = QtWidgets.QApplication(sys.argv)
-            else:
-                self.qt_app = QtWidgets.QApplication.instance()
-            
-            # Create main window
-            self.qt_main_window = MainUI(self)
-            
-            # Show the window
-            self.qt_main_window.show()
-            
+            # Tạo cửa sổ chính (không hiển thị)
+            self._create_main_window()
+            logger.info("UI setup completed successfully")
+            return True
         except Exception as e:
-            logger.error(f"Error setting up Qt UI: {str(e)}")
-            import traceback
+            logger.error(f"Error setting up UI: {e}")
             logger.error(traceback.format_exc())
-            
-            # Fall back to Tkinter if Qt fails
-            if self.root:
-                self._setup_tkinter_ui()
+            return False
     
-    def _setup_tkinter_ui(self):
-        """Set up the Tkinter UI"""
-        logger.info("Setting up Tkinter UI")
+    def _create_main_window(self):
+        """Create main application window"""
+        self.main_window = QtWidgets.QMainWindow()
         
-        if not self.root:
-            logger.error("No Tkinter root window provided")
-            return
+        # Thiết lập thuộc tính cửa sổ
+        self.main_window.setWindowTitle("Telegram Video Uploader")
+        self.main_window.resize(1200, 800)
+        self.main_window.setMinimumSize(1024, 768)
         
-        # Set up Tkinter window
-        self.root.title("Telegram Video Uploader")
+        # Widget chính
+        self.central_widget = QtWidgets.QWidget()
+        self.main_window.setCentralWidget(self.central_widget)
         
-        # Set window size and position
-        self._setup_window()
+        # Layout chính
+        self.main_layout = QtWidgets.QVBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
         
-        # Set up TTK styles
-        self._setup_styles()
+        # Tạo main tab trực tiếp
+        self._setup_main_tab()
         
-        # Show splash screen
-        show_splash_screen(self)
-        
-        # Create UI
-        self._create_tkinter_ui()
-        
-        # Set close handler
-        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        # Kết nối sự kiện đóng cửa sổ
+        self.main_window.closeEvent = self._on_close_event
     
-    def _setup_window(self):
-        """Set up window size and position"""
-        # Get screen dimensions
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
+    def _setup_main_tab(self):
+        """Setup main tab"""
+        # Khởi tạo MainUI
+        self.main_tab = MainUI(app_instance=self)
         
-        # Set window size (90% of screen)
-        window_width = int(screen_width * 0.9)
-        window_height = int(screen_height * 0.9)
-        
-        # Center window
-        x_position = (screen_width - window_width) // 2
-        y_position = (screen_height - window_height) // 2
-        
-        # Apply size and position
-        self.root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
-        self.root.minsize(1024, 768)
-        
-        # Maximize on Windows
-        self.root.state('zoomed')
-        
-        # Set icon if available
-        try:
-            icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.ico')
-            if os.path.exists(icon_path):
-                self.root.iconbitmap(icon_path)
-        except Exception as e:
-            logger.warning(f"Could not set icon: {e}")
+        # Thêm trực tiếp vào layout chính
+        self.main_layout.addWidget(self.main_tab)
     
-    def _setup_styles(self):
-        """Set up TTK styles"""
-        if not hasattr(self, 'root') or not self.root:
-            return
-            
-        style = ttk.Style()
-        
-        # Common fonts
-        default_font = ("Segoe UI", 10)
-        heading_font = ("Segoe UI", 11, "bold")
-        
-        # Button style
-        style.configure("TButton", padding=(10, 5), font=default_font)
-        
-        # Label styles
-        style.configure("TLabel", font=default_font)
-        style.configure("Heading.TLabel", font=heading_font)
-        
-        # Frame styles
-        style.configure("TFrame", background="#f0f0f0")
-        style.configure("TLabelframe", background="#f0f0f0", font=default_font)
-        style.configure("TLabelframe.Label", font=heading_font)
-        
-        # Treeview styles
-        style.configure("Treeview", font=default_font, rowheight=30)
-        style.configure("Treeview.Heading", font=heading_font)
-        
-        # Status label
-        style.configure("Status.TLabel", font=default_font, foreground="#0066CC")
-        
-        # Blue button
-        style.configure("Blue.TButton", font=default_font)
-        style.map("Blue.TButton",
-                background=[("active", "#2980b9"), ("!active", "#3498db")],
-                foreground=[("active", "white"), ("!active", "white")])
-    
-    def _create_tkinter_ui(self):
-        """Create Tkinter UI"""
-        if not hasattr(self, 'root') or not self.root:
-            return
-            
-        # Create main frame
-        main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Add message that Qt UI should be used
-        message_frame = ttk.Frame(main_frame, padding=20)
-        message_frame.pack(fill=tk.BOTH, expand=True)
-        
-        ttk.Label(
-            message_frame, 
-            text="The Tkinter UI is deprecating for the main tab", 
-            font=("Arial", 16, "bold"),
-            style="Heading.TLabel"
-        ).pack(pady=(100, 20))
-        
-        ttk.Label(
-            message_frame, 
-            text="Please use the PyQt5 version for the best experience", 
-            font=("Arial", 14),
-            style="Heading.TLabel"
-        ).pack(pady=10)
-        
-        ttk.Button(
-            message_frame,
-            text="Switch to PyQt5 UI",
-            command=self._try_switch_to_qt,
-            style="Blue.TButton"
-        ).pack(pady=20)
-    
-    def _try_switch_to_qt(self):
-        """Try to switch to Qt UI"""
-        try:
-            # Hide Tkinter window
-            if hasattr(self, 'root') and self.root:
-                self.root.withdraw()
-            
-            # Set up Qt UI
-            self._setup_qt_ui()
-            
-            # Destroy Tkinter window if Qt UI was created successfully
-            if self.qt_main_window:
-                if hasattr(self, 'root') and self.root:
-                    self.root.destroy()
-                    self.root = None
-        except Exception as e:
-            logger.error(f"Error switching to Qt UI: {str(e)}")
-            messagebox.showerror("Error", f"Could not switch to Qt UI: {str(e)}")
-            
-            # Show Tkinter window again
-            if hasattr(self, 'root') and self.root:
-                self.root.deiconify()
-    
-    def run(self):
-        """Run the application"""
-        if USE_QT_UI and self.qt_app:
-            # Run Qt application
-            return self.qt_app.exec_()
-        elif hasattr(self, 'root') and self.root:
-            # Run Tkinter application
-            self.root.mainloop()
-    
-    def _on_closing(self):
-        """Handle application closing"""
+    def _on_close_event(self, event):
+        """Handle Qt window close event"""
         # Ask for confirmation if uploading
-        is_uploading = False
-        if hasattr(self, 'qt_main_window') and self.qt_main_window:
-            is_uploading = getattr(self.qt_main_window, 'is_uploading', False)
-        
-        if is_uploading:
-            if not messagebox.askyesno("Confirm", "Videos are being uploaded. Are you sure you want to exit?"):
+        if self.is_uploading:
+            reply = QtWidgets.QMessageBox.question(
+                self.main_window,
+                "Xác nhận",
+                "Đang tải video lên. Bạn có chắc muốn thoát?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No
+            )
+            
+            if reply == QtWidgets.QMessageBox.No:
+                event.ignore()
                 return
         
         # Save configuration
@@ -300,6 +152,45 @@ class TelegramUploaderApp:
         if hasattr(self, 'telethon_uploader'):
             self.telethon_uploader.disconnect()
         
-        # Close window
-        if hasattr(self, 'root') and self.root:
-            self.root.destroy()
+        # Accept close event
+        event.accept()
+    
+    def _on_splash_screen_canceled(self):
+        """Xử lý khi splash screen bị hủy"""
+        logger.info("Splash screen canceled by user, exiting application")
+        # Thoát ứng dụng
+        self.qt_app.quit()
+    
+    def run(self):
+        """Run the application"""
+        try:
+            # Hiển thị splash screen trước
+            self.splash_screen = show_splash_screen(self.qt_app, self.ffmpeg_manager)
+            
+            # Kết nối tín hiệu finished từ splash screen để thiết lập và hiển thị cửa sổ chính
+            self.splash_screen.finished.connect(self._on_splash_screen_finished)
+            
+            # Kết nối tín hiệu hủy
+            if hasattr(self.splash_screen, 'canceled'):
+                self.splash_screen.canceled.connect(self._on_splash_screen_canceled)
+            
+            # Run Qt application
+            return self.qt_app.exec_()
+        except Exception as e:
+            logger.error(f"Error running application: {e}")
+            logger.error(traceback.format_exc())
+            return 1
+            
+    def _on_splash_screen_finished(self, telegram_configured):
+        """Xử lý sự kiện khi splash screen hoàn thành"""
+        try:
+            # Thiết lập UI chính sau khi splash screen đã hoàn thành
+            self._setup_ui()
+            
+            # Hiển thị cửa sổ chính
+            self.main_window.show()
+            
+            logger.info("Main window shown after splash screen completed")
+        except Exception as e:
+            logger.error(f"Error showing main window: {e}")
+            logger.error(traceback.format_exc())
