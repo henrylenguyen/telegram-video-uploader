@@ -42,10 +42,10 @@ class PaginationManager:
             color: white; 
             font-weight: bold; 
             border-radius: 4px; 
-            min-width: 40px; 
-            min-height: 40px; 
-            max-width: 40px; 
-            max-height: 40px;
+            min-width: 36px; 
+            min-height: 36px; 
+            max-width: 36px; 
+            max-height: 36px;
             font-size: 14px;
         """
         
@@ -53,10 +53,10 @@ class PaginationManager:
             background-color: #FFFFFF; 
             color: #333; 
             border-radius: 4px; 
-            min-width: 40px; 
-            min-height: 40px; 
-            max-width: 40px; 
-            max-height: 40px;
+            min-width: 36px; 
+            min-height: 36px; 
+            max-width: 36px; 
+            max-height: 36px;
             border: 1px solid #E2E8F0;
             font-size: 14px;
         """
@@ -65,10 +65,10 @@ class PaginationManager:
             background-color: #e0e0e0; 
             color: #a0a0a0; 
             border-radius: 4px; 
-            min-width: 40px; 
-            min-height: 40px; 
-            max-width: 40px; 
-            max-height: 40px;
+            min-width: 36px; 
+            min-height: 36px; 
+            max-width: 36px; 
+            max-height: 36px;
             font-size: 14px;
         """
     
@@ -174,7 +174,7 @@ class PaginationManager:
                 # Create new layout
                 self.button_layout = QtWidgets.QHBoxLayout(self.button_container)
                 self.button_layout.setContentsMargins(0, 0, 0, 0)
-                self.button_layout.setSpacing(5)
+                self.button_layout.setSpacing(1)
                 self.button_layout.setAlignment(Qt.AlignCenter)
             
             # Make sure container is visible
@@ -234,7 +234,7 @@ class PaginationManager:
                 # Create new layout
                 self.button_layout = QtWidgets.QHBoxLayout(self.button_container)
                 self.button_layout.setContentsMargins(0, 0, 0, 0)
-                self.button_layout.setSpacing(5)
+                self.button_layout.setSpacing(1)
                 self.button_layout.setAlignment(Qt.AlignCenter)
             
             # Create page buttons - create enough for all pages
@@ -242,13 +242,15 @@ class PaginationManager:
                 # Create button with specific styling
                 btn = QtWidgets.QPushButton(str(i), self.button_container)
                 btn.setObjectName(f"pageButton{i}")
-                btn.setFixedSize(40, 40)
+                btn.setFixedSize(36, 36)
                 btn.setStyleSheet(self.inactive_page_style)
                 btn.setCursor(QtCore.Qt.PointingHandCursor)
                 btn.setVisible(False)  # Initially hidden
                 
-                # Connect click handler
-                btn.clicked.connect(lambda checked=False, page=i: self.go_to_page(page))
+                # Connect click handler with a fixed reference to prevent garbage collection
+                # Using a partial function to fix the page number
+                page_num = i  # Create local variable to avoid lambda capture issue
+                btn.clicked.connect(lambda checked=False, p=page_num: self.go_to_page(p))
                 
                 # Store button
                 self.page_buttons.append(btn)
@@ -261,7 +263,7 @@ class PaginationManager:
                 # Create ellipsis button
                 ellipsis = QtWidgets.QPushButton("...", self.button_container)
                 ellipsis.setObjectName(f"ellipsisButton{i}")
-                ellipsis.setFixedSize(40, 40)
+                ellipsis.setFixedSize(36, 36)
                 ellipsis.setStyleSheet(self.inactive_page_style)
                 ellipsis.setCursor(QtCore.Qt.PointingHandCursor)
                 ellipsis.setVisible(False)  # Initially hidden
@@ -302,15 +304,11 @@ class PaginationManager:
             
             logger.info(f"Updating pagination: current={self.current_page}, total={self.total_pages}")
             
-            # Calculate which pages to display
-            visible_pages = self._calculate_visible_pages()
-            logger.info(f"Visible pages: {visible_pages}")
-            
-            # Hide all buttons first
+            # Ẩn tất cả các nút trang và ellipsis đầu tiên
             self._hide_all_buttons()
             
-            # Update button layout
-            self._update_button_layout(visible_pages)
+            # Hiển thị các nút trang phù hợp với tổng số trang
+            self._show_required_buttons()
             
             # Update navigation button states
             self._update_navigation_button_states()
@@ -339,120 +337,112 @@ class PaginationManager:
         except Exception as e:
             logger.error(f"Error hiding buttons: {str(e)}")
     
-    def _update_button_layout(self, visible_pages):
-        """
-        Update button layout with visible page buttons and ellipsis labels.
-        
-        Args:
-            visible_pages: List of page numbers and ellipses to show
-        """
+    def _show_required_buttons(self):
+        """Hiển thị các nút trang cần thiết dựa vào tổng số trang và trang hiện tại."""
         try:
-            if not self.button_layout:
-                logger.error("Button layout is not initialized")
-                return
-            
             if not self.button_container:
                 logger.error("Button container is not initialized")
                 return
             
-            # Clear all widgets from layout
-            while self.button_layout.count():
-                item = self.button_layout.takeAt(0)
-                if item.widget():
-                    item.widget().setVisible(False)
+            # Số lượng nút phân trang sẵn có
+            num_buttons = len(self.page_buttons)
+            if num_buttons == 0:
+                logger.warning("No page buttons found")
+                return
             
-            logger.info(f"Updating button layout with pages: {visible_pages}")
-            
-            # Add page number buttons and ellipsis labels
-            for i, item in enumerate(visible_pages):
-                if item == "...":
-                    # Add ellipsis
-                    ellipsis_index = 0 if i < len(visible_pages)/2 else 1
-                    if ellipsis_index < len(self.ellipsis_labels):
-                        label = self.ellipsis_labels[ellipsis_index]
-                        label.setVisible(True)
-                        self.button_layout.addWidget(label)
-                else:
-                    # Add page number button
-                    page_num = item
-                    btn_index = page_num - 1  # 0-based index
+            # Đảm bảo rằng tất cả các nút page buttons đã được tạo và có trong layout
+            for i, btn in enumerate(self.page_buttons):
+                page_num = i + 1
+                if page_num <= self.total_pages:
+                    # Cập nhật số trang hiển thị
+                    btn.setText(str(page_num))
                     
-                    if btn_index < len(self.page_buttons):
-                        btn = self.page_buttons[btn_index]
-                        btn.setText(str(page_num))
-                        
-                        # Set button style based on current page
-                        if page_num == self.current_page:
-                            btn.setStyleSheet(self.active_page_style)
-                        else:
-                            btn.setStyleSheet(self.inactive_page_style)
-                        
-                        # Show button
-                        btn.setVisible(True)
-                        self.button_layout.addWidget(btn)
-                        logger.debug(f"Added button for page {page_num}")
+                    # Set style phù hợp
+                    if page_num == self.current_page:
+                        btn.setStyleSheet(self.active_page_style)
                     else:
-                        logger.warning(f"Button index out of range: {btn_index} >= {len(self.page_buttons)}")
+                        btn.setStyleSheet(self.inactive_page_style)
             
-            # Force layout update
+            # Trường hợp đơn giản: 7 trang hoặc ít hơn, hiển thị tất cả các trang
+            if self.total_pages <= 7:
+                # Hiển thị tất cả các nút trang cần thiết
+                for i in range(min(self.total_pages, num_buttons)):
+                    self.page_buttons[i].setVisible(True)
+                
+                # Ẩn các nút ellipsis
+                for ellipsis in self.ellipsis_labels:
+                    ellipsis.setVisible(False)
+                
+                logger.info(f"Hiển thị tất cả {self.total_pages} trang")
+                return
+            
+            # Trường hợp có nhiều trang, hiển thị theo kiểu: 1 ... 4 5 6 ... 10 (ở vị trí trang 5)
+            # Hiển thị nút trang đầu tiên
+            self.page_buttons[0].setVisible(True)
+            
+            # Phân tích để quyết định cách hiển thị
+            if self.current_page <= 4:
+                # Trang hiện tại gần đầu (1-4): hiển thị 1 2 3 4 5 ... 10
+                
+                # Hiển thị 5 trang đầu
+                for i in range(5):
+                    if i < num_buttons and i < self.total_pages:
+                        self.page_buttons[i].setVisible(True)
+                
+                # Hiển thị dấu ... bên phải
+                if len(self.ellipsis_labels) > 0:
+                    self.ellipsis_labels[0].setVisible(True)
+                
+                # Hiển thị trang cuối
+                if self.total_pages - 1 < num_buttons:
+                    self.page_buttons[self.total_pages - 1].setVisible(True)
+                
+                logger.info(f"Hiển thị phân trang kiểu đầu: 1-5 ... {self.total_pages}")
+                
+            elif self.current_page >= self.total_pages - 3:
+                # Trang hiện tại gần cuối: hiển thị 1 ... 6 7 8 9 10
+                
+                # Hiển thị dấu ... bên trái sau trang đầu tiên
+                if len(self.ellipsis_labels) > 0:
+                    self.ellipsis_labels[0].setVisible(True)
+                
+                # Hiển thị 5 trang cuối
+                for i in range(max(0, self.total_pages - 5), self.total_pages):
+                    idx = i
+                    if idx < num_buttons:
+                        self.page_buttons[idx].setVisible(True)
+                
+                logger.info(f"Hiển thị phân trang kiểu cuối: 1 ... {self.total_pages-4}-{self.total_pages}")
+                
+            else:
+                # Trang hiện tại ở giữa: hiển thị 1 ... 4 5 6 ... 10
+                
+                # Hiển thị dấu ... bên trái
+                if len(self.ellipsis_labels) > 0:
+                    self.ellipsis_labels[0].setVisible(True)
+                
+                # Hiển thị trang hiện tại và trang xung quanh
+                for i in range(self.current_page - 2, self.current_page + 1):
+                    if 0 <= i < num_buttons and i < self.total_pages:
+                        self.page_buttons[i].setVisible(True)
+                
+                # Hiển thị dấu ... bên phải
+                if len(self.ellipsis_labels) > 1:
+                    self.ellipsis_labels[1].setVisible(True)
+                
+                # Hiển thị trang cuối
+                if self.total_pages - 1 < num_buttons:
+                    self.page_buttons[self.total_pages - 1].setVisible(True)
+                
+                logger.info(f"Hiển thị phân trang kiểu giữa: 1 ... {self.current_page-1} {self.current_page} {self.current_page+1} ... {self.total_pages}")
+            
+            # Cập nhật giao diện container
             self.button_container.updateGeometry()
-            self.button_container.update()
-            
-            # Log all visible widgets for debugging
-            visible_widgets = []
-            for i in range(self.button_layout.count()):
-                widget = self.button_layout.itemAt(i).widget()
-                if widget and widget.isVisible():
-                    visible_widgets.append(widget.text())
-            
-            logger.info(f"Visible page buttons: {visible_widgets}")
             
         except Exception as e:
-            logger.error(f"Error updating button layout: {str(e)}")
+            logger.error(f"Error showing required buttons: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            
-    def _calculate_visible_pages(self):
-        """
-        Calculate which page numbers and ellipses to show.
-        
-        Returns:
-            list: List of page numbers and ellipses to display
-        """
-        try:
-            visible_pages = []
-            
-            # Simple case: few pages, show all
-            if self.total_pages <= 7:
-                # Show all pages if there are few
-                return list(range(1, self.total_pages + 1))
-            
-            # Always show first page
-            visible_pages.append(1)
-            
-            # Determine pages around current page
-            if self.current_page <= 4:
-                # Current page near beginning: show first 5 pages
-                visible_pages.extend(range(2, 6))
-                visible_pages.append("...")
-                visible_pages.append(self.total_pages)
-            elif self.current_page >= self.total_pages - 3:
-                # Current page near end: show last 5 pages
-                visible_pages.append("...")
-                visible_pages.extend(range(self.total_pages - 4, self.total_pages + 1))
-            else:
-                # Current page in middle: show current and neighbors
-                visible_pages.append("...")
-                visible_pages.extend([self.current_page - 1, self.current_page, self.current_page + 1])
-                visible_pages.append("...")
-                visible_pages.append(self.total_pages)
-            
-            return visible_pages
-            
-        except Exception as e:
-            logger.error(f"Error calculating visible pages: {str(e)}")
-            # Return safe default value
-            return list(range(1, min(8, self.total_pages + 1)))
     
     def _clear_page_buttons(self):
         """Remove all page buttons."""
@@ -527,37 +517,36 @@ class PaginationManager:
             button.setStyleSheet(self.disabled_button_style)
     
     def go_to_page(self, page):
-        """
-        Go to a specific page.
-        
-        Args:
-            page: Target page number
-        """
+        """Go to specific page."""
         try:
-            # Validate request
-            if page == self.current_page:
-                return
+            # Validate page number
+            page = max(1, min(page, max(1, self.total_pages)))
+            
+            # Only change if different page
+            if self.current_page != page:
+                logger.info(f"Changing page from {self.current_page} to {page}")
+                old_page = self.current_page
+                self.current_page = page
                 
-            # Keep current page for logging
-            old_page = self.current_page
-            
-            # Ensure valid page number
-            page = max(1, min(page, self.total_pages))
-            
-            # Update current page
-            self.current_page = page
-            
-            logger.debug(f"Page change: {old_page} -> {page}")
-            
-            # Call the callback
-            if self.on_page_change_callback:
-                self.on_page_change_callback(page)
-            
-            # Update UI
-            self.update_pagination(page, self.total_pages)
-            
+                # Update UI
+                self.update_pagination(page, self.total_pages)
+                
+                # Call callback if provided
+                if self.on_page_change_callback:
+                    try:
+                        logger.info(f"Calling page change callback with page {page}")
+                        self.on_page_change_callback(page)
+                    except Exception as e:
+                        logger.error(f"Error in page change callback: {str(e)}")
+                        logger.error(traceback.format_exc())
+            else:
+                logger.debug(f"Already on page {page}, not changing")
+                
+            return True
         except Exception as e:
-            logger.error(f"Error going to page: {str(e)}")
+            logger.error(f"Error navigating to page {page}: {str(e)}")
+            logger.error(traceback.format_exc())
+            return False
     
     def go_to_first_page(self):
         """Go to the first page."""

@@ -151,7 +151,7 @@ def update_video_list_ui(self):
                 self.pagination_info_label.setVisible(True)
         
         # Update pagination UI with improved approach
-        self._update_pagination_ui(total_pages)  # Changed back to _update_pagination_ui
+        self._update_pagination_ui(total_pages)
         
         # Update selection count
         self.update_selection_count()
@@ -517,7 +517,22 @@ def filter_videos(self, text):
     self.update_video_list_ui()
     self.all_videos = saved_videos
 
-def update_pagination_ui(self, total_pages):
+def find_pagination_frame(self):
+    """Find and validate the pagination frame"""
+    pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
+    if not pagination_frame:
+        logger.error("Không tìm thấy pagination frame")
+        return None
+    
+    # Ensure frame is visible with proper height
+    pagination_frame.setVisible(True)
+    pagination_frame.setMinimumHeight(60)
+    return pagination_frame
+
+# Sửa lỗi để đảm bảo cả hai phương thức đều hoạt động
+_find_pagination_frame = find_pagination_frame
+
+def _update_pagination_ui(self, total_pages):
     """
     Cập nhật UI phân trang với cách tiếp cận đáng tin cậy hơn
     
@@ -528,16 +543,163 @@ def update_pagination_ui(self, total_pages):
         # Ghi log để debug
         logger.info(f"update_pagination_ui được gọi với tổng số trang: {total_pages}")
         
-        # Find and validate pagination frame
-        pagination_frame = self._find_pagination_frame()
-        if not pagination_frame:
+        # Tìm container cho phân trang
+        pagination_container = self.video_list.findChild(QtWidgets.QWidget, "paginationContainer")
+        if not pagination_container:
+            logger.error("Không tìm thấy pagination container")
             return
+            
+        # Kiểm tra xem pagination frame đã được load chưa
+        pagination_frame = pagination_container.findChild(QtWidgets.QFrame, "paginationFrame")
         
-        # Ensure UI elements exist
-        self._ensure_pagination_elements(pagination_frame)
+        # Nếu chưa được load, load từ file UI
+        if not pagination_frame:
+            # Load pagination UI
+            pagination_ui_path = os.path.join(os.path.dirname(__file__), "..", "qt_designer", "main_tab", "pagination.ui")
+            pagination_widget = QtWidgets.QWidget()
+            self.loadCustomUi(pagination_ui_path, pagination_widget)
+            
+            # Thêm widget vào container
+            container_layout = QtWidgets.QVBoxLayout(pagination_container)
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.addWidget(pagination_widget)
+            
+            # Tìm lại pagination frame sau khi load
+            pagination_frame = pagination_container.findChild(QtWidgets.QFrame, "paginationFrame")
+            
+            if not pagination_frame:
+                logger.error("Không thể load pagination UI")
+                return
+                
+            logger.info("Đã load pagination UI thành công")
+        
+        # Đảm bảo frame hiển thị đúng
+        pagination_frame.setVisible(True)
+        pagination_frame.setMinimumHeight(60)
+        
+        # Tìm và khởi tạo các thành phần UI pagination trực tiếp
+        # Find or initialize pagination info label
+        if not hasattr(self, 'pagination_info_label') or not self.pagination_info_label:
+            self.pagination_info_label = pagination_frame.findChild(QtWidgets.QLabel, "paginationInfoLabel")
+            if self.pagination_info_label:
+                self.pagination_info_label.setVisible(True)
+        
+        # Find or initialize navigation buttons
+        if not getattr(self, 'first_page_button', None):
+            button = pagination_frame.findChild(QtWidgets.QPushButton, "firstPageButton")
+            if button:
+                self.first_page_button = button
+                button.setVisible(True)
+                button.clicked.connect(self.go_to_first_page)
+                
+        if not getattr(self, 'prev_page_button', None):
+            button = pagination_frame.findChild(QtWidgets.QPushButton, "prevPageButton")
+            if button:
+                self.prev_page_button = button
+                button.setVisible(True)
+                button.clicked.connect(self.prev_page)
+                
+        if not getattr(self, 'next_page_button', None):
+            button = pagination_frame.findChild(QtWidgets.QPushButton, "nextPageButton")
+            if button:
+                self.next_page_button = button
+                button.setVisible(True)
+                button.clicked.connect(self.next_page)
+                
+        if not getattr(self, 'last_page_button', None):
+            button = pagination_frame.findChild(QtWidgets.QPushButton, "lastPageButton")
+            if button:
+                self.last_page_button = button
+                button.setVisible(True)
+                button.clicked.connect(self.last_page)
         
         # Initialize pagination manager if needed
-        self._init_pagination_manager(pagination_frame, total_pages)
+        if not self.pagination_manager:
+            # Import and create pagination manager
+            from utils.pagination_utils import PaginationManager
+            self.pagination_manager = PaginationManager(self)
+            
+            # Thiết lập button container và layout cho pagination manager
+            page_buttons_container = pagination_frame.findChild(QtWidgets.QWidget, "pageButtonsContainer")
+            if not page_buttons_container:
+                logger.error("Không tìm thấy page buttons container")
+                return
+                
+            self.pagination_manager.button_container = page_buttons_container
+            
+            # Tìm layout của container
+            page_buttons_layout = page_buttons_container.layout()
+            if not page_buttons_layout:
+                logger.error("Không tìm thấy layout cho page buttons container")
+                return
+                
+            self.pagination_manager.button_layout = page_buttons_layout
+            
+            # Thu thập các nút phân trang đã có trong UI
+            page_buttons = []
+            for i in range(1, 8):  # Tìm tối đa 7 nút số trang
+                btn = page_buttons_container.findChild(QtWidgets.QPushButton, f"pageButton{i}")
+                if btn:
+                    # Đặt objectName và xóa kết nối cũ nếu có
+                    btn.setObjectName(f"pageButton{i}")
+                    try:
+                        btn.clicked.disconnect()
+                    except:
+                        pass
+                    
+                    # Kết nối sự kiện click để chuyển trang
+                    page_num = i  # Lưu giá trị i vào biến cục bộ để lambda capture đúng
+                    btn.clicked.connect(lambda checked=False, p=page_num: self.go_to_page(p))
+                    
+                    # Lưu vào danh sách
+                    page_buttons.append(btn)
+                else:
+                    logger.warning(f"Không tìm thấy nút pageButton{i}")
+            
+            # Thu thập các nút ellipsis từ UI
+            ellipsis_buttons = []
+            for i in range(1, 3):  # Tìm tối đa 2 nút ellipsis
+                btn = page_buttons_container.findChild(QtWidgets.QPushButton, f"ellipsisButton{i}")
+                if btn:
+                    btn.setObjectName(f"ellipsisButton{i}")
+                    try:
+                        btn.clicked.disconnect()
+                    except:
+                        pass
+                    
+                    # Lưu vào danh sách
+                    ellipsis_buttons.append(btn)
+                else:
+                    logger.warning(f"Không tìm thấy nút ellipsisButton{i}")
+            
+            # Kết nối các nút ellipsis
+            if len(ellipsis_buttons) > 0:
+                # Left ellipsis jumps back 5 pages
+                ellipsis_buttons[0].clicked.connect(lambda: self.go_to_page(max(1, self.current_page - 5)))
+            
+            if len(ellipsis_buttons) > 1:
+                # Right ellipsis jumps forward 5 pages
+                ellipsis_buttons[1].clicked.connect(lambda: self.go_to_page(min(total_pages, self.current_page + 5)))
+            
+            # Lưu các nút đã tìm được vào pagination manager
+            self.pagination_manager.page_buttons = page_buttons
+            self.pagination_manager.ellipsis_labels = ellipsis_buttons
+            
+            # Set up pagination manager
+            setup_success = self.pagination_manager.setup_pagination(
+                pagination_frame=pagination_frame,
+                first_button=self.first_page_button,
+                prev_button=self.prev_page_button,
+                next_button=self.next_page_button,
+                last_button=self.last_page_button,
+                on_page_change=self.handle_page_change
+            )
+            
+            if not setup_success:
+                logger.error("Không thể thiết lập pagination manager")
+                return
+                
+            logger.info("Đã khởi tạo pagination manager thành công")
         
         # Update the pagination with current state
         if self.pagination_manager:
@@ -555,111 +717,11 @@ def update_pagination_ui(self, total_pages):
         import traceback
         logger.error(traceback.format_exc())
 
-def _find_pagination_frame(self):
-    """Find and validate the pagination frame"""
-    pagination_frame = self.video_list.findChild(QtWidgets.QFrame, "paginationFrame")
-    if not pagination_frame:
-        logger.error("Không tìm thấy pagination frame")
-        return None
-    
-    # Ensure frame is visible with proper height
-    pagination_frame.setVisible(True)
-    pagination_frame.setMinimumHeight(60)
-    return pagination_frame
-
-def _ensure_pagination_elements(self, pagination_frame):
-    """Ensure all pagination UI elements exist and are visible"""
-    # Find or initialize pagination info label
-    if not hasattr(self, 'pagination_info_label') or not self.pagination_info_label:
-        self.pagination_info_label = pagination_frame.findChild(QtWidgets.QLabel, "paginationInfoLabel")
-        if self.pagination_info_label:
-            self.pagination_info_label.setVisible(True)
-    
-    # Find or initialize navigation buttons
-    self._ensure_navigation_button(pagination_frame, 'first_page_button', "firstPageButton")
-    self._ensure_navigation_button(pagination_frame, 'prev_page_button', "prevPageButton")
-    self._ensure_navigation_button(pagination_frame, 'next_page_button', "nextPageButton")
-    self._ensure_navigation_button(pagination_frame, 'last_page_button', "lastPageButton")
-    
-    # Ensure proper layout
-    self._ensure_pagination_layout(pagination_frame)
-
-def _ensure_navigation_button(self, parent, attr_name, object_name):
-    """Ensure a specific navigation button exists and is visible"""
-    if not getattr(self, attr_name, None):
-        button = parent.findChild(QtWidgets.QPushButton, object_name)
-        if button:
-            setattr(self, attr_name, button)
-            button.setVisible(True)
-
-def _ensure_pagination_layout(self, pagination_frame):
-    """Ensure pagination frame has a proper layout"""
-    pagination_layout = pagination_frame.layout()
-    if not pagination_layout:
-        # Create a new layout if one doesn't exist
-        pagination_layout = QtWidgets.QHBoxLayout(pagination_frame)
-        pagination_layout.setContentsMargins(15, 10, 15, 10)
-        pagination_layout.setSpacing(5)
-        
-        # Add basic elements to the layout
-        self._setup_fresh_pagination_layout(pagination_layout)
-
-def _setup_fresh_pagination_layout(self, layout):
-    """Set up a new pagination layout with basic elements"""
-    # Add info label if it exists
-    if self.pagination_info_label:
-        layout.addWidget(self.pagination_info_label)
-        layout.addStretch(1)
-    
-    # Add navigation buttons
-    if self.first_page_button:
-        layout.addWidget(self.first_page_button)
-    
-    if self.prev_page_button:
-        layout.addWidget(self.prev_page_button)
-    
-    # Add placeholder for page buttons
-    page_buttons_placeholder = QtWidgets.QWidget()
-    page_buttons_placeholder.setObjectName("page_buttons_placeholder")
-    page_buttons_placeholder.setMinimumWidth(300)  # Space for page buttons
-    layout.addWidget(page_buttons_placeholder)
-    
-    # Add remaining navigation buttons
-    if self.next_page_button:
-        layout.addWidget(self.next_page_button)
-    
-    if self.last_page_button:
-        layout.addWidget(self.last_page_button)
-
-def _init_pagination_manager(self, pagination_frame, total_pages):
-    """Initialize or update the pagination manager"""
-    if not self.pagination_manager:
-        # Import and create pagination manager
-        from utils.pagination_utils import PaginationManager
-        self.pagination_manager = PaginationManager(self)
-        
-        # Create page buttons
-        self.pagination_manager.create_page_buttons(pagination_frame, total_pages)
-        
-        # Set up pagination manager
-        setup_success = self.pagination_manager.setup_pagination(
-            pagination_frame=pagination_frame,
-            first_button=self.first_page_button,
-            prev_button=self.prev_page_button,
-            next_button=self.next_page_button,
-            last_button=self.last_page_button,
-            on_page_change=self.handle_page_change
-        )
-        
-        if not setup_success:
-            logger.error("Không thể thiết lập pagination manager")
-            return
-            
-        logger.info("Đã khởi tạo pagination manager thành công")
-    else:
-        # Update existing pagination manager if needed
-        if len(self.pagination_manager.page_buttons) < total_pages:
-            self.pagination_manager.create_page_buttons(pagination_frame, total_pages)
+def go_to_first_page(self):
+    """Go to first page"""
+    if self.current_page > 1:
+        self.current_page = 1
+        self.update_video_list_ui()
 
 def handle_page_change(self, new_page):
     """
@@ -928,4 +990,62 @@ def update_video_preview_ui(self):
         
     except Exception as e:
         logger.error(f"Lỗi khi cập nhật UI thông tin video: {str(e)}")
+        logger.error(traceback.format_exc())
+
+# Tạo alias để đảm bảo cả hai phương thức đều hoạt động
+update_pagination_ui = _update_pagination_ui
+
+def _setup_pagination_ui(self):
+    """Setup pagination UI elements and connections."""
+    try:
+        logger.info("Setting up pagination UI...")
+        
+        # Get pagination frame
+        self.pagination_frame = self.main_tab.findChild(QWidget, "paginationFrame")
+        if not self.pagination_frame:
+            logger.error("Pagination frame not found!")
+            return
+        
+        # Load pagination UI
+        pagination_ui = os.path.join(qtui_dir, "main_tab", "pagination.ui")
+        loader = QUiLoader()
+        pagination_widget = loader.load(pagination_ui)
+        if not pagination_widget:
+            logger.error(f"Failed to load pagination UI from {pagination_ui}")
+            return
+            
+        # Get elements
+        self.page_info_label = pagination_widget.findChild(QLabel, "pageInfoLabel")
+        self.pagination_container = pagination_widget.findChild(QWidget, "paginationContainer")
+        self.page_buttons_container = pagination_widget.findChild(QWidget, "pageButtonsContainer")
+        
+        # Get navigation buttons
+        self.prev_page_button = pagination_widget.findChild(QPushButton, "prevPageButton")
+        self.next_page_button = pagination_widget.findChild(QPushButton, "nextPageButton")
+        self.first_page_button = pagination_widget.findChild(QPushButton, "firstPageButton")
+        self.last_page_button = pagination_widget.findChild(QPushButton, "lastPageButton")
+        
+        # Set min width for pagination container to ensure buttons fit
+        if self.page_buttons_container:
+            self.page_buttons_container.setMinimumWidth(220)
+            self.page_buttons_container.setMinimumHeight(40)
+        
+        # Connect navigation buttons
+        if self.prev_page_button:
+            self.prev_page_button.clicked.connect(self._on_prev_page_clicked)
+        if self.next_page_button:
+            self.next_page_button.clicked.connect(self._on_next_page_clicked)
+        if self.first_page_button:
+            self.first_page_button.clicked.connect(self._on_first_page_clicked)
+        if self.last_page_button:
+            self.last_page_button.clicked.connect(self._on_last_page_clicked)
+            
+        # Add pagination widget to layout
+        layout = QVBoxLayout(self.pagination_frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(pagination_widget)
+        
+        logger.info("Pagination UI setup completed successfully")
+    except Exception as e:
+        logger.error(f"Error setting up pagination UI: {str(e)}")
         logger.error(traceback.format_exc())

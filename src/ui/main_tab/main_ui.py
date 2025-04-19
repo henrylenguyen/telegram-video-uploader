@@ -230,6 +230,54 @@ class MainUI(QtWidgets.QMainWindow):
             self.loading_overlay.resize(self.central_widget.size())
         super(MainUI, self).resizeEvent(event)
 
+    def apply_global_stylesheet(self):
+        """Apply global stylesheet to the application"""
+        stylesheet_path = os.path.join(os.path.dirname(__file__), "..", "qt_designer", "styles.qss")
+        try:
+            with open(stylesheet_path, "r") as f:
+                self.setStyleSheet(f.read())
+        except Exception as e:
+            logger.error(f"Không thể áp dụng stylesheet: {str(e)}")
+            
+    def loadCustomUi(self, ui_path, target_widget):
+        """Tải file UI vào widget đích"""
+        try:
+            # Đảm bảo đường dẫn UI hợp lệ
+            if not os.path.exists(ui_path):
+                logger.error(f"File UI không tồn tại: {ui_path}")
+                return False
+                
+            # Tạo QFile từ đường dẫn
+            temp_file = None
+            try:
+                # Sửa đường dẫn Windows sang Unix nếu cần (do PyQt6 trên Qt Designer có thể gây lỗi)
+                with open(ui_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                
+                # Ghi nội dung vào file tạm
+                import tempfile
+                temp_file = tempfile.NamedTemporaryFile(suffix=".ui", delete=False)
+                temp_file.write(content.encode("utf-8"))
+                temp_file.close()
+                
+                # Load UI từ file tạm
+                from PyQt5 import uic
+                uic.loadUi(temp_file.name, target_widget)
+                
+                logger.info(f"Đã tải UI file {ui_path} thành công")
+                return True
+                
+            finally:
+                # Xóa file tạm nếu tồn tại
+                if temp_file and os.path.exists(temp_file.name):
+                    os.unlink(temp_file.name)
+                    
+        except Exception as e:
+            logger.error(f"Lỗi khi tải UI: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+
 # Run the application if executed directly
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
