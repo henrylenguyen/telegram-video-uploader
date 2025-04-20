@@ -14,14 +14,21 @@ class ConfigManager:
     Quản lý cài đặt cấu hình của ứng dụng.
     """
     
-    def __init__(self, config_file='config.ini'):
+    def __init__(self, config_file=None):
         """
         Khởi tạo ConfigManager.
         
         Args:
             config_file (str): Đường dẫn đến file cấu hình
         """
+        if config_file is None:
+            # Sử dụng file config.ini ở thư mục gốc dự án
+            # (lên một cấp so với thư mục src)
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            config_file = os.path.join(os.path.dirname(base_dir), 'config.ini')
+        
         self.config_file = config_file
+        logger.info(f"Đường dẫn file cấu hình: {self.config_file}")
     
     def load_config(self):
         """
@@ -51,7 +58,8 @@ class ConfigManager:
                 'api_id': '',
                 'api_hash': '',
                 'phone': '',
-                'use_telethon': 'false'
+                'use_telethon': 'false',
+                'otp_verified': 'false'  # Thêm biến kiểm tra xác thực OTP
             }
             
             with open(self.config_file, 'w', encoding='utf-8') as configfile:
@@ -68,8 +76,12 @@ class ConfigManager:
                 'api_id': '',
                 'api_hash': '',
                 'phone': '',
-                'use_telethon': 'false'
+                'use_telethon': 'false',
+                'otp_verified': 'false'  # Thêm biến kiểm tra xác thực OTP
             }
+        elif 'otp_verified' not in config['TELETHON']:
+            # Nếu section TELETHON đã tồn tại nhưng không có otp_verified
+            config['TELETHON']['otp_verified'] = 'false'
         
         # Đảm bảo notification_chat_id luôn giống chat_id để đơn giản hóa
         if 'TELEGRAM' in config and 'chat_id' in config['TELEGRAM']:

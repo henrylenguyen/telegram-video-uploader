@@ -9,6 +9,11 @@ import sys
 import logging
 from queue import Queue
 import traceback
+import platform
+
+# Kiểm tra phiên bản Python
+python_version = platform.python_version_tuple()
+python_version_float = float(f"{python_version[0]}.{python_version[1]}")
 
 # Import PyQt5
 from PyQt5 import QtWidgets, QtCore
@@ -24,13 +29,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("TelegramUploader")
 
+# Thiết lập SSL sớm trước khi import Telethon
+from utils.ssl_helper import setup_ssl
+
+# Kiểm tra và thiết lập SSL (quan trọng cho Telethon trên Windows)
+try:
+    ssl_ready = setup_ssl()
+    if ssl_ready:
+        logger.info("SSL được cấu hình thành công")
+    else:
+        logger.warning("Không thể cấu hình SSL, Telethon có thể hoạt động chậm hơn")
+except Exception as e:
+    logger.error(f"Lỗi khi thiết lập SSL: {str(e)}")
+    logger.error(traceback.format_exc())
+
 # Import UI modules
 from ui.splash_screen import show_splash_screen, SplashScreen
 from ui.main_tab.main_ui import MainUI
 
 # Import core modules
 from core.config_manager import ConfigManager
-from core.telegram_connector import TelegramConnector
+from utils.telegram.telegram_connector import TelegramConnector
 
 # Import utilities
 from utils.video_analyzer import VideoAnalyzer
@@ -45,13 +64,13 @@ class TelegramUploaderApp:
         """
         Initialize the application.
         """
-        self.qt_app = None
+        self.app = None
         self.main_window = None
         self.is_uploading = False
         self.splash_screen = None
         
         # Khởi tạo ứng dụng Qt trước khi tiếp tục
-        self.qt_app = QtWidgets.QApplication(sys.argv)
+        self.app = QtWidgets.QApplication(sys.argv)
         
         # Set up components
         self._initialize_components()
@@ -71,7 +90,10 @@ class TelegramUploaderApp:
         self.video_analyzer = VideoAnalyzer()
         
         # Initialize upload history
-        history_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'upload_history.json')
+        app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(app_root, 'data')
+        os.makedirs(data_dir, exist_ok=True)  # Đảm bảo thư mục data tồn tại
+        history_file = os.path.join(data_dir, 'upload_history.json')
         self.upload_history = UploadHistory(history_file)
         
         # Initialize task queue
@@ -142,6 +164,23 @@ class TelegramUploaderApp:
                 event.ignore()
                 return
         
+        # Hỏi người dùng có muốn xóa xác thực OTP không
+        if self.config.has_section('TELETHON') and self.config.has_option('TELETHON', 'otp_verified') and self.config.getboolean('TELETHON', 'otp_verified', fallback=False):
+            reply = QtWidgets.QMessageBox.question(
+                self.main_window,
+                "Xác thực Telethon",
+                "Bạn có muốn xóa xác thực Telethon API hiện tại không?\nNếu chọn 'Có', lần sau bạn sẽ cần xác thực lại mã OTP.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No
+            )
+            
+            if reply == QtWidgets.QMessageBox.Yes:
+                # Xóa xác thực
+                self.config['TELETHON']['otp_verified'] = 'false'
+                # Lưu cấu hình
+                self.config_manager.save_config(self.config)
+                logger.info("Đã xóa xác thực Telethon API")
+        
         # Save configuration
         self.config_manager.save_config(self.config)
         
@@ -159,38 +198,96 @@ class TelegramUploaderApp:
         """Xử lý khi splash screen bị hủy"""
         logger.info("Splash screen canceled by user, exiting application")
         # Thoát ứng dụng
-        self.qt_app.quit()
+        self.app.quit()
     
     def run(self):
-        """Run the application"""
+        """
+        Chạy ứng dụng và hiển thị giao diện người dùng
+        """
         try:
-            # Hiển thị splash screen trước
-            self.splash_screen = show_splash_screen(self.qt_app, self.ffmpeg_manager)
+            from ui.splash_screen import show_splash_screen
             
-            # Kết nối tín hiệu finished từ splash screen để thiết lập và hiển thị cửa sổ chính
-            self.splash_screen.finished.connect(self._on_splash_screen_finished)
+            # Hiển thị splash screen
+            self.splash_screen = show_splash_screen(self.app, self.ffmpeg_manager)
             
-            # Kết nối tín hiệu hủy
-            if hasattr(self.splash_screen, 'canceled'):
-                self.splash_screen.canceled.connect(self._on_splash_screen_canceled)
+            # Kết nối tín hiệu finished từ splash screen để hiển thị cửa sổ chính
+            self.splash_screen.finished.connect(self.on_splash_screen_finished)
             
-            # Run Qt application
-            return self.qt_app.exec_()
+            # Kết nối tín hiệu canceled từ splash screen để đóng ứng dụng
+            self.splash_screen.canceled.connect(self.app.quit)
+            
+            # QUAN TRỌNG: Không hiển thị main_window ở đây, sẽ hiển thị trong hàm on_splash_screen_finished
+            # khi splash screen đã thực sự hoàn thành
+            
+            # Chạy vòng lặp sự kiện Qt
+            sys.exit(self.app.exec_())
+                
         except Exception as e:
-            logger.error(f"Error running application: {e}")
-            logger.error(traceback.format_exc())
-            return 1
+            logging.error(f"Lỗi khi khởi chạy ứng dụng: {str(e)}")
+            logging.error(traceback.format_exc())
             
-    def _on_splash_screen_finished(self, telegram_configured):
-        """Xử lý sự kiện khi splash screen hoàn thành"""
+            # Hiển thị dialog lỗi với Qt
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(None, "Lỗi khởi động", 
+                                f"Không thể khởi động ứng dụng: {str(e)}\n\n"
+                                f"Chi tiết: {traceback.format_exc()}")
+            
+            sys.exit(1)
+            
+    def setup_ui(self):
+        """Set up application UI - only create the main window, don't show it yet"""
         try:
-            # Thiết lập UI chính sau khi splash screen đã hoàn thành
-            self._setup_ui()
+            # Tạo cửa sổ chính (không hiển thị)
+            self._create_main_window()
+            logger.info("UI setup completed successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Error setting up UI: {e}")
+            logger.error(traceback.format_exc())
+            return False
+            
+    def on_splash_screen_finished(self, telegram_configured):
+        """
+        Xử lý khi splash screen hoàn thành
+        
+        Args:
+            telegram_configured (bool): Cho biết có cấu hình Telegram không
+        """
+        try:
+            # Lưu trạng thái cấu hình Telegram
+            self.telegram_configured = telegram_configured
+            
+            # Khởi tạo cửa sổ chính nếu chưa có
+            if not hasattr(self, 'main_window') or self.main_window is None:
+                self.setup_ui()
+            
+            # Đóng splash screen
+            if hasattr(self, 'splash_screen') and self.splash_screen:
+                # Tắt các timer trước khi đóng
+                if hasattr(self.splash_screen, 'process_timer') and self.splash_screen.process_timer.isActive():
+                    self.splash_screen.process_timer.stop()
+                if hasattr(self.splash_screen, 'ffmpeg_status_timer') and self.splash_screen.ffmpeg_status_timer.isActive():
+                    self.splash_screen.ffmpeg_status_timer.stop()
+                
+                # Đóng splash screen
+                self.splash_screen.close()
+                self.splash_screen = None
             
             # Hiển thị cửa sổ chính
             self.main_window.show()
+            self.main_window.raise_()
+            self.main_window.activateWindow()
             
-            logger.info("Main window shown after splash screen completed")
+            # Đảm bảo cửa sổ chính được hiển thị
+            # Xử lý sự kiện và cập nhật giao diện
+            from PyQt5.QtWidgets import QApplication
+            QApplication.processEvents()
+            
+            # Kiểm tra nếu cần hiển thị dialog cấu hình Telegram
+            if not self.telegram_configured:
+                self.show_telegram_config_dialog()
+            
+            logging.info("Đã khởi động ứng dụng thành công với giao diện Qt")
         except Exception as e:
-            logger.error(f"Error showing main window: {e}")
-            logger.error(traceback.format_exc())
+            logging.error(f"Lỗi trong hàm on_splash_screen_finished: {str(e)}")
+            logging.error(traceback.format_exc())

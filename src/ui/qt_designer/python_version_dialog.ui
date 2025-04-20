@@ -1,0 +1,625 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+    <class>PythonVersionDialog</class>
+    <widget class="QDialog"
+            name="PythonVersionDialog">
+        <property name="geometry">
+            <rect>
+                <x>0</x>
+                <y>0</y>
+                <width>700</width>
+                <height>400</height>
+            </rect>
+        </property>
+        <property name="minimumSize">
+            <size>
+                <width>700</width>
+                <height>400</height>
+            </size>
+        </property>
+        <property name="maximumSize">
+            <size>
+                <width>700</width>
+                <height>400</height>
+            </size>
+        </property>
+        <property name="windowTitle">
+            <string>Phiên bản Python không hỗ trợ</string>
+        </property>
+        <property name="styleSheet">
+            <string notr="true">QDialog {
+    background-color: #F9FAFB;
+    font-family: Arial;
+}
+
+QLabel.titleLabel {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1E293B;
+    background-color: transparent;
+    font-family: Arial;
+}
+
+QLabel.messageLabel {
+    font-size: 16px;
+    font-weight: bold;
+    color: #1E293B;
+    font-family: Arial;
+}
+
+QLabel.infoLabel {
+    font-size: 14px;
+    color: #64748B;
+    font-family: Arial;
+}
+
+QLabel.warningLabel {
+    background-color: #FFF5F5;
+    color: #E53E3E;
+    border: 1px solid #FED7D7;
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 15px;
+    font-family: Arial;
+}
+
+QPushButton.primaryButton {
+    background-color: #3498DB;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 14px;
+    font-weight: bold;
+    font-family: Arial;
+}
+
+QPushButton.primaryButton:hover {
+    background-color: #2980B9;
+}
+
+QPushButton.secondaryButton {
+    background-color: #2ECC71;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 14px;
+    font-weight: bold;
+    font-family: Arial;
+}
+
+QPushButton.secondaryButton:hover {
+    background-color: #27AE60;
+}
+
+QPushButton.outlineButton {
+    background-color: #FFFFFF;
+    color: #64748B;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 13px;
+    font-family: Arial;
+}
+
+QPushButton.outlineButton:hover {
+    background-color: #F1F5F9;
+}
+
+QPushButton.linkButton {
+    background-color: #F8F9FA;
+    color: #3498DB;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 13px;
+    font-family: Arial;
+}
+
+QPushButton.linkButton:hover {
+    background-color: #EBF5FB;
+}
+
+QFrame.whiteContainer {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+}
+
+QFrame.groupFrame {
+    border: 1px solid #FED7D7;
+    border-radius: 6px;
+    background-color: #FFFFFF;
+}</string>
+        </property>
+        <layout class="QVBoxLayout"
+                name="verticalLayout">
+            <property name="spacing">
+                <number>0</number>
+            </property>
+            <property name="leftMargin">
+                <number>0</number>
+            </property>
+            <property name="topMargin">
+                <number>0</number>
+            </property>
+            <property name="rightMargin">
+                <number>0</number>
+            </property>
+            <property name="bottomMargin">
+                <number>0</number>
+            </property>
+            <item>
+                <widget class="QWidget"
+                        name="headerWidget"
+                        native="true">
+                    <property name="minimumSize">
+                        <size>
+                            <width>0</width>
+                            <height>40</height>
+                        </size>
+                    </property>
+                    <property name="maximumSize">
+                        <size>
+                            <width>16777215</width>
+                            <height>40</height>
+                        </size>
+                    </property>
+                    <property name="styleSheet">
+                        <string notr="true">background-color: #FFFFFF;</string>
+                    </property>
+                    <layout class="QHBoxLayout"
+                            name="horizontalLayout">
+                        <property name="leftMargin">
+                            <number>15</number>
+                        </property>
+                        <property name="rightMargin">
+                            <number>15</number>
+                        </property>
+                        <item>
+                            <widget class="QLabel"
+                                    name="titleLabel">
+                                <property name="styleSheet">
+                                    <string notr="true">font-size: 14px; font-weight: bold; color: #1E293B;</string>
+                                </property>
+                                <property name="text">
+                                    <string>Phiên bản Python không hỗ trợ</string>
+                                </property>
+                            </widget>
+                        </item>
+                        <item>
+                            <spacer name="horizontalSpacer">
+                                <property name="orientation">
+                                    <enum>Qt.Horizontal</enum>
+                                </property>
+                                <property name="sizeHint"
+                                          stdset="0">
+                                    <size>
+                                        <width>40</width>
+                                        <height>20</height>
+                                    </size>
+                                </property>
+                            </spacer>
+                        </item>
+                    </layout>
+                </widget>
+            </item>
+            <item>
+                <widget class="QWidget"
+                        name="contentWidget"
+                        native="true">
+                    <layout class="QVBoxLayout"
+                            name="verticalLayout_2">
+                        <property name="spacing">
+                            <number>15</number>
+                        </property>
+                        <property name="leftMargin">
+                            <number>40</number>
+                        </property>
+                        <property name="topMargin">
+                            <number>15</number>
+                        </property>
+                        <property name="rightMargin">
+                            <number>40</number>
+                        </property>
+                        <property name="bottomMargin">
+                            <number>15</number>
+                        </property>
+                        <item>
+                            <layout class="QHBoxLayout"
+                                    name="messageLayout">
+                                <property name="spacing">
+                                    <number>15</number>
+                                </property>
+                                <item>
+                                    <widget class="QLabel"
+                                            name="warningIconLabel">
+                                        <property name="minimumSize">
+                                            <size>
+                                                <width>40</width>
+                                                <height>40</height>
+                                            </size>
+                                        </property>
+                                        <property name="maximumSize">
+                                            <size>
+                                                <width>40</width>
+                                                <height>40</height>
+                                            </size>
+                                        </property>
+                                        <property name="styleSheet">
+                                            <string notr="true">background-color: #FFC107;
+color: white;
+border-radius: 20px;
+font-size: 24px;
+font-weight: bold;</string>
+                                        </property>
+                                        <property name="text">
+                                            <string>!</string>
+                                        </property>
+                                        <property name="alignment">
+                                            <set>Qt.AlignmentFlag::AlignCenter</set>
+                                        </property>
+                                    </widget>
+                                </item>
+                                <item>
+                                    <layout class="QVBoxLayout"
+                                            name="messageContentLayout">
+                                        <item>
+                                            <widget class="QLabel"
+                                                    name="mainMessageLabel">
+                                                <property name="styleSheet">
+                                                    <string notr="true">font-size: 17px;
+font-weight: 600;
+color: #1E293B;</string>
+                                                </property>
+                                                <property name="text">
+                                                    <string>Ứng dụng yêu cầu Python 3.7.0 trở lên.</string>
+                                                </property>
+                                            </widget>
+                                        </item>
+                                        <item>
+                                            <widget class="QLabel"
+                                                    name="promptLabel">
+                                                <property name="styleSheet">
+                                                    <string notr="true">font-size: 14px;
+color: #64748B;</string>
+                                                </property>
+                                                <property name="text">
+                                                    <string>Bạn muốn làm gì để giải quyết vấn đề này?</string>
+                                                </property>
+                                            </widget>
+                                        </item>
+                                        <item>
+                                            <widget class="QLabel"
+                                                    name="versionLabel">
+                                                <property name="styleSheet">
+                                                    <string notr="true">font-size: 14px;
+color: #64748B;
+border: 1px solid #E2E8F0;
+border-radius: 4px;
+padding: 5px 10px;</string>
+                                                </property>
+                                                <property name="text">
+                                                    <string>Phiên bản hiện tại: Python 3.13.3</string>
+                                                </property>
+                                            </widget>
+                                        </item>
+                                    </layout>
+                                </item>
+                            </layout>
+                        </item>
+                        <item>
+                            <widget class="QFrame"
+                                    name="groupContainer">
+                                <property name="styleSheet">
+                                    <string notr="true">border: 1px solid #FED7D7;
+border-radius: 6px;
+background-color: #FFFFFF;</string>
+                                </property>
+                                <property name="frameShape">
+                                    <enum>QFrame.StyledPanel</enum>
+                                </property>
+                                <property name="frameShadow">
+                                    <enum>QFrame.Raised</enum>
+                                </property>
+                                <property name="class"
+                                          stdset="0">
+                                    <string>groupFrame</string>
+                                </property>
+                                <layout class="QVBoxLayout"
+                                        name="verticalLayout_3">
+                                    <item>
+                                        <widget class="QFrame"
+                                                name="warningFrame">
+                                            <property name="minimumSize">
+                                                <size>
+                                                    <width>0</width>
+                                                    <height>50</height>
+                                                </size>
+                                            </property>
+                                            <property name="maximumSize">
+                                                <size>
+                                                    <width>16777215</width>
+                                                    <height>50</height>
+                                                </size>
+                                            </property>
+                                            <property name="styleSheet">
+                                                <string notr="true">background-color: #FFF5F5;
+border: 1px solid #FED7D7;
+border-radius: 6px;</string>
+                                            </property>
+                                            <property name="frameShape">
+                                                <enum>QFrame.StyledPanel</enum>
+                                            </property>
+                                            <property name="frameShadow">
+                                                <enum>QFrame.Raised</enum>
+                                            </property>
+                                            <layout class="QHBoxLayout"
+                                                    name="horizontalLayout_2">
+                                                <property name="leftMargin">
+                                                    <number>15</number>
+                                                </property>
+                                                <property name="topMargin">
+                                                    <number>0</number>
+                                                </property>
+                                                <property name="rightMargin">
+                                                    <number>15</number>
+                                                </property>
+                                                <property name="bottomMargin">
+                                                    <number>0</number>
+                                                </property>
+                                                <item>
+                                                    <widget class="QLabel"
+                                                            name="warningIconSmallLabel">
+                                                        <property name="minimumSize">
+                                                            <size>
+                                                                <width>30</width>
+                                                                <height>30</height>
+                                                            </size>
+                                                        </property>
+                                                        <property name="maximumSize">
+                                                            <size>
+                                                                <width>30</width>
+                                                                <height>30</height>
+                                                            </size>
+                                                        </property>
+                                                        <property name="styleSheet">
+                                                            <string notr="true">background-color: #E53E3E;
+color: white;
+border-radius: 15px;
+font-size: 16px;
+font-weight: bold;</string>
+                                                        </property>
+                                                        <property name="text">
+                                                            <string>i</string>
+                                                        </property>
+                                                        <property name="alignment">
+                                                            <set>Qt.AlignmentFlag::AlignCenter</set>
+                                                        </property>
+                                                    </widget>
+                                                </item>
+                                                <item>
+                                                    <widget class="QLabel"
+                                                            name="warningTextLabel">
+                                                        <property name="styleSheet">
+                                                            <string notr="true">background-color: transparent;
+color: #E53E3E;
+font-size: 15px;
+border: none;</string>
+                                                        </property>
+                                                        <property name="text">
+                                                            <string>Sử dụng Python không tương thích có thể gây lỗi ứng dụng</string>
+                                                        </property>
+                                                    </widget>
+                                                </item>
+                                            </layout>
+                                        </widget>
+                                    </item>
+                                    <item>
+                                        <layout class="QHBoxLayout"
+                                                name="buttonsLayout">
+                                            <property name="spacing">
+                                                <number>20</number>
+                                            </property>
+                                            <property name="leftMargin">
+                                                <number>20</number>
+                                            </property>
+                                            <property name="topMargin">
+                                                <number>10</number>
+                                            </property>
+                                            <property name="rightMargin">
+                                                <number>20</number>
+                                            </property>
+                                            <property name="bottomMargin">
+                                                <number>10</number>
+                                            </property>
+                                            <item>
+                                                <widget class="QPushButton"
+                                                        name="installPythonButton">
+                                                    <property name="minimumSize">
+                                                        <size>
+                                                            <width>180</width>
+                                                            <height>40</height>
+                                                        </size>
+                                                    </property>
+                                                    <property name="maximumSize">
+                                                        <size>
+                                                            <width>180</width>
+                                                            <height>40</height>
+                                                        </size>
+                                                    </property>
+                                                    <property name="styleSheet">
+                                                        <string notr="true">QPushButton {
+    background-color: #3498DB;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #2980B9;
+}</string>
+                                                    </property>
+                                                    <property name="text">
+                                                        <string>Tải Python mới</string>
+                                                    </property>
+                                                    <property name="class"
+                                                              stdset="0">
+                                                        <string>primaryButton</string>
+                                                    </property>
+                                                </widget>
+                                            </item>
+                                            <item>
+                                                <widget class="QPushButton"
+                                                        name="createEnvButton">
+                                                    <property name="minimumSize">
+                                                        <size>
+                                                            <width>180</width>
+                                                            <height>40</height>
+                                                        </size>
+                                                    </property>
+                                                    <property name="maximumSize">
+                                                        <size>
+                                                            <width>180</width>
+                                                            <height>40</height>
+                                                        </size>
+                                                    </property>
+                                                    <property name="styleSheet">
+                                                        <string notr="true">QPushButton {
+    background-color: #2ECC71;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 15px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #27AE60;
+}</string>
+                                                    </property>
+                                                    <property name="text">
+                                                        <string>Tạo môi trường ảo</string>
+                                                    </property>
+                                                    <property name="class"
+                                                              stdset="0">
+                                                        <string>secondaryButton</string>
+                                                    </property>
+                                                </widget>
+                                            </item>
+                                        </layout>
+                                    </item>
+                                </layout>
+                            </widget>
+                        </item>
+                        <item>
+                            <layout class="QHBoxLayout"
+                                    name="bottomButtonsLayout">
+                                <property name="topMargin">
+                                    <number>10</number>
+                                </property>
+                                <item>
+                                    <spacer name="horizontalSpacer_2">
+                                        <property name="orientation">
+                                            <enum>Qt.Horizontal</enum>
+                                        </property>
+                                        <property name="sizeHint"
+                                                  stdset="0">
+                                            <size>
+                                                <width>40</width>
+                                                <height>20</height>
+                                            </size>
+                                        </property>
+                                    </spacer>
+                                </item>
+                                <item>
+                                    <widget class="QPushButton"
+                                            name="exitButton">
+                                        <property name="minimumSize">
+                                            <size>
+                                                <width>150</width>
+                                                <height>35</height>
+                                            </size>
+                                        </property>
+                                        <property name="maximumSize">
+                                            <size>
+                                                <width>150</width>
+                                                <height>35</height>
+                                            </size>
+                                        </property>
+                                        <property name="styleSheet">
+                                            <string notr="true">QPushButton {
+    background-color: #FFFFFF;
+    color: #64748B;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px 15px;
+    font-size: 13px;
+}
+
+QPushButton:hover {
+    background-color: #F1F5F9;
+}</string>
+                                        </property>
+                                        <property name="text">
+                                            <string>Thoát</string>
+                                        </property>
+                                        <property name="class"
+                                                  stdset="0">
+                                            <string>outlineButton</string>
+                                        </property>
+                                    </widget>
+                                </item>
+                                <item>
+                                    <widget class="QPushButton"
+                                            name="continueButton">
+                                        <property name="minimumSize">
+                                            <size>
+                                                <width>150</width>
+                                                <height>35</height>
+                                            </size>
+                                        </property>
+                                        <property name="maximumSize">
+                                            <size>
+                                                <width>150</width>
+                                                <height>35</height>
+                                            </size>
+                                        </property>
+                                        <property name="styleSheet">
+                                            <string notr="true">QPushButton {
+    background-color: #F8F9FA;
+    color: #3498DB;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px 15px;
+    font-size: 13px;
+}
+
+QPushButton:hover {
+    background-color: #EBF5FB;
+}</string>
+                                        </property>
+                                        <property name="text">
+                                            <string>Tiếp tục</string>
+                                        </property>
+                                        <property name="class"
+                                                  stdset="0">
+                                            <string>linkButton</string>
+                                        </property>
+                                    </widget>
+                                </item>
+                            </layout>
+                        </item>
+                    </layout>
+                </widget>
+            </item>
+        </layout>
+    </widget>
+    <resources />
+    <connections />
+</ui>

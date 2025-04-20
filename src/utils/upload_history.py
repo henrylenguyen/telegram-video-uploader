@@ -48,7 +48,8 @@ class UploadHistory:
         """Lưu lịch sử tải lên vào file"""
         try:
             # Tạo thư mục cha nếu không tồn tại
-            os.makedirs(os.path.dirname(os.path.abspath(self.history_file)), exist_ok=True)
+            if self.history_file and os.path.dirname(self.history_file):
+                os.makedirs(os.path.dirname(os.path.abspath(self.history_file)), exist_ok=True)
             
             # Tạo backup trước khi ghi đè
             if os.path.exists(self.history_file):
@@ -63,9 +64,10 @@ class UploadHistory:
             with open(self.history_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
             
-            logger.info(f"Đã lưu lịch sử: {len(self.uploads)} video")
+            logger.info(f"Đã lưu lịch sử: {len(self.uploads)} video vào {self.history_file}")
         except Exception as e:
             logger.error(f"Lỗi khi lưu lịch sử: {str(e)}")
+            logger.error(f"Chi tiết lỗi: {os.path.abspath(self.history_file)}")
     
     def add_upload(self, video_hash, filename, file_path, file_size, upload_date=None):
         """

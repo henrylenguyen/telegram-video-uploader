@@ -1,20 +1,14 @@
 """
-Module xử lý modal xác thực OTP cho Telethon
+Module hiển thị giao diện xác thực OTP cho Telethon API
 """
-import os
-import sys
-import json
+from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 import logging
-import time
-import subprocess
+import os
+import traceback
 import threading
-from datetime import datetime, timedelta
-from pathlib import Path
 
-from PyQt5 import QtWidgets, uic, QtCore, QtGui
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer
-
-logger = logging.getLogger("OTPModal")
+logger = logging.getLogger(__name__)
 
 class OTPVerificationState:
     """Các trạng thái của modal xác thực OTP"""
@@ -26,711 +20,804 @@ class OTPModal(QtWidgets.QDialog):
     """
     Modal xác thực OTP cho Telethon API
     """
+    
     def __init__(self, parent=None, api_id=None, api_hash=None, phone=None):
-        super(OTPModal, self).__init__(parent)
-        self.setWindowFlags(Qt.Window | Qt.WindowCloseButtonHint)
-        self.setWindowTitle("Xác thực Telethon")
+        """Khởi tạo modal OTP"""
+        super(OTPModal, self).__init__(parent, Qt.Window)
         
-        # Lưu thông tin xác thực
+        # Lưu thông tin API
         self.api_id = api_id
         self.api_hash = api_hash
         self.phone = phone
         
-        # Thông tin OTP
-        self.phone_code_hash = None
-        self.otp_timeout = 5 * 60  # 5 phút
-        self.remaining_time = self.otp_timeout
-        self.verification_success = False
-        
-        # Thông tin giới hạn yêu cầu OTP
-        self.otp_reset_limit = 3  # Số lần được phép reset trong 24h
-        self.cooldown_period = 60  # Thời gian chờ giữa các lần reset (giây)
-        self.otp_requested_time = None
-        self.is_cooldown = False
-        
         # Trạng thái hiện tại
         self.current_state = OTPVerificationState.LOADING
+        
+        # Biến lưu mã OTP
+        self.otp_code = ""
+        
+        # Thời gian hết hạn OTP (mặc định 2 phút)
+        self.otp_expiry_seconds = 120
+        self.countdown_seconds = self.otp_expiry_seconds
+        
+        # Biến kiểm soát cooldown
+        self.cooldown_seconds = 0
         
         # Thiết lập UI
         self.setup_ui()
         
-        # Bắt đầu quy trình xác thực
-        self.start_verification()
+        # Căn giữa cửa sổ
+        self.center_on_screen()
+        
+        # Kết nối các sự kiện
+        self.connect_events()
+        
+        # Tự động bắt đầu quá trình xác thực
+        QtCore.QTimer.singleShot(100, self.start_verification)
     
     def setup_ui(self):
-        """Thiết lập UI cho modal"""
-        # Tạo layout chính
-        main_layout = QtWidgets.QVBoxLayout(self)
+        """Thiết lập giao diện người dùng"""
+        # Thiết lập cửa sổ
+        self.setWindowTitle("Xác thực Telethon API")
+        self.setFixedSize(500, 450)
         
-        # Tạo widget stack để chứa các trạng thái UI khác nhau
+        # Thiết lập stylesheet
+        self.setStyleSheet("""
+            QDialog {
+                background-color: white;
+                border-radius: 10px;
+            }
+            
+            QLabel.titleLabel {
+                font-size: 20px;
+                font-weight: bold;
+                color: #1E293B;
+            }
+            
+            QLabel.messageLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #3498DB;
+            }
+            
+            QLabel.infoLabel {
+                font-size: 14px;
+                color: #64748B;
+            }
+            
+            QPushButton.primaryButton {
+                background-color: #3498DB;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 15px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            
+            QPushButton.primaryButton:hover {
+                background-color: #2980B9;
+            }
+            
+            QPushButton.secondaryButton {
+                background-color: #EBF5FB;
+                color: #3498DB;
+                border: 1px solid #BFDBFE;
+                border-radius: 6px;
+                padding: 10px 15px;
+                font-size: 14px;
+            }
+            
+            QPushButton.secondaryButton:hover {
+                background-color: #D1E6FA;
+            }
+            
+            QLineEdit.otpDigit {
+                background-color: #F9FAFB;
+                border: 1px solid #CBD5E1;
+                border-radius: 8px;
+                padding: 10px;
+                font-size: 24px;
+                color: #1E293B;
+                text-align: center;
+            }
+            
+            QFrame.statusInfo {
+                background-color: #EBF8FF;
+                border: 1px solid #BEE3F8;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+        
+        # Layout chính
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(30, 30, 30, 30)
+        self.main_layout.setSpacing(20)
+        
+        # Stack cho các trạng thái khác nhau
         self.state_stack = QtWidgets.QStackedWidget()
         
-        # Widget cho trạng thái đang tải
+        # Tạo giao diện cho các trạng thái
         self.loading_widget = self.create_loading_widget()
-        self.state_stack.addWidget(self.loading_widget)
-        
-        # Widget cho trạng thái nhập OTP
         self.verification_widget = self.create_verification_widget()
-        self.state_stack.addWidget(self.verification_widget)
-        
-        # Widget cho trạng thái OTP hết hạn
         self.expired_widget = self.create_expired_widget()
+        
+        # Thêm vào stack
+        self.state_stack.addWidget(self.loading_widget)
+        self.state_stack.addWidget(self.verification_widget)
         self.state_stack.addWidget(self.expired_widget)
         
-        # Thiết lập widget hiện tại
+        # Thêm vào layout chính
+        self.main_layout.addWidget(self.state_stack)
+        
+        # Hiển thị trạng thái đầu tiên
         self.state_stack.setCurrentIndex(self.current_state)
-        
-        # Thêm widget stack vào layout chính
-        main_layout.addWidget(self.state_stack)
-        
-        # Đặt kích thước và vị trí
-        self.resize(400, 350)
-        self.center_on_screen()
     
     def create_loading_widget(self):
-        """Tạo widget cho trạng thái đang tải"""
+        """Tạo widget hiển thị khi đang tải/gửi mã OTP"""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        
-        # Icon loading
-        loading_label = QtWidgets.QLabel()
-        loading_pixmap = self.create_loading_animation(32)
-        loading_label.setPixmap(loading_pixmap)
-        loading_label.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(20)
         
         # Tiêu đề
-        title_label = QtWidgets.QLabel("Đang gửi yêu cầu xác thực")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        title_label = QtWidgets.QLabel("Xác thực Telethon API")
+        title_label.setProperty("class", "titleLabel")
         title_label.setAlignment(Qt.AlignCenter)
-        
-        # Mô tả
-        desc_label = QtWidgets.QLabel("Vui lòng đợi trong khi chúng tôi gửi mã xác thực đến Telegram của bạn...")
-        desc_label.setWordWrap(True)
-        desc_label.setAlignment(Qt.AlignCenter)
-        
-        # Trạng thái
-        self.loading_status = QtWidgets.QLabel("Đang kết nối đến Telegram API...")
-        self.loading_status.setAlignment(Qt.AlignCenter)
-        self.loading_status.setStyleSheet("color: #3498db;")
-        
-        # Thêm các widget vào layout
-        layout.addStretch()
-        layout.addWidget(loading_label)
         layout.addWidget(title_label)
-        layout.addWidget(desc_label)
-        layout.addWidget(self.loading_status)
-        layout.addStretch()
+        
+        # Biểu tượng loading
+        loading_icon = self.create_loading_animation(50)
+        layout.addWidget(loading_icon, 0, Qt.AlignCenter)
+        
+        # Thông báo
+        self.loading_message = QtWidgets.QLabel("Đang gửi mã xác thực...")
+        self.loading_message.setProperty("class", "messageLabel")
+        self.loading_message.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.loading_message)
+        
+        # Số điện thoại
+        phone_layout = QtWidgets.QHBoxLayout()
+        phone_label = QtWidgets.QLabel("Số điện thoại:")
+        phone_label.setProperty("class", "infoLabel")
+        self.phone_edit = QtWidgets.QLineEdit()
+        self.phone_edit.setReadOnly(True)
+        if self.phone:
+            self.phone_edit.setText(self.phone)
+        phone_layout.addWidget(phone_label)
+        phone_layout.addWidget(self.phone_edit)
+        layout.addLayout(phone_layout)
+        
+        # Thông tin
+        info_label = QtWidgets.QLabel("Vui lòng đợi trong khi chúng tôi gửi mã xác thực đến tài khoản Telegram của bạn.")
+        info_label.setProperty("class", "infoLabel")
+        info_label.setWordWrap(True)
+        info_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(info_label)
+        
+        # Nút hủy
+        button_layout = QtWidgets.QHBoxLayout()
+        self.cancel_button = QtWidgets.QPushButton("Hủy")
+        self.cancel_button.setProperty("class", "secondaryButton")
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_button)
+        layout.addLayout(button_layout)
         
         return widget
     
     def create_verification_widget(self):
-        """Tạo widget cho trạng thái nhập OTP"""
+        """Tạo widget nhập mã xác thực OTP"""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        
-        # Icon xác thực
-        icon_label = QtWidgets.QLabel()
-        icon_pixmap = QtGui.QPixmap(32, 32)
-        icon_pixmap.fill(Qt.transparent)
-        painter = QtGui.QPainter(icon_pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QtGui.QColor("#3498db"))
-        painter.drawEllipse(2, 2, 28, 28)
-        painter.setPen(QtGui.QPen(Qt.white, 2))
-        painter.drawLine(10, 16, 15, 22)
-        painter.drawLine(15, 22, 24, 10)
-        painter.end()
-        icon_label.setPixmap(icon_pixmap)
-        icon_label.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(20)
         
         # Tiêu đề
-        title_label = QtWidgets.QLabel("Xác thực Telegram")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        title_label = QtWidgets.QLabel("Nhập mã xác thực")
+        title_label.setProperty("class", "titleLabel")
         title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
         
-        # Mô tả
-        desc_label = QtWidgets.QLabel("Mã OTP đã được gửi đến ứng dụng Telegram của bạn.\nVui lòng nhập mã vào ô bên dưới:")
-        desc_label.setWordWrap(True)
-        desc_label.setAlignment(Qt.AlignCenter)
+        # Thông báo
+        message_layout = QtWidgets.QHBoxLayout()
+        icon_label = QtWidgets.QLabel("🔒")
+        icon_label.setStyleSheet("font-size: 20px;")
+        self.verify_message = QtWidgets.QLabel("Nhập mã xác thực Telegram đã gửi cho bạn")
+        self.verify_message.setProperty("class", "messageLabel")
+        message_layout.addWidget(icon_label)
+        message_layout.addWidget(self.verify_message)
+        layout.addLayout(message_layout)
         
-        # Đồng hồ đếm ngược
-        self.countdown_label = QtWidgets.QLabel("Mã có hiệu lực trong: 05:00")
-        self.countdown_label.setAlignment(Qt.AlignCenter)
-        self.countdown_label.setStyleSheet("color: #3498db; font-weight: bold;")
-        
-        # Ô nhập OTP
+        # Nhập mã OTP
         otp_layout = QtWidgets.QHBoxLayout()
-        self.otp_digits = []
+        otp_layout.setSpacing(10)
         
-        for i in range(6):
+        # Tạo 5 ô nhập mã
+        self.otp_digits = []
+        for i in range(5):
             digit = QtWidgets.QLineEdit()
+            digit.setProperty("class", "otpDigit")
             digit.setMaxLength(1)
-            digit.setFixedSize(40, 40)
             digit.setAlignment(Qt.AlignCenter)
-            digit.setStyleSheet("font-size: 18px; font-weight: bold;")
-            if i > 0:
-                digit.setEnabled(False)
-            self.otp_digits.append(digit)
-            otp_layout.addWidget(digit)
-            
-            # Kết nối sự kiện
+            digit.setFixedSize(50, 50)
             digit.textChanged.connect(lambda text, idx=i: self.on_digit_changed(text, idx))
+            otp_layout.addWidget(digit)
+            self.otp_digits.append(digit)
+        
+        layout.addLayout(otp_layout)
+        
+        # Thời gian còn lại
+        countdown_frame = QtWidgets.QFrame()
+        countdown_frame.setProperty("class", "statusInfo")
+        countdown_layout = QtWidgets.QHBoxLayout(countdown_frame)
+        countdown_layout.setContentsMargins(10, 10, 10, 10)
+        
+        timer_icon = QtWidgets.QLabel("⏱️")
+        timer_icon.setStyleSheet("font-size: 16px;")
+        self.countdown_label = QtWidgets.QLabel("Mã xác thực còn hiệu lực trong: 02:00")
+        countdown_layout.addWidget(timer_icon)
+        countdown_layout.addWidget(self.countdown_label)
+        countdown_layout.addStretch()
+        
+        layout.addWidget(countdown_frame)
         
         # Nút xác thực
+        button_layout = QtWidgets.QHBoxLayout()
         self.verify_button = QtWidgets.QPushButton("Xác thực")
+        self.verify_button.setProperty("class", "primaryButton")
         self.verify_button.setEnabled(False)
-        self.verify_button.clicked.connect(self.verify_otp)
         
-        # Trạng thái
-        self.verification_status = QtWidgets.QLabel("")
-        self.verification_status.setAlignment(Qt.AlignCenter)
+        self.resend_button = QtWidgets.QPushButton("Gửi lại mã")
+        self.resend_button.setProperty("class", "secondaryButton")
+        self.resend_button.setEnabled(False)
         
-        # Thêm các widget vào layout
-        layout.addStretch()
-        layout.addWidget(icon_label)
-        layout.addWidget(title_label)
-        layout.addWidget(desc_label)
-        layout.addWidget(self.countdown_label)
-        layout.addLayout(otp_layout)
-        layout.addWidget(self.verify_button)
-        layout.addWidget(self.verification_status)
-        layout.addStretch()
+        button_layout.addWidget(self.resend_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.verify_button)
+        layout.addLayout(button_layout)
         
         return widget
     
     def create_expired_widget(self):
-        """Tạo widget cho trạng thái OTP hết hạn"""
+        """Tạo widget hiển thị khi mã OTP hết hạn"""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        
-        # Icon hết hạn
-        icon_label = QtWidgets.QLabel()
-        icon_pixmap = QtGui.QPixmap(32, 32)
-        icon_pixmap.fill(Qt.transparent)
-        painter = QtGui.QPainter(icon_pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QtGui.QColor("#e74c3c"))
-        painter.drawEllipse(2, 2, 28, 28)
-        painter.setPen(QtGui.QPen(Qt.white, 2))
-        painter.drawLine(10, 10, 22, 22)
-        painter.drawLine(10, 22, 22, 10)
-        painter.end()
-        icon_label.setPixmap(icon_pixmap)
-        icon_label.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(20)
         
         # Tiêu đề
         title_label = QtWidgets.QLabel("Mã xác thực đã hết hạn")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        title_label.setProperty("class", "titleLabel")
         title_label.setAlignment(Qt.AlignCenter)
-        
-        # Mô tả
-        desc_label = QtWidgets.QLabel("Mã xác thực đã hết hiệu lực hoặc không chính xác.\nVui lòng yêu cầu mã mới để tiếp tục.")
-        desc_label.setWordWrap(True)
-        desc_label.setAlignment(Qt.AlignCenter)
-        
-        # Đồng hồ đếm ngược cho cooldown
-        self.cooldown_label = QtWidgets.QLabel("")
-        self.cooldown_label.setAlignment(Qt.AlignCenter)
-        self.cooldown_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
-        
-        # Nút lấy mã mới
-        self.resend_button = QtWidgets.QPushButton("Lấy lại mã")
-        self.resend_button.clicked.connect(self.resend_code)
-        
-        # Thông tin giới hạn
-        self.limit_label = QtWidgets.QLabel("")
-        self.limit_label.setAlignment(Qt.AlignCenter)
-        self.limit_label.setWordWrap(True)
-        
-        # Thêm các widget vào layout
-        layout.addStretch()
-        layout.addWidget(icon_label)
         layout.addWidget(title_label)
-        layout.addWidget(desc_label)
-        layout.addWidget(self.cooldown_label)
-        layout.addWidget(self.resend_button)
-        layout.addWidget(self.limit_label)
+        
+        # Biểu tượng
+        icon_label = QtWidgets.QLabel("⚠️")
+        icon_label.setStyleSheet("font-size: 50px; color: #EF4444;")
+        icon_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(icon_label)
+        
+        # Thông báo
+        message = QtWidgets.QLabel("Mã xác thực Telegram của bạn đã hết hạn hoặc không hợp lệ.")
+        message.setProperty("class", "messageLabel")
+        message.setAlignment(Qt.AlignCenter)
+        message.setWordWrap(True)
+        layout.addWidget(message)
+        
+        # Thông tin cooldown
+        cooldown_frame = QtWidgets.QFrame()
+        cooldown_frame.setProperty("class", "statusInfo")
+        cooldown_layout = QtWidgets.QHBoxLayout(cooldown_frame)
+        
+        timer_icon = QtWidgets.QLabel("⏱️")
+        timer_icon.setStyleSheet("font-size: 16px;")
+        self.cooldown_label = QtWidgets.QLabel("Bạn cần đợi thêm 60 giây trước khi gửi lại mã")
+        cooldown_layout.addWidget(timer_icon)
+        cooldown_layout.addWidget(self.cooldown_label)
+        
+        layout.addWidget(cooldown_frame)
+        
+        # Nút gửi lại và hủy
+        button_layout = QtWidgets.QHBoxLayout()
+        self.expired_resend_button = QtWidgets.QPushButton("Gửi lại mã")
+        self.expired_resend_button.setProperty("class", "primaryButton")
+        self.expired_resend_button.setEnabled(False)
+        
+        self.expired_cancel_button = QtWidgets.QPushButton("Hủy")
+        self.expired_cancel_button.setProperty("class", "secondaryButton")
+        
+        button_layout.addWidget(self.expired_cancel_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.expired_resend_button)
+        layout.addLayout(button_layout)
+        
         layout.addStretch()
         
         return widget
     
     def center_on_screen(self):
         """Đặt cửa sổ vào giữa màn hình"""
-        screen = QtWidgets.QApplication.desktop().availableGeometry()
-        size = self.geometry()
-        self.move((screen.width() - size.width()) // 2, (screen.height() - size.height()) // 2)
+        frame_geometry = self.frameGeometry()
+        screen_center = QtWidgets.QDesktopWidget().availableGeometry().center()
+        frame_geometry.moveCenter(screen_center)
+        self.move(frame_geometry.topLeft())
     
     def create_loading_animation(self, size):
-        """Tạo biểu tượng loading đơn giản"""
-        pixmap = QtGui.QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
+        """Tạo label với animation loading xoay tròn"""
+        loading_label = QtWidgets.QLabel()
+        loading_label.setFixedSize(size, size)
         
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        # Tạo movie từ ảnh động (nếu có)
+        loading_movie = None
+        try:
+            # Thử tìm file loading.gif
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            loading_path = os.path.join(current_dir, "assets", "loading.gif")
+            
+            if not os.path.exists(loading_path):
+                # Thử đường dẫn khác
+                loading_path = os.path.join(current_dir, "..", "assets", "loading.gif")
+            
+            if os.path.exists(loading_path):
+                loading_movie = QtGui.QMovie(loading_path)
+                loading_movie.setScaledSize(QtCore.QSize(size, size))
+                loading_label.setMovie(loading_movie)
+                loading_movie.start()
+        except Exception as e:
+            logger.error(f"Không thể tạo loading animation: {str(e)}")
         
-        pen = QtGui.QPen(QtGui.QColor("#3498db"))
-        pen.setWidth(3)
-        painter.setPen(pen)
+        # Nếu không có animation, tạo text thay thế
+        if not loading_movie:
+            loading_label.setText("⌛")
+            loading_label.setAlignment(Qt.AlignCenter)
+            loading_label.setStyleSheet(f"font-size: {size//2}px; color: #3498DB;")
         
-        painter.drawArc(3, 3, size-6, size-6, 0, 300 * 16)  # 300 độ
-        painter.end()
+        return loading_label
+    
+    def connect_events(self):
+        """Kết nối sự kiện cho các control"""
+        # Nút trong widget loading
+        self.cancel_button.clicked.connect(self.reject)
         
-        return pixmap
+        # Nút trong widget verification
+        self.verify_button.clicked.connect(self.verify_otp)
+        self.resend_button.clicked.connect(self.resend_code)
+        
+        # Nút trong widget expired
+        self.expired_cancel_button.clicked.connect(self.reject)
+        self.expired_resend_button.clicked.connect(self.resend_code)
     
     def start_verification(self):
-        """Bắt đầu quy trình xác thực"""
-        # Đặt trạng thái hiện tại
-        self.current_state = OTPVerificationState.LOADING
-        self.state_stack.setCurrentIndex(self.current_state)
-        
+        """Bắt đầu quá trình xác thực OTP"""
         # Kiểm tra giới hạn yêu cầu OTP
         if not self.check_otp_request_limits():
             return
         
-        # Tạo thread gửi mã OTP
-        self.request_thread = threading.Thread(target=self.request_otp_code)
-        self.request_thread.daemon = True
-        self.request_thread.start()
+        # Yêu cầu mã OTP
+        self.request_otp_code()
     
     def check_otp_request_limits(self):
-        """
-        Kiểm tra giới hạn yêu cầu OTP
-        
-        Returns:
-            bool: True nếu có thể yêu cầu OTP, False nếu đã vượt quá giới hạn
-        """
-        # Đường dẫn file lưu thông tin giới hạn
-        app_data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
-        os.makedirs(app_data_dir, exist_ok=True)
-        limits_file = os.path.join(app_data_dir, "otp_limits.json")
-        
-        # Thông tin mặc định
-        limits_data = {
-            "last_request_time": None,
-            "requests_count": 0,
-            "reset_date": None
-        }
-        
-        # Tải thông tin giới hạn nếu có
-        if os.path.exists(limits_file):
-            try:
-                with open(limits_file, "r") as f:
-                    limits_data = json.load(f)
-            except json.JSONDecodeError:
-                pass
-        
-        # Kiểm tra nếu cần reset đếm
-        current_date = datetime.now().strftime("%Y-%m-%d")
-        if limits_data["reset_date"] != current_date:
-            limits_data["reset_date"] = current_date
-            limits_data["requests_count"] = 0
-        
-        # Kiểm tra số lần yêu cầu trong ngày
-        if limits_data["requests_count"] >= self.otp_reset_limit:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Vượt quá giới hạn",
-                f"Bạn đã vượt quá giới hạn yêu cầu mã OTP ({self.otp_reset_limit} lần) trong 24 giờ.\nVui lòng thử lại vào ngày mai."
-            )
-            self.reject()
-            return False
-        
-        # Kiểm tra thời gian chờ giữa các lần yêu cầu
-        if limits_data["last_request_time"]:
-            last_time = datetime.fromisoformat(limits_data["last_request_time"])
-            elapsed = (datetime.now() - last_time).total_seconds()
+        """Kiểm tra giới hạn số lần yêu cầu OTP"""
+        try:
+            from utils.otp_manager import OTPManager
             
-            if elapsed < self.cooldown_period:
-                remaining = int(self.cooldown_period - elapsed)
+            # Khởi tạo OTP Manager
+            otp_manager = OTPManager()
+            
+            # Kiểm tra giới hạn
+            can_request, message = otp_manager.check_request_limits()
+            
+            if not can_request:
+                # Hiển thị thông báo lỗi
                 QtWidgets.QMessageBox.warning(
                     self,
-                    "Vui lòng đợi",
-                    f"Vui lòng đợi {remaining} giây trước khi yêu cầu mã mới."
+                    "Giới hạn yêu cầu OTP",
+                    message,
+                    QtWidgets.QMessageBox.Ok
                 )
+                
+                # Lấy thông tin giới hạn hiện tại
+                limits = otp_manager.get_current_limits()
+                
+                # Nếu đang trong thời gian chờ cooldown, hiển thị màn hình expired
+                if limits["cooldown_remaining"] > 0:
+                    self.cooldown_seconds = limits["cooldown_remaining"]
+                    self.current_state = OTPVerificationState.EXPIRED
+                    self.state_stack.setCurrentIndex(self.current_state)
+                    
+                    # Cập nhật label cooldown
+                    self.cooldown_label.setText(f"Bạn cần đợi thêm {self.cooldown_seconds} giây trước khi gửi lại mã")
+                    
+                    # Bắt đầu đếm ngược cooldown
+                    self.start_cooldown_timer()
+                    
+                    return False
+                else:
+                    # Nếu đã vượt quá số lần yêu cầu trong ngày, đóng dialog
                 self.reject()
                 return False
         
-        # Cập nhật thông tin giới hạn
-        limits_data["last_request_time"] = datetime.now().isoformat()
-        limits_data["requests_count"] += 1
-        
-        # Lưu thông tin giới hạn
-        with open(limits_file, "w") as f:
-            json.dump(limits_data, f)
-        
-        # Lưu thông tin số lần đã yêu cầu
-        self.requests_count = limits_data["requests_count"]
-        
+            return True
+        except Exception as e:
+            logger.error(f"Lỗi kiểm tra giới hạn OTP: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # Giả định có thể yêu cầu OTP
         return True
     
     def request_otp_code(self):
-        """Gửi yêu cầu mã OTP từ Telethon"""
-        try:
-            self.loading_status.setText("Đang kết nối đến Telegram API...")
-            time.sleep(1)  # Tạm dừng để hiển thị trạng thái
-            
-            # Thực hiện yêu cầu mã bằng Telethon
-            from telethon import TelegramClient
-            
-            # Đường dẫn session
-            session_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "telegram_uploader")
-            
-            # Kết nối client
-            client = TelegramClient(session_path, self.api_id, self.api_hash)
-            client.connect()
-            
-            # Kiểm tra đã xác thực chưa
-            if client.is_user_authorized():
-                # Đã xác thực, thông báo và đóng modal
-                QtCore.QMetaObject.invokeMethod(
-                    self, 
-                    "on_already_authorized", 
-                    Qt.QueuedConnection
-                )
-                client.disconnect()
-                return
-            
-            # Gửi yêu cầu mã
-            self.loading_status.setText("Đang gửi mã xác thực đến Telegram...")
-            result = client.send_code_request(self.phone)
-            self.phone_code_hash = result.phone_code_hash
-            client.disconnect()
-            
-            # Lưu thời gian yêu cầu OTP
-            self.otp_requested_time = datetime.now()
-            
-            # Chuyển sang trạng thái xác thực
-            QtCore.QMetaObject.invokeMethod(
-                self, 
-                "on_code_sent", 
-                Qt.QueuedConnection
+        """Gửi yêu cầu mã OTP đến Telethon API"""
+        # Cập nhật giao diện
+        self.loading_message.setText("Đang gửi mã xác thực...")
+        QtWidgets.QApplication.processEvents()
+        
+        # Kiểm tra API ID và API Hash
+        if not self.api_id or not self.api_hash or not self.phone:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Thiếu thông tin",
+                "Thiếu thông tin cấu hình Telethon API. Vui lòng kiểm tra lại.",
+                QtWidgets.QMessageBox.Ok
             )
+            self.reject()
+            return
+        
+        # Ghi nhận yêu cầu OTP
+        try:
+            from utils.otp_manager import OTPManager
+            otp_manager = OTPManager()
+            otp_manager.record_request()
+        except Exception as e:
+            logger.error(f"Lỗi ghi nhận yêu cầu OTP: {str(e)}")
+        
+        # Tạo và khởi động thread yêu cầu OTP
+        def otp_request_thread():
+            try:
+                from utils.otp_manager import TelethonSessionManager
+                from telethon.errors import FloodWaitError, PhoneNumberInvalidError, ApiIdInvalidError
+                
+                session_manager = TelethonSessionManager()
+                client = session_manager.create_client(self.api_id, self.api_hash)
+                
+                # Kiểm tra xem đã đăng nhập chưa
+                async def check_auth():
+                    await client.connect()
+                    if await client.is_user_authorized():
+                        # Đã đăng nhập rồi
+                        QtCore.QMetaObject.invokeMethod(self, "on_already_authorized", Qt.QueuedConnection)
+                        return True
+                    
+                    # Chưa đăng nhập, gửi mã xác thực
+                    try:
+                        await client.send_code_request(self.phone)
+                        # Gửi mã thành công
+                        QtCore.QMetaObject.invokeMethod(self, "on_code_sent", Qt.QueuedConnection)
+                        return False
+                    except FloodWaitError as e:
+                        # Bị giới hạn, cần đợi
+                        error_msg = f"Bạn cần đợi {e.seconds} giây trước khi gửi lại mã"
+                        QtCore.QMetaObject.invokeMethod(
+                            self, "on_request_error", 
+                            Qt.QueuedConnection,
+                            QtCore.Q_ARG(str, error_msg)
+                        )
+                    except (PhoneNumberInvalidError, ApiIdInvalidError) as e:
+                        # Số điện thoại không hợp lệ
+                        error_msg = f"Lỗi: {str(e)}"
+                QtCore.QMetaObject.invokeMethod(
+                            self, "on_request_error",
+                            Qt.QueuedConnection,
+                            QtCore.Q_ARG(str, error_msg)
+                        )
+                    except Exception as e:
+                        # Lỗi khác
+                        error_msg = f"Lỗi: {str(e)}"
+            QtCore.QMetaObject.invokeMethod(
+                            self, "on_request_error",
+                            Qt.QueuedConnection,
+                            QtCore.Q_ARG(str, error_msg)
+                        )
+                    
+                    return False
+                
+                # Chạy coroutine
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(check_auth())
+                loop.close()
             
         except Exception as e:
-            # Xử lý lỗi
-            error_message = str(e)
+                logger.error(f"Lỗi khi gửi yêu cầu OTP: {str(e)}")
+                logger.error(traceback.format_exc())
+                
+                # Thông báo lỗi
             QtCore.QMetaObject.invokeMethod(
-                self, 
-                "on_request_error", 
+                    self, "on_request_error",
                 Qt.QueuedConnection,
-                QtCore.Q_ARG(str, error_message)
+                    QtCore.Q_ARG(str, f"Lỗi: {str(e)}")
             )
+        
+        # Khởi động thread
+        threading.Thread(target=otp_request_thread, daemon=True).start()
     
     @QtCore.pyqtSlot()
     def on_already_authorized(self):
-        """Xử lý khi người dùng đã được xác thực"""
+        """Xử lý khi tài khoản đã được xác thực"""
+        # Hiển thị thông báo
         QtWidgets.QMessageBox.information(
             self,
             "Đã xác thực",
-            "Tài khoản Telegram của bạn đã được xác thực trước đó.\nKhông cần xác thực lại."
+            "Tài khoản Telethon của bạn đã được xác thực. Không cần nhập mã OTP.",
+            QtWidgets.QMessageBox.Ok
         )
         
-        # Đánh dấu xác thực thành công
-        self.verification_success = True
+        # Cập nhật xác thực thành công và đóng dialog
         self.accept()
     
     @QtCore.pyqtSlot()
     def on_code_sent(self):
-        """Xử lý khi mã OTP đã được gửi"""
-        # Chuyển sang trạng thái xác thực
+        """Xử lý khi mã OTP đã được gửi thành công"""
+        # Cập nhật giao diện
         self.current_state = OTPVerificationState.VERIFY
         self.state_stack.setCurrentIndex(self.current_state)
         
-        # Thiết lập focus vào ô nhập đầu tiên
+        # Focus vào ô nhập đầu tiên
+        if self.otp_digits and len(self.otp_digits) > 0:
         self.otp_digits[0].setFocus()
         
         # Bắt đầu đếm ngược
-        self.remaining_time = self.otp_timeout
-        self.update_countdown()
-        
-        # Tạo timer đếm ngược
-        self.countdown_timer = QTimer(self)
-        self.countdown_timer.timeout.connect(self.update_countdown)
-        self.countdown_timer.start(1000)  # 1 giây
+        self.countdown_seconds = self.otp_expiry_seconds
+        timer = QTimer(self)
+        timer.timeout.connect(self.update_countdown)
+        timer.start(1000)
     
     @QtCore.pyqtSlot(str)
     def on_request_error(self, error_message):
-        """
-        Xử lý khi có lỗi yêu cầu mã OTP
-        
-        Args:
-            error_message (str): Thông báo lỗi
-        """
-        QtWidgets.QMessageBox.critical(
+        """Xử lý khi có lỗi yêu cầu mã OTP"""
+        # Hiển thị thông báo lỗi
+        QtWidgets.QMessageBox.warning(
             self,
-            "Lỗi yêu cầu mã",
-            f"Không thể gửi mã xác thực: {error_message}"
+            "Lỗi gửi mã xác thực",
+            error_message,
+            QtWidgets.QMessageBox.Ok
         )
+        
+        # Đóng dialog
         self.reject()
     
     def on_digit_changed(self, text, index):
-        """
-        Xử lý khi người dùng nhập ký tự vào ô OTP
-        
-        Args:
-            text (str): Ký tự đã nhập
-            index (int): Chỉ số của ô
-        """
-        # Nếu đã nhập một ký tự vào ô hiện tại
-        if len(text) == 1:
-            # Di chuyển focus sang ô tiếp theo
-            if index < 5:
-                self.otp_digits[index + 1].setEnabled(True)
+        """Xử lý khi người dùng nhập ký tự vào ô OTP"""
+        if text:
+            # Tự động chuyển đến ô tiếp theo
+            if index < len(self.otp_digits) - 1:
                 self.otp_digits[index + 1].setFocus()
+                
+            # Kiểm tra xem đã nhập đủ OTP chưa
+            self.check_otp_complete()
         
-        # Kiểm tra xem đã nhập đủ 6 ký tự chưa
-        self.check_otp_complete()
+        # Xử lý khi xóa ký tự
+        if not text and index > 0:
+            # Focus về ô trước đó
+            self.otp_digits[index - 1].setFocus()
     
     def check_otp_complete(self):
-        """Kiểm tra xem đã nhập đủ mã OTP chưa"""
-        # Lấy mã OTP hiện tại
+        """Kiểm tra xem đã nhập đủ mã OTP chưa và bật nút xác thực"""
         otp_code = self.get_otp_code()
         
-        # Kiểm tra độ dài
-        if len(otp_code) == 6:
-            # Đã nhập đủ, kích hoạt nút xác thực
+        # Chỉ bật nút xác thực khi đã nhập đủ mã (đủ 5 ký tự)
+        if len(otp_code) == 5:
             self.verify_button.setEnabled(True)
         else:
-            # Chưa đủ, vô hiệu hóa nút xác thực
             self.verify_button.setEnabled(False)
     
     def get_otp_code(self):
-        """
-        Lấy mã OTP đã nhập
+        """Lấy mã OTP đã nhập"""
+        if not hasattr(self, 'otp_digits'):
+            return ""
         
-        Returns:
-            str: Mã OTP
-        """
-        return "".join([digit.text() for digit in self.otp_digits])
+        return ''.join([digit.text() for digit in self.otp_digits])
     
     def update_countdown(self):
-        """Cập nhật đồng hồ đếm ngược"""
-        # Giảm thời gian còn lại
-        self.remaining_time -= 1
-        
-        # Kiểm tra nếu hết thời gian
-        if self.remaining_time <= 0:
-            # Dừng timer
-            self.countdown_timer.stop()
+        """Cập nhật thời gian còn lại của mã OTP"""
+        if self.countdown_seconds > 0:
+            self.countdown_seconds -= 1
+            minutes = self.countdown_seconds // 60
+            seconds = self.countdown_seconds % 60
+            self.countdown_label.setText(f"Mã xác thực còn hiệu lực trong: {minutes:02d}:{seconds:02d}")
             
-            # Chuyển sang trạng thái OTP hết hạn
+            # Bật nút gửi lại khi còn dưới 30 giây
+            if self.countdown_seconds <= 30:
+                self.resend_button.setEnabled(True)
+        else:
+            # Hết thời gian, chuyển sang trạng thái hết hạn
             self.current_state = OTPVerificationState.EXPIRED
             self.state_stack.setCurrentIndex(self.current_state)
             
-            # Cập nhật thông tin giới hạn
-            self.limit_label.setText(f"Bạn đã sử dụng {self.requests_count}/{self.otp_reset_limit} lần yêu cầu mã trong ngày hôm nay.")
+            # Bắt đầu cooldown
+            self.cooldown_seconds = 60  # 1 phút cooldown
+            self.cooldown_label.setText(f"Bạn cần đợi thêm {self.cooldown_seconds} giây trước khi gửi lại mã")
             
-            # Kiểm tra xem còn có thể gửi lại không
-            if self.requests_count >= self.otp_reset_limit:
-                self.resend_button.setEnabled(False)
-                self.resend_button.setText("Đã vượt quá giới hạn")
-                self.cooldown_label.setText("Vui lòng thử lại vào ngày mai")
-            else:
                 # Bắt đầu đếm ngược cooldown
                 self.start_cooldown_timer()
-            
-            return
-        
-        # Định dạng thời gian còn lại
-        minutes = self.remaining_time // 60
-        seconds = self.remaining_time % 60
-        time_str = f"{minutes:02d}:{seconds:02d}"
-        
-        # Cập nhật label
-        self.countdown_label.setText(f"Mã có hiệu lực trong: {time_str}")
-        
-        # Thêm hiệu ứng nhấp nháy khi sắp hết thời gian
-        if self.remaining_time < 60:
-            if self.remaining_time % 2 == 0:
-                self.countdown_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
-            else:
-                self.countdown_label.setStyleSheet("color: #3498db; font-weight: bold;")
     
     def start_cooldown_timer(self):
-        """Bắt đầu đếm ngược thời gian chờ giữa các lần yêu cầu OTP"""
-        # Thiết lập thời gian chờ
-        self.cooldown_remaining = self.cooldown_period
-        self.resend_button.setEnabled(False)
+        """Bắt đầu đếm ngược thời gian chờ giữa các lần gửi mã"""
+        # Tắt nút gửi lại
+        self.expired_resend_button.setEnabled(False)
         
-        # Cập nhật label
-        self.update_cooldown()
-        
-        # Tạo timer
-        self.cooldown_timer = QTimer(self)
-        self.cooldown_timer.timeout.connect(self.update_cooldown)
-        self.cooldown_timer.start(1000)  # 1 giây
+        # Bắt đầu timer
+        timer = QTimer(self)
+        timer.timeout.connect(self.update_cooldown)
+        timer.start(1000)
     
     def update_cooldown(self):
-        """Cập nhật đồng hồ đếm ngược thời gian chờ"""
-        # Giảm thời gian còn lại
-        self.cooldown_remaining -= 1
-        
-        # Kiểm tra nếu hết thời gian chờ
-        if self.cooldown_remaining <= 0:
+        """Cập nhật thời gian chờ còn lại"""
+        if self.cooldown_seconds > 0:
+            self.cooldown_seconds -= 1
+            self.cooldown_label.setText(f"Bạn cần đợi thêm {self.cooldown_seconds} giây trước khi gửi lại mã")
+        else:
+            # Hết thời gian cooldown
+            self.cooldown_label.setText("Bạn có thể gửi lại mã xác thực ngay bây giờ")
+            
+            # Bật nút gửi lại
+            self.expired_resend_button.setEnabled(True)
+            
             # Dừng timer
-            self.cooldown_timer.stop()
-            
-            # Kích hoạt nút gửi lại
-            self.resend_button.setEnabled(True)
-            
-            # Cập nhật label
-            self.cooldown_label.setText("Bạn có thể yêu cầu mã mới ngay bây giờ")
-            return
-        
-        # Cập nhật label
-        self.cooldown_label.setText(f"Vui lòng đợi {self.cooldown_remaining} giây để yêu cầu mã mới")
+            sender = self.sender()
+            if isinstance(sender, QTimer):
+                sender.stop()
     
     def verify_otp(self):
-        """Xác thực mã OTP"""
+        """Xác thực mã OTP đã nhập"""
         # Lấy mã OTP
         otp_code = self.get_otp_code()
         
-        # Vô hiệu hóa nút xác thực
-        self.verify_button.setEnabled(False)
-        self.verify_button.setText("Đang xác thực...")
+        # Kiểm tra mã có đủ độ dài không
+        if len(otp_code) != 5:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Mã không hợp lệ",
+                "Vui lòng nhập đủ 5 ký tự của mã xác thực.",
+                QtWidgets.QMessageBox.Ok
+            )
+            return
         
-        # Cập nhật trạng thái
-        self.verification_status.setText("Đang xác thực...")
-        self.verification_status.setStyleSheet("color: #3498db;")
-        
-        # Tạo thread xác thực
-        self.verify_thread = threading.Thread(target=self.verify_otp_code, args=(otp_code,))
-        self.verify_thread.daemon = True
-        self.verify_thread.start()
+        # Tiến hành xác thực
+        self.verify_otp_code(otp_code)
     
     def verify_otp_code(self, otp_code):
-        """
-        Xác thực mã OTP với Telethon
+        """Gửi mã OTP đến Telethon API để xác thực"""
+        # Cập nhật giao diện
+        self.verify_button.setEnabled(False)
+        self.verify_button.setText("Đang xác thực...")
+        QtWidgets.QApplication.processEvents()
         
-        Args:
-            otp_code (str): Mã OTP đã nhập
-        """
-        try:
-            # Thực hiện xác thực bằng Telethon
-            from telethon import TelegramClient
-            
-            # Đường dẫn session
-            session_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "telegram_uploader")
-            
-            # Kết nối client
-            client = TelegramClient(session_path, self.api_id, self.api_hash)
-            client.connect()
-            
-            # Kiểm tra đã xác thực chưa
-            if client.is_user_authorized():
-                # Đã xác thực
-                QtCore.QMetaObject.invokeMethod(
-                    self, 
-                    "on_verification_success", 
-                    Qt.QueuedConnection
-                )
-                client.disconnect()
+        # Tạo và khởi động thread xác thực
+        def otp_verify_thread():
+            try:
+                from utils.otp_manager import TelethonSessionManager
+                from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
+                
+                session_manager = TelethonSessionManager()
+                client = session_manager.create_client(self.api_id, self.api_hash)
+                
+                # Xác thực OTP
+                async def verify_code():
+                    try:
+                        await client.connect()
+                        
+                        # Nếu đã xác thực rồi
+                        if await client.is_user_authorized():
+                            QtCore.QMetaObject.invokeMethod(self, "on_verification_success", Qt.QueuedConnection)
                 return
             
-            # Gửi mã xác thực
-            client.sign_in(self.phone, otp_code, phone_code_hash=self.phone_code_hash)
-            client.disconnect()
+                        # Xác thực mã
+                        await client.sign_in(self.phone, code=otp_code)
             
             # Xác thực thành công
+                        QtCore.QMetaObject.invokeMethod(self, "on_verification_success", Qt.QueuedConnection)
+                    except PhoneCodeInvalidError:
+                        # Mã không hợp lệ
+                        QtCore.QMetaObject.invokeMethod(
+                            self, "on_verification_error",
+                            Qt.QueuedConnection,
+                            QtCore.Q_ARG(str, "Mã xác thực không đúng. Vui lòng thử lại.")
+                        )
+                    except SessionPasswordNeededError:
+                        # Cần mật khẩu 2FA - không hỗ trợ trong UI này
+                        QtCore.QMetaObject.invokeMethod(
+                            self, "on_verification_error",
+                            Qt.QueuedConnection,
+                            QtCore.Q_ARG(str, "Tài khoản của bạn yêu cầu mật khẩu 2FA. Tính năng này chưa được hỗ trợ.")
+                        )
+                    except Exception as e:
+                        # Lỗi khác
             QtCore.QMetaObject.invokeMethod(
-                self, 
-                "on_verification_success", 
-                Qt.QueuedConnection
-            )
-            
+                            self, "on_verification_error",
+                            Qt.QueuedConnection,
+                            QtCore.Q_ARG(str, f"Lỗi: {str(e)}")
+                        )
+                
+                # Chạy coroutine
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(verify_code())
+                loop.close()
+                
         except Exception as e:
-            # Xử lý lỗi
-            error_message = str(e)
+                logger.error(f"Lỗi khi xác thực OTP: {str(e)}")
+                logger.error(traceback.format_exc())
+                
+                # Thông báo lỗi
             QtCore.QMetaObject.invokeMethod(
-                self, 
-                "on_verification_error", 
+                    self, "on_verification_error",
                 Qt.QueuedConnection,
-                QtCore.Q_ARG(str, error_message)
+                    QtCore.Q_ARG(str, f"Lỗi: {str(e)}")
             )
+        
+        # Khởi động thread
+        threading.Thread(target=otp_verify_thread, daemon=True).start()
     
     @QtCore.pyqtSlot()
     def on_verification_success(self):
         """Xử lý khi xác thực thành công"""
-        # Cập nhật UI
-        self.verification_status.setText("Xác thực thành công!")
-        self.verification_status.setStyleSheet("color: #2ecc71; font-weight: bold;")
-        self.verify_button.setText("Đã xác thực")
+        # Hiển thị thông báo
+        QtWidgets.QMessageBox.information(
+            self,
+            "Xác thực thành công",
+            "Tài khoản Telethon của bạn đã được xác thực thành công.",
+            QtWidgets.QMessageBox.Ok
+        )
         
-        # Đánh dấu xác thực thành công
-        self.verification_success = True
-        
-        # Dừng đếm ngược
-        if hasattr(self, "countdown_timer") and self.countdown_timer.isActive():
-            self.countdown_timer.stop()
-        
-        # Chờ 1 giây rồi đóng modal
-        QTimer.singleShot(1000, self.accept)
+        # Cập nhật xác thực thành công và đóng dialog
+        self.accept()
     
     @QtCore.pyqtSlot(str)
     def on_verification_error(self, error_message):
-        """
-        Xử lý khi xác thực thất bại
+        """Xử lý khi có lỗi xác thực"""
+        # Hiển thị thông báo lỗi
+        QtWidgets.QMessageBox.warning(
+            self,
+            "Lỗi xác thực",
+            error_message,
+            QtWidgets.QMessageBox.Ok
+        )
         
-        Args:
-            error_message (str): Thông báo lỗi
-        """
-        # Cập nhật UI
-        self.verification_status.setText(f"Lỗi: {error_message}")
-        self.verification_status.setStyleSheet("color: #e74c3c;")
-        self.verify_button.setText("Xác thực")
+        # Reset UI
         self.verify_button.setEnabled(True)
+        self.verify_button.setText("Xác thực")
         
-        # Nếu lỗi liên quan đến mã không đúng, chuyển sang trạng thái hết hạn
-        if "invalid" in error_message.lower() or "expired" in error_message.lower() or "code" in error_message.lower():
-            # Dừng đếm ngược
-            if hasattr(self, "countdown_timer") and self.countdown_timer.isActive():
-                self.countdown_timer.stop()
-            
-            # Chuyển sang trạng thái OTP hết hạn
-            self.current_state = OTPVerificationState.EXPIRED
-            self.state_stack.setCurrentIndex(self.current_state)
-            
-            # Cập nhật thông tin giới hạn
-            self.limit_label.setText(f"Bạn đã sử dụng {self.requests_count}/{self.otp_reset_limit} lần yêu cầu mã trong ngày hôm nay.")
-            
-            # Bắt đầu đếm ngược cooldown
-            self.start_cooldown_timer()
+        # Xóa mã OTP đã nhập và focus lại ô đầu tiên
+        for digit in self.otp_digits:
+            digit.clear()
+        
+        if self.otp_digits and len(self.otp_digits) > 0:
+            self.otp_digits[0].setFocus()
     
     def resend_code(self):
         """Gửi lại mã OTP"""
-        # Chuyển về trạng thái đang tải
+        # Chuyển về trạng thái loading
         self.current_state = OTPVerificationState.LOADING
         self.state_stack.setCurrentIndex(self.current_state)
         
-        # Kiểm tra giới hạn yêu cầu OTP
-        if not self.check_otp_request_limits():
-            return
+        # Xóa mã OTP đã nhập
+        if hasattr(self, 'otp_digits'):
+            for digit in self.otp_digits:
+                digit.clear()
         
-        # Tạo thread gửi mã OTP
-        self.request_thread = threading.Thread(target=self.request_otp_code)
-        self.request_thread.daemon = True
-        self.request_thread.start()
+        # Gửi lại mã
+        self.start_verification()
     
     def closeEvent(self, event):
-        """
-        Xử lý khi người dùng đóng modal
+        """Xử lý khi đóng cửa sổ"""
+        # Dừng tất cả các timer
+        for child in self.findChildren(QTimer):
+            child.stop()
         
-        Args:
-            event: Sự kiện đóng
-        """
-        # Dừng các timer nếu đang chạy
-        if hasattr(self, "countdown_timer") and self.countdown_timer.isActive():
-            self.countdown_timer.stop()
-        
-        if hasattr(self, "cooldown_timer") and self.cooldown_timer.isActive():
-            self.cooldown_timer.stop()
-        
-        # Từ chối nếu chưa xác thực thành công
-        if not self.verification_success:
-            self.reject()
-        
+        # Chấp nhận sự kiện đóng
         event.accept()
 
 if __name__ == "__main__":

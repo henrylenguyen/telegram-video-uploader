@@ -3,6 +3,7 @@ Module for settings tab UI
 """
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+import traceback
 
 
 def create_settings_tab(app, parent):
@@ -517,13 +518,22 @@ def browse_folder(app):
 
 def edit_telegram_config(app):
     """Open modal dialog to edit Telegram Bot configuration"""
-    from ui.edit_config_modal import TelegramEditModal
-    TelegramEditModal(app)
+    try:
+        from ui.telegram.telegram_ui import ConfigModal
+        config_modal = ConfigModal(None, app=app, force_manual_ui=True)
+        config_modal.exec_()
+    except Exception as e:
+        logger.error(f"Không thể hiển thị cửa sổ cấu hình Telegram: {str(e)}")
+        logger.error(traceback.format_exc())
 
 def edit_telethon_config(app):
     """Open modal dialog to edit Telethon API configuration"""
-    from ui.edit_config_modal import TelethonEditModal
-    TelethonEditModal(app)
+    from ui.telegram.telegram_ui_otp_modal import OTPModal
+    api_id = app.config.get('TELETHON', 'api_id', fallback='')
+    api_hash = app.config.get('TELETHON', 'api_hash', fallback='')
+    phone = app.config.get('TELETHON', 'phone', fallback='')
+    otp_modal = OTPModal(None, api_id=api_id, api_hash=api_hash, phone=phone)
+    otp_modal.exec_()
 
 def save_telethon_checkbox(app):
     """Lưu trạng thái checkbox khi thay đổi"""

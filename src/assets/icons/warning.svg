@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48px"
+     height="48px"
+     viewBox="0 0 48 48"
+     version="1.1"
+     xmlns="http://www.w3.org/2000/svg">
+    <title>Warning Icon</title>
+    <g id="warning-icon"
+       stroke="none"
+       stroke-width="1"
+       fill="none"
+       fill-rule="evenodd">
+        <path d="M24,4 L44,44 L4,44 L24,4 Z"
+              id="triangle"
+              fill="#FFC107" />
+        <line x1="24"
+              y1="20"
+              x2="24"
+              y2="32"
+              id="exclamation-line"
+              stroke="#000000"
+              stroke-width="4"
+              stroke-linecap="round" />
+        <circle id="exclamation-dot"
+                fill="#000000"
+                cx="24"
+                cy="38"
+                r="2" />
+    </g>
+</svg>
