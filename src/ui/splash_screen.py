@@ -1080,8 +1080,8 @@ class SplashScreen(QtWidgets.QWidget):
                     # Import và hiển thị ConfigModal
                     try:
                         from ui.telegram.telegram_ui import ConfigModal
-                        # Thêm force_manual_ui=True để đảm bảo sử dụng UI thủ công
-                        config_modal = ConfigModal(self, app=self.app, force_manual_ui=True)
+                        # Để hệ thống tự chọn UI từ file Qt Designer nếu có thể
+                        config_modal = ConfigModal(self, app=self.app, force_manual_ui=False)
                         
                         # Kết nối tín hiệu configSaved để biết khi nào cấu hình được lưu
                         config_modal.configSaved.connect(self.on_config_saved)
