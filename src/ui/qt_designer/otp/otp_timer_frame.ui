@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>OtpTimerFrame</class>
+ <widget class="QFrame" name="OtpTimerFrame">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>500</width>
+    <height>36</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>0</width>
+    <height>36</height>
+   </size>
+  </property>
+  <property name="maximumSize">
+   <size>
+    <width>16777215</width>
+    <height>36</height>
+   </size>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">background-color: #EBF8FF;
+border: 1px solid #BEE3F8;
+border-radius: 4px;</string>
+  </property>
+  <property name="frameShape">
+   <enum>QFrame::StyledPanel</enum>
+  </property>
+  <property name="frameShadow">
+   <enum>QFrame::Raised</enum>
+  </property>
+  <property name="class" stdset="0">
+   <string>statusInfo</string>
+  </property>
+  <layout class="QHBoxLayout" name="horizontalLayout">
+   <property name="leftMargin">
+    <number>10</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>10</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="timerIconLabel">
+     <property name="minimumSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>24</width>
+       <height>24</height>
+      </size>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">background-color: #3498DB;
+color: white;
+border-radius: 12px;
+font-size: 14px;
+font-weight: bold;</string>
+     </property>
+     <property name="text">
+      <string>⏱</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="timerLabel">
+     <property name="styleSheet">
+      <string notr="true">background-color: transparent;
+color: #3498DB;
+font-weight: bold;
+font-size: 16px;</string>
+     </property>
+     <property name="text">
+      <string>Mã có hiệu lực trong:</string>
+     </property>
+     <property name="class" stdset="0">
+      <string>timerLabel</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="horizontalSpacer">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>40</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item>
+    <widget class="QLabel" name="timeLeftLabel">
+     <property name="styleSheet">
+      <string notr="true">background-color: transparent;
+color: #3498DB;
+font-weight: bold;
+font-size: 16px;</string>
+     </property>
+     <property name="text">
+      <string>04:31</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+     </property>
+     <property name="class" stdset="0">
+      <string>timerLabel</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

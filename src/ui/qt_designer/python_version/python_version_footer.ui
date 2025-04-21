@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PythonVersionFooter</class>
+ <widget class="QWidget" name="PythonVersionFooter">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>700</width>
+    <height>50</height>
+   </rect>
+  </property>
+  <layout class="QHBoxLayout" name="bottomButtonsLayout">
+   <property name="leftMargin">
+    <number>40</number>
+   </property>
+   <property name="topMargin">
+    <number>5</number>
+   </property>
+   <property name="rightMargin">
+    <number>40</number>
+   </property>
+   <property name="bottomMargin">
+    <number>5</number>
+   </property>
+   <item>
+    <spacer name="horizontalSpacer">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>40</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item>
+    <widget class="QPushButton" name="exitButton">
+     <property name="minimumSize">
+      <size>
+       <width>150</width>
+       <height>35</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>150</width>
+       <height>35</height>
+      </size>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">QPushButton {
+    background-color: #FFFFFF;
+    color: #64748B;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px 15px;
+    font-size: 13px;
+}
+
+QPushButton:hover {
+    background-color: #F1F5F9;
+}</string>
+     </property>
+     <property name="text">
+      <string>Thoát</string>
+     </property>
+     <property name="class" stdset="0">
+      <string>outlineButton</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="continueButton">
+     <property name="minimumSize">
+      <size>
+       <width>150</width>
+       <height>35</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>150</width>
+       <height>35</height>
+      </size>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">QPushButton {
+    background-color: #F8F9FA;
+    color: #3498DB;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px 15px;
+    font-size: 13px;
+}
+
+QPushButton:hover {
+    background-color: #EBF5FB;
+}</string>
+     </property>
+     <property name="text">
+      <string>Tiếp tục</string>
+     </property>
+     <property name="class" stdset="0">
+      <string>linkButton</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

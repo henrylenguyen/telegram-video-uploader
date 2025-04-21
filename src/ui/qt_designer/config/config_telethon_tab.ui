@@ -1,0 +1,453 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ConfigTelethonTab</class>
+ <widget class="QWidget" name="ConfigTelethonTab">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>650</width>
+    <height>430</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>15</number>
+   </property>
+   <property name="leftMargin">
+    <number>20</number>
+   </property>
+   <property name="topMargin">
+    <number>15</number>
+   </property>
+   <property name="rightMargin">
+    <number>20</number>
+   </property>
+   <property name="bottomMargin">
+    <number>15</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="telethonInfoLabel">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>60</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>60</height>
+      </size>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">background-color: #EBF5FB;
+color: #3498DB;
+border: 1px solid #BFDBFE;
+border-radius: 6px;
+padding: 8px;
+font-size: 13px;</string>
+     </property>
+     <property name="text">
+      <string>Telethon API cho phép tải lên các file lớn hơn 50MB. Để sử dụng tính năng này,
+vui lòng đăng ký và nhập API ID, API Hash từ my.telegram.org.</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="apiIdContainer" native="true">
+     <layout class="QVBoxLayout" name="apiIdLayout">
+      <property name="spacing">
+       <number>5</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <layout class="QHBoxLayout" name="apiIdHeaderLayout">
+        <item>
+         <widget class="QLabel" name="apiIdLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 14px; font-weight: bold; color: #1E293B;</string>
+          </property>
+          <property name="text">
+           <string>API ID</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="apiIdHintLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 13px; color: #64748B;</string>
+          </property>
+          <property name="text">
+           <string>(Có định dạng: 2xxxxxx)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="apiIdHeaderSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="apiIdLineEdit">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>45</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>45</height>
+         </size>
+        </property>
+        <property name="placeholderText">
+         <string>Nhập API ID (ví dụ: 2xxxxxx)</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="apiHashContainer" native="true">
+     <layout class="QVBoxLayout" name="apiHashLayout">
+      <property name="spacing">
+       <number>5</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <layout class="QHBoxLayout" name="apiHashHeaderLayout">
+        <item>
+         <widget class="QLabel" name="apiHashLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 14px; font-weight: bold; color: #1E293B;</string>
+          </property>
+          <property name="text">
+           <string>API Hash</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="apiHashHintLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 13px; color: #64748B;</string>
+          </property>
+          <property name="text">
+           <string>(Có định dạng: 7xxxxe)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="apiHashHeaderSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="apiHashInputLayout">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLineEdit" name="apiHashLineEdit">
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">border-top-right-radius: 0px;
+border-bottom-right-radius: 0px;</string>
+          </property>
+          <property name="echoMode">
+           <enum>QLineEdit::Password</enum>
+          </property>
+          <property name="placeholderText">
+           <string>Nhập API Hash (ví dụ: 7xxxxe)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="togglePasswordButton">
+          <property name="minimumSize">
+           <size>
+            <width>40</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>40</width>
+            <height>45</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">background-color: #F1F5F9;
+border: 1px solid #E4E7EB;
+border-left: none;
+border-top-left-radius: 0px;
+border-bottom-left-radius: 0px;
+border-top-right-radius: 6px;
+border-bottom-right-radius: 6px;</string>
+          </property>
+          <property name="text">
+           <string>👁️</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="phoneContainer" native="true">
+     <layout class="QVBoxLayout" name="phoneLayout">
+      <property name="spacing">
+       <number>5</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <layout class="QHBoxLayout" name="phoneHeaderLayout">
+        <item>
+         <widget class="QLabel" name="phoneLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 14px; font-weight: bold; color: #1E293B;</string>
+          </property>
+          <property name="text">
+           <string>Số điện thoại</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="phoneHintLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 13px; color: #64748B;</string>
+          </property>
+          <property name="text">
+           <string>(Có định dạng: +84123456789)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="phoneHeaderSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="phoneLineEdit">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>45</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>45</height>
+         </size>
+        </property>
+        <property name="placeholderText">
+         <string>+84123456789</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="separator">
+     <property name="frameShape">
+      <enum>QFrame::HLine</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="class" stdset="0">
+      <string>separator</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="otpStatusLayout">
+     <property name="spacing">
+      <number>10</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="otpStatusLabel">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>36</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>16777215</width>
+         <height>36</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">background-color: #FFF5F5;
+color: #E53E3E;
+border: 1px solid #FED7D7;
+border-radius: 6px;
+padding: 8px;
+font-size: 13px;</string>
+       </property>
+       <property name="text">
+        <string>⚠ Chưa xác thực! Cần xác thực OTP</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="getOtpButton">
+       <property name="minimumSize">
+        <size>
+         <width>150</width>
+         <height>36</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>150</width>
+         <height>36</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">QPushButton {
+    background-color: #3498DB;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #2980B9;
+}</string>
+       </property>
+       <property name="text">
+        <string>Lấy mã xác thực</string>
+       </property>
+       <property name="class" stdset="0">
+        <string>primaryButton</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="apiHelpLabel">
+     <property name="styleSheet">
+      <string notr="true">color: #3498DB; font-size: 13px; text-decoration: underline;</string>
+     </property>
+     <property name="text">
+      <string>&lt;a href="#" style="color: #3498DB;"&gt;Làm thế nào để lấy API ID và Hash?&lt;/a&gt;</string>
+     </property>
+     <property name="textFormat">
+      <enum>Qt::RichText</enum>
+     </property>
+     <property name="openExternalLinks">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ConfigBotTab</class>
+ <widget class="QWidget" name="ConfigBotTab">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>650</width>
+    <height>430</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>15</number>
+   </property>
+   <property name="leftMargin">
+    <number>20</number>
+   </property>
+   <property name="topMargin">
+    <number>20</number>
+   </property>
+   <property name="rightMargin">
+    <number>20</number>
+   </property>
+   <property name="bottomMargin">
+    <number>15</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="botInfoLabel">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>60</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>60</height>
+      </size>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">background-color: #EBF5FB;
+color: #3498DB;
+border: 1px solid #BFDBFE;
+border-radius: 6px;
+padding: 8px;
+font-size: 13px;</string>
+     </property>
+     <property name="text">
+      <string>Để sử dụng ứng dụng, bạn cần cấu hình Telegram Bot API bằng cách tạo bot với @BotFather
+và cung cấp token cùng với chat ID của nhóm nơi bạn muốn tải video lên.</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="tokenContainer" native="true">
+     <layout class="QVBoxLayout" name="tokenLayout">
+      <property name="spacing">
+       <number>5</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <layout class="QHBoxLayout" name="tokenHeaderLayout">
+        <item>
+         <widget class="QLabel" name="tokenLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 14px; font-weight: bold; color: #1E293B;</string>
+          </property>
+          <property name="text">
+           <string>Token Telegram</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="tokenHintLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 13px; color: #64748B;</string>
+          </property>
+          <property name="text">
+           <string>(Tìm trong @BotFather)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="tokenHeaderSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="tokenLineEdit">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>45</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>45</height>
+         </size>
+        </property>
+        <property name="placeholderText">
+         <string>110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="chatIdContainer" native="true">
+     <layout class="QVBoxLayout" name="chatIdLayout">
+      <property name="spacing">
+       <number>5</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <layout class="QHBoxLayout" name="chatIdHeaderLayout">
+        <item>
+         <widget class="QLabel" name="chatIdLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 14px; font-weight: bold; color: #1E293B;</string>
+          </property>
+          <property name="text">
+           <string>Chat ID</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="chatIdHintLabel">
+          <property name="styleSheet">
+           <string notr="true">font-size: 13px; color: #64748B;</string>
+          </property>
+          <property name="text">
+           <string>(Có định dạng: -100xxxxxxxxx)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="chatIdHeaderSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="chatIdLineEdit">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>45</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>45</height>
+         </size>
+        </property>
+        <property name="placeholderText">
+         <string>-1001234567890</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="separator">
+     <property name="frameShape">
+      <enum>QFrame::HLine</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Sunken</enum>
+     </property>
+     <property name="class" stdset="0">
+      <string>separator</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="connectionStatusLabel">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>40</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>40</height>
+      </size>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">background-color: #F0FFF4;
+color: #2ECC71;
+border: 1px solid #C6F6D5;
+border-radius: 6px;
+padding: 8px;
+font-size: 13px;</string>
+     </property>
+     <property name="text">
+      <string>✓ Đã kết nối thành công! Kết nối tới bot @myTelegramBot</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="connectionCheckLayout">
+     <property name="spacing">
+      <number>15</number>
+     </property>
+     <item>
+      <widget class="QPushButton" name="btnCheckConnection">
+       <property name="minimumSize">
+        <size>
+         <width>150</width>
+         <height>36</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>16777215</width>
+         <height>36</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">QPushButton {
+    background-color: #EBF5FB;
+    color: #3498DB;
+    border: 1px solid #BFDBFE;
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 14px;
+}
+
+QPushButton:hover {
+    background-color: #D1E6FA;
+}</string>
+       </property>
+       <property name="text">
+        <string>Kiểm tra kết nối</string>
+       </property>
+       <property name="class" stdset="0">
+        <string>secondaryButton</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
