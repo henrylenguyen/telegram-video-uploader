@@ -260,6 +260,9 @@ color: #1E293B;</string>
           </item>
           <item>
            <widget class="QLabel" name="promptLabel">
+            <property name="cursor">
+             <cursorShape>OpenHandCursor</cursorShape>
+            </property>
             <property name="styleSheet">
              <string notr="true">font-size: 14px;
 color: #64748B;</string>
@@ -412,6 +415,9 @@ border: none;</string>
                <height>40</height>
               </size>
              </property>
+             <property name="cursor">
+              <cursorShape>OpenHandCursor</cursorShape>
+             </property>
              <property name="styleSheet">
               <string notr="true">QPushButton {
     background-color: #3498DB;
@@ -442,6 +448,9 @@ QPushButton:hover {
                <width>0</width>
                <height>40</height>
               </size>
+             </property>
+             <property name="cursor">
+              <cursorShape>OpenHandCursor</cursorShape>
              </property>
              <property name="styleSheet">
               <string notr="true">QPushButton {
@@ -503,6 +512,9 @@ QPushButton:hover {
             <height>35</height>
            </size>
           </property>
+          <property name="cursor">
+           <cursorShape>OpenHandCursor</cursorShape>
+          </property>
           <property name="styleSheet">
            <string notr="true">QPushButton {
     background-color: #FFFFFF;
@@ -538,6 +550,9 @@ QPushButton:hover {
             <width>150</width>
             <height>35</height>
            </size>
+          </property>
+          <property name="cursor">
+           <cursorShape>OpenHandCursor</cursorShape>
           </property>
           <property name="styleSheet">
            <string notr="true">QPushButton {
