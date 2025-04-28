@@ -7,6 +7,11 @@ from .video_analyzer import VideoAnalyzer
 from .auto_uploader import AutoUploader, FileWatcher, BulkUploader
 from .pagination_utils import PaginationManager
 
+# Import các module mới
+from .disk_space_checker import DiskSpaceChecker
+from .update_checker import UpdateChecker
+from .performance_optimizer import PerformanceOptimizer
+
 try:
     from .video_splitter import VideoSplitter
 except ImportError:
@@ -17,5 +22,6 @@ try:
 except ImportError:
     pass  # Bỏ qua nếu không có module telethon_uploader
 
-__all__ = ['TelegramAPI', 'VideoAnalyzer', 'AutoUploader', 'FileWatcher', 
-           'BulkUploader', 'VideoSplitter', 'TelethonUploader', 'PaginationManager']
+__all__ = ['TelegramAPI', 'VideoAnalyzer', 'AutoUploader', 'FileWatcher',
+           'BulkUploader', 'VideoSplitter', 'TelethonUploader', 'PaginationManager',
+           'DiskSpaceChecker', 'UpdateChecker', 'PerformanceOptimizer']
