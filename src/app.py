@@ -15,8 +15,8 @@ import platform
 python_version = platform.python_version_tuple()
 python_version_float = float(f"{python_version[0]}.{python_version[1]}")
 
-# Import PyQt5
-from PyQt5 import QtWidgets, QtCore
+# Đã cập nhật: Import PyQt6 thay vì PyQt5
+from PyQt6 import QtWidgets, QtCore
 
 # Configure logging
 logging.basicConfig(
@@ -43,6 +43,9 @@ except Exception as e:
     logger.error(f"Lỗi khi thiết lập SSL: {str(e)}")
     logger.error(traceback.format_exc())
 
+# Import FFmpeg Manager
+from utils.ffmpeg_manager import FFmpegManager
+
 # Import UI modules
 from ui.splash_screen import show_splash_screen, SplashScreen
 from ui.main_tab.main_ui import MainUI
@@ -54,7 +57,11 @@ from utils.telegram.telegram_connector import TelegramConnector
 # Import utilities
 from utils.video_analyzer import VideoAnalyzer
 from utils.upload_history import UploadHistory
-from utils.ffmpeg_manager import FFmpegManager
+
+# Import các module mới
+from utils.disk_space_checker import DiskSpaceChecker
+from utils.update_checker import UpdateChecker
+from utils.performance_optimizer import PerformanceOptimizer
 
 class TelegramUploaderApp:
     """
@@ -72,6 +79,9 @@ class TelegramUploaderApp:
         # Khởi tạo ứng dụng Qt trước khi tiếp tục
         self.app = QtWidgets.QApplication(sys.argv)
         
+        # Khởi tạo FFmpeg Manager
+        self.ffmpeg_manager = FFmpegManager()
+        
         # Set up components
         self._initialize_components()
     
@@ -82,9 +92,6 @@ class TelegramUploaderApp:
         # Initialize configuration
         self.config_manager = ConfigManager()
         self.config = self.config_manager.load_config()
-        
-        # Initialize FFmpeg manager
-        self.ffmpeg_manager = FFmpegManager()
         
         # Initialize video analyzer
         self.video_analyzer = VideoAnalyzer()
@@ -99,7 +106,19 @@ class TelegramUploaderApp:
         # Initialize task queue
         self.task_queue = Queue()
         
-        # Initialize Telegram connection
+        # Khởi tạo các module tiện ích mới
+        self.disk_checker = DiskSpaceChecker()
+        self.update_checker = UpdateChecker()
+        self.performance_optimizer = PerformanceOptimizer()
+        
+        # Initialize Telegram connection - chỉ khởi tạo sau splash screen
+        self.telegram_connector = None
+        self.telegram_api = None
+        self.telethon_uploader = None
+    
+    def _setup_telegram_connection(self):
+        """Thiết lập kết nối Telegram sau khi splash screen hoàn tất"""
+        # Khởi tạo Telegram Connector
         self.telegram_connector = TelegramConnector(self)
         self.telegram_api = self.telegram_connector.telegram_api
         self.telethon_uploader = self.telegram_connector.telethon_uploader
@@ -156,11 +175,11 @@ class TelegramUploaderApp:
                 self.main_window,
                 "Xác nhận",
                 "Đang tải video lên. Bạn có chắc muốn thoát?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                QtWidgets.QMessageBox.No
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No
             )
             
-            if reply == QtWidgets.QMessageBox.No:
+            if reply == QtWidgets.QMessageBox.StandardButton.No:
                 event.ignore()
                 return
         
@@ -170,11 +189,11 @@ class TelegramUploaderApp:
                 self.main_window,
                 "Xác thực Telethon",
                 "Bạn có muốn xóa xác thực Telethon API hiện tại không?\nNếu chọn 'Có', lần sau bạn sẽ cần xác thực lại mã OTP.",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                QtWidgets.QMessageBox.No
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No
             )
             
-            if reply == QtWidgets.QMessageBox.Yes:
+            if reply == QtWidgets.QMessageBox.StandardButton.Yes:
                 # Xóa xác thực
                 self.config['TELETHON']['otp_verified'] = 'false'
                 # Lưu cấu hình
@@ -185,10 +204,10 @@ class TelegramUploaderApp:
         self.config_manager.save_config(self.config)
         
         # Disconnect APIs
-        if hasattr(self, 'telegram_api'):
+        if hasattr(self, 'telegram_api') and self.telegram_api:
             self.telegram_api.disconnect()
         
-        if hasattr(self, 'telethon_uploader'):
+        if hasattr(self, 'telethon_uploader') and self.telethon_uploader:
             self.telethon_uploader.disconnect()
         
         # Accept close event
@@ -205,8 +224,6 @@ class TelegramUploaderApp:
         Chạy ứng dụng và hiển thị giao diện người dùng
         """
         try:
-            from ui.splash_screen import show_splash_screen
-            
             # Hiển thị splash screen
             self.splash_screen = show_splash_screen(self.app, self.ffmpeg_manager)
             
@@ -214,25 +231,24 @@ class TelegramUploaderApp:
             self.splash_screen.finished.connect(self.on_splash_screen_finished)
             
             # Kết nối tín hiệu canceled từ splash screen để đóng ứng dụng
-            self.splash_screen.canceled.connect(self.app.quit)
+            self.splash_screen.canceled.connect(self._on_splash_screen_canceled)
             
             # QUAN TRỌNG: Không hiển thị main_window ở đây, sẽ hiển thị trong hàm on_splash_screen_finished
             # khi splash screen đã thực sự hoàn thành
             
             # Chạy vòng lặp sự kiện Qt
-            sys.exit(self.app.exec_())
+            return self.app.exec()
                 
         except Exception as e:
             logging.error(f"Lỗi khi khởi chạy ứng dụng: {str(e)}")
             logging.error(traceback.format_exc())
             
             # Hiển thị dialog lỗi với Qt
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.critical(None, "Lỗi khởi động", 
+            QtWidgets.QMessageBox.critical(None, "Lỗi khởi động", 
                                 f"Không thể khởi động ứng dụng: {str(e)}\n\n"
                                 f"Chi tiết: {traceback.format_exc()}")
             
-            sys.exit(1)
+            return 1
             
     def setup_ui(self):
         """Set up application UI - only create the main window, don't show it yet"""
@@ -257,6 +273,10 @@ class TelegramUploaderApp:
             # Lưu trạng thái cấu hình Telegram
             self.telegram_configured = telegram_configured
             
+            # Thiết lập kết nối Telegram sau khi splash screen hoàn tất
+            if telegram_configured:
+                self._setup_telegram_connection()
+            
             # Khởi tạo cửa sổ chính nếu chưa có
             if not hasattr(self, 'main_window') or self.main_window is None:
                 self.setup_ui()
@@ -280,8 +300,7 @@ class TelegramUploaderApp:
             
             # Đảm bảo cửa sổ chính được hiển thị
             # Xử lý sự kiện và cập nhật giao diện
-            from PyQt5.QtWidgets import QApplication
-            QApplication.processEvents()
+            QtWidgets.QApplication.processEvents()
             
             # Kiểm tra nếu cần hiển thị dialog cấu hình Telegram
             if not self.telegram_configured:

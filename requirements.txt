@@ -23,9 +23,18 @@ configparser>=5.3.0
 imageio>=2.9.0
 numpy>=1.19.0
 
-PyQt5-Qt5>=5.15.0
-PyQt5-sip>=12.8.0
-PyQt5>=5.15.0
+# Chuyển từ PyQt5 sang PyQt6
+PyQt6>=6.4.0
+PyQt6-Qt6>=6.4.0
+PyQt6-sip>=13.4.0
 
 requests>=2.25.0
 psutil>=5.8.0 
+
+
+# Thư viện kiểm thử
+pytest>=7.3.1
+pytest-qt>=4.2.0
+pytest-cov>=4.1.0
+mock>=5.0.0
+

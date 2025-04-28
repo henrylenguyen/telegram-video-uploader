@@ -1,8 +1,8 @@
 """
 Module tạo và hiển thị màn hình chào khi khởi động ứng dụng.
 """
-from PyQt5 import QtWidgets, uic, QtGui, QtCore
-from PyQt5.QtCore import Qt
+from PyQt6 import QtWidgets, QtGui, QtCore
+from PyQt6.QtCore import Qt, pyqtSignal
 import os
 import sys
 import logging
@@ -17,8 +17,7 @@ import ctypes
 import webbrowser
 import urllib.request
 
-from .python_version_dialog import PythonVersionDialog
-from ui.telegram.telegram_ui import ConfigModal
+from .telegram.telegram_ui import ConfigModal
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +27,9 @@ class SplashScreen(QtWidgets.QWidget):
     """
     
     # Tín hiệu hoàn thành splash screen và trạng thái cấu hình
-    finished = QtCore.pyqtSignal(bool)
+    finished = pyqtSignal(bool)
     # Tín hiệu khi người dùng hủy
-    canceled = QtCore.pyqtSignal()
+    canceled = pyqtSignal()
     
     def __init__(self, app=None):
         super().__init__()
@@ -44,7 +43,7 @@ class SplashScreen(QtWidgets.QWidget):
         self.indicator_labels = []
         self.status_labels = []
         
-        # Danh sách các bước setup - 10 bước (thêm "Kiểm tra kết nối Internet" vào đầu)
+        # Danh sách các bước setup - 10 bước
         self.setup_items = [
             "Kiểm tra kết nối Internet",
             "Kiểm tra cấu hình hệ thống",
@@ -70,20 +69,7 @@ class SplashScreen(QtWidgets.QWidget):
         self.has_emitted_finished = False
         
         # Nạp giao diện từ file UI
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        ui_file = os.path.join(current_dir, "qt_designer", "splash_screen.ui")
-        
-        # Nếu không tìm thấy file UI, sử dụng đường dẫn khác
-        if not os.path.exists(ui_file):
-            ui_file = os.path.join(current_dir, "..", "ui", "qt_designer", "splash_screen.ui")
-        
-        # Nếu vẫn không tìm thấy, tạo giao diện trực tiếp
-        if not os.path.exists(ui_file):
-            self.setup_ui_manually()
-        else:
-            uic.loadUi(ui_file, self)
-            # Tìm và lưu các thành phần indicator và label từ UI
-            self._collect_ui_components()
+        self.setup_ui_manually()
         
         # Căn giữa màn hình
         self.center_on_screen()
@@ -112,172 +98,8 @@ class SplashScreen(QtWidgets.QWidget):
         self.ffmpeg_status_timer = QtCore.QTimer(self)
         self.ffmpeg_status_timer.timeout.connect(self.update_ffmpeg_download_status)
     
-    def _collect_ui_components(self):
-        """Thu thập các thành phần từ file UI đã được nạp"""
-        # Tìm tất cả các label indicator
-        for i in range(1, 11):  # Tối đa 10 bước
-            indicator_name = f"indicator{i}"
-            label_name = f"label{i}"
-            
-            indicator = self.findChild(QtWidgets.QLabel, indicator_name)
-            label = self.findChild(QtWidgets.QLabel, label_name)
-            
-            if indicator and label:
-                # Điều chỉnh kích thước của indicator
-                indicator.setMinimumSize(32, 32)  # Tăng kích thước lên nữa
-                indicator.setMaximumSize(32, 32)  # Tăng kích thước lên nữa
-                
-                self.indicator_labels.append(indicator)
-                self.status_labels.append(label)
-            else:
-                # Không tìm thấy cặp indicator/label cho bước này
-                logger.debug(f"Không tìm thấy indicator/label cho bước {i}")
-                # Không break, tiếp tục kiểm tra các bước còn lại
-    
-    def add_network_info_label(self):
-        """Thêm label hiển thị thông tin tốc độ mạng"""
-        self.networkInfoLabel = QtWidgets.QLabel("", self)
-        self.networkInfoLabel.setStyleSheet("""
-            font-family: Arial, sans-serif;
-            font-size: 11px;
-            color: #7f8c8d;
-            background-color: transparent;
-        """)
-        
-        # Thêm vào layout
-        if hasattr(self, 'contentLayout'):
-            self.contentLayout.addWidget(self.networkInfoLabel, 0, QtCore.Qt.AlignHCenter)
-            self.networkInfoLabel.hide()  # Ẩn ban đầu
-    
-    def add_cancel_button(self):
-        """Thêm nút hủy vào màn hình chào"""
-        # Tạo nút Hủy
-        self.cancelButton = QtWidgets.QPushButton("Hủy", self)
-        self.cancelButton.setStyleSheet("""
-            QPushButton {
-                background-color: #f0f0f0;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 5px 15px;
-                color: #555;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
-            QPushButton:pressed {
-                background-color: #d0d0d0;
-            }
-        """)
-        self.cancelButton.setCursor(QtGui.QCursor(Qt.PointingHandCursor))
-        
-        # Thêm vào layout
-        if hasattr(self, 'contentLayout'):
-            # Tạo layout cho nút
-            buttonLayout = QtWidgets.QHBoxLayout()
-            buttonLayout.addStretch()
-            buttonLayout.addWidget(self.cancelButton)
-            
-            # Thêm vào layout chính
-            self.contentLayout.addLayout(buttonLayout)
-        
-        # Kết nối sự kiện
-        self.cancelButton.clicked.connect(self.on_cancel_clicked)
-    
-    def on_cancel_clicked(self):
-        """Xử lý khi người dùng nhấn nút Hủy"""
-        # Hiển thị hộp thoại xác nhận
-        reply = QtWidgets.QMessageBox.question(
-            self, 
-            "Xác nhận hủy",
-            "Bạn có chắc muốn hủy cài đặt và thoát ứng dụng?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No
-        )
-        
-        if reply == QtWidgets.QMessageBox.Yes:
-            # Dừng các timer
-            if hasattr(self, 'process_timer') and self.process_timer.isActive():
-                self.process_timer.stop()
-                
-            if hasattr(self, 'ffmpeg_status_timer') and self.ffmpeg_status_timer.isActive():
-                self.ffmpeg_status_timer.stop()
-            
-            # Phát tín hiệu hủy
-            self.canceled.emit()
-            
-            # Đóng splash screen
-            self.close()
-            
-            # Thoát ứng dụng
-            QtCore.QCoreApplication.quit()
-    
-    def update_ffmpeg_download_status(self):
-        """Cập nhật thông tin tải FFmpeg từ FFmpegManager"""
-        if self.ffmpeg_manager and self.ffmpeg_manager.is_downloading:
-            status_text = self.ffmpeg_manager.download_status
-            
-            # Cập nhật trạng thái
-            self.update_status(status_text)
-            
-            # Cập nhật tiến trình dựa trên phần trăm tải FFmpeg
-            self.update_progress(self.calculate_overall_progress())
-            
-            # Hiển thị thông tin tốc độ mạng trong networkInfoLabel
-            if hasattr(self, 'networkInfoLabel'):
-                # Hiển thị label nếu đang ẩn
-                if self.networkInfoLabel.isHidden():
-                    self.networkInfoLabel.show()
-                
-                # Cập nhật thông tin mạng
-                if hasattr(self.ffmpeg_manager, 'download_speed') and self.ffmpeg_manager.download_speed > 0:
-                    info = f"Tốc độ mạng: {self._format_speed(self.ffmpeg_manager.download_speed)}"
-                    if hasattr(self.ffmpeg_manager, 'estimated_time'):
-                        info += f" | Thời gian còn lại: {self.ffmpeg_manager.estimated_time}"
-                    
-                    self.networkInfoLabel.setText(info)
-                else:
-                    self.networkInfoLabel.setText("Đang phân tích tốc độ mạng...")
-        elif self.ffmpeg_manager and self.ffmpeg_manager.is_available and self.current_step == 3:
-            # FFmpeg đã tải xong và sẵn sàng
-            self.ffmpeg_status_timer.stop()
-            
-            # Ẩn nhãn thông tin mạng
-            if hasattr(self, 'networkInfoLabel'):
-                self.networkInfoLabel.hide()
-                
-            # Đánh dấu bước 3 là hoàn thành và chuyển sang bước tiếp theo
-            self.update_status("Đã tải và cài đặt FFmpeg thành công")
-            self.update_indicator(self.current_step, "success")
-            
-            # Đảm bảo chỉ tăng current_step nếu chưa phát tín hiệu finished
-            if not self.has_emitted_finished:
-                self.current_step += 1
-                self.update_progress(self.calculate_overall_progress())
-        else:
-            # Nếu không còn tải nữa, dừng timer
-            self.ffmpeg_status_timer.stop()
-            
-            # Ẩn nhãn thông tin mạng
-            if hasattr(self, 'networkInfoLabel'):
-                self.networkInfoLabel.hide()
-    
-    def _format_speed(self, speed_bytes):
-        """Định dạng tốc độ tải thành chuỗi dễ đọc"""
-        if speed_bytes < 1024:
-            return f"{speed_bytes:.1f} B/s"
-        elif speed_bytes < 1024 * 1024:
-            return f"{speed_bytes/1024:.1f} KB/s"
-        else:
-            return f"{speed_bytes/(1024*1024):.1f} MB/s"
-    
-    def center_on_screen(self):
-        """Đặt cửa sổ vào giữa màn hình"""
-        rect = QtWidgets.QApplication.desktop().availableGeometry()
-        self.move((rect.width() - self.width()) // 2, (rect.height() - self.height()) // 2)
-        
     def setup_ui_manually(self):
-        """Thiết lập UI theo cách thủ công nếu không tìm thấy file UI"""
+        """Thiết lập UI theo cách thủ công"""
         # Thiết lập kích thước
         self.setObjectName("SplashScreen")
         self.resize(850, 550)
@@ -333,7 +155,7 @@ class SplashScreen(QtWidgets.QWidget):
             QProgressBar {
               background-color: #e0e0e0;
               border: none;
-              height: 14px;  /* Tăng độ cao lên nữa */
+              height: 14px;
               border-radius: 7px;
               text-align: center;
             }
@@ -345,13 +167,13 @@ class SplashScreen(QtWidgets.QWidget):
             
             QLabel.statusItem {
               font-family: Arial, sans-serif;
-              font-size: 18px;  /* Tăng font size lên nữa */
+              font-size: 18px;
               color: #2c3e50;
             }
             
             QLabel.statusItemPending {
               font-family: Arial, sans-serif;
-              font-size: 18px;  /* Tăng font size lên nữa */
+              font-size: 18px;
               color: #7f8c8d;
             }
             
@@ -363,10 +185,10 @@ class SplashScreen(QtWidgets.QWidget):
               background-color: #f0f0f0;
               border: 1px solid #ccc;
               border-radius: 4px;
-              padding: 6px 18px;  /* Tăng kích thước nút */
+              padding: 6px 18px;
               color: #555;
               font-weight: bold;
-              font-size: 14px;  /* Tăng font size cho nút */
+              font-size: 14px;
             }
             QPushButton:hover {
               background-color: #e0e0e0;
@@ -378,64 +200,64 @@ class SplashScreen(QtWidgets.QWidget):
         
         # Tạo layout chính
         self.verticalLayout = QtWidgets.QVBoxLayout(self)
-        self.verticalLayout.setContentsMargins(40, 40, 40, 40)  # Tăng margins
-        self.verticalLayout.setSpacing(20)  # Tăng spacing
+        self.verticalLayout.setContentsMargins(40, 40, 40, 40)
+        self.verticalLayout.setSpacing(20)
         
         # Layout logo
         self.logoLayout = QtWidgets.QVBoxLayout()
-        self.logoLayout.setSpacing(20)  # Tăng spacing
+        self.logoLayout.setSpacing(20)
         
         # Logo
         self.logoLabel = QtWidgets.QLabel()
-        self.logoLabel.setMinimumSize(100, 100)  # Tăng kích thước logo
-        self.logoLabel.setMaximumSize(100, 100)  # Tăng kích thước logo
+        self.logoLabel.setMinimumSize(100, 100)
+        self.logoLabel.setMaximumSize(100, 100)
         self.logoLabel.setScaledContents(True)
-        self.logoLayout.addWidget(self.logoLabel, 0, QtCore.Qt.AlignHCenter)
+        self.logoLayout.addWidget(self.logoLabel, 0, Qt.AlignmentFlag.AlignHCenter)
         
         # Tiêu đề
         self.titleLabel = QtWidgets.QLabel("Telegram Video Uploader")
         self.titleLabel.setObjectName("titleLabel")
-        self.logoLayout.addWidget(self.titleLabel, 0, QtCore.Qt.AlignHCenter)
+        self.logoLayout.addWidget(self.titleLabel, 0, Qt.AlignmentFlag.AlignHCenter)
         
         self.verticalLayout.addLayout(self.logoLayout)
         
         # Layout nội dung
         self.contentLayout = QtWidgets.QVBoxLayout()
-        self.contentLayout.setSpacing(25)  # Tăng spacing
+        self.contentLayout.setSpacing(25)
         
         # Khung cuộn trạng thái
         self.statusScrollArea = QtWidgets.QScrollArea()
         self.statusScrollArea.setObjectName("statusScrollArea")
-        self.statusScrollArea.setMinimumHeight(250)  # Tăng chiều cao
-        self.statusScrollArea.setMaximumHeight(250)  # Tăng chiều cao
-        self.statusScrollArea.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.statusScrollArea.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.statusScrollArea.setMinimumHeight(250)
+        self.statusScrollArea.setMaximumHeight(250)
+        self.statusScrollArea.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self.statusScrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.statusScrollArea.setWidgetResizable(True)
         
         # Nội dung khung cuộn
         self.scrollAreaContents = QtWidgets.QWidget()
         self.scrollAreaContents.setObjectName("scrollAreaContents")
         self.verticalLayout_2 = QtWidgets.QVBoxLayout(self.scrollAreaContents)
-        self.verticalLayout_2.setSpacing(8)  # Tăng spacing giữa các mục
+        self.verticalLayout_2.setSpacing(8)
         
         # Tạo các mục trạng thái
         for i, item_text in enumerate(self.setup_items):
             # Frame cho mục
             status_item = QtWidgets.QFrame()
             status_item.setObjectName(f"statusItem{i+1}")
-            status_item.setFrameShape(QtWidgets.QFrame.StyledPanel)
-            status_item.setFrameShadow(QtWidgets.QFrame.Raised)
+            status_item.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+            status_item.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
             status_item.setProperty("class", "statusItemFrame")
             
             # Layout cho mục
             horizontalLayout = QtWidgets.QHBoxLayout(status_item)
-            horizontalLayout.setContentsMargins(15, 8, 15, 8)  # Tăng padding
+            horizontalLayout.setContentsMargins(15, 8, 15, 8)
             
             # Indicator
             indicator = QtWidgets.QLabel()
             indicator.setObjectName(f"indicator{i+1}")
-            indicator.setMinimumSize(32, 32)  # Tăng kích thước lên nữa
-            indicator.setMaximumSize(32, 32)  # Tăng kích thước lên nữa
+            indicator.setMinimumSize(32, 32)
+            indicator.setMaximumSize(32, 32)
             horizontalLayout.addWidget(indicator)
             self.indicator_labels.append(indicator)
             
@@ -464,19 +286,24 @@ class SplashScreen(QtWidgets.QWidget):
         # Nhãn trạng thái
         self.statusLabel = QtWidgets.QLabel("Đang chuẩn bị...")
         self.statusLabel.setObjectName("statusLabel")
-        self.contentLayout.addWidget(self.statusLabel, 0, QtCore.Qt.AlignHCenter)
+        self.contentLayout.addWidget(self.statusLabel, 0, Qt.AlignmentFlag.AlignHCenter)
         
         # Nút kiểm tra kết nối được đặt ở bên phải
         buttonLayout = QtWidgets.QHBoxLayout()
         buttonLayout.addStretch()
         
         self.cancelButton = QtWidgets.QPushButton("Hủy")
-        self.cancelButton.setCursor(QtGui.QCursor(Qt.PointingHandCursor))
+        self.cancelButton.setCursor(QtGui.QCursor(Qt.CursorShape.PointingHandCursor))
         buttonLayout.addWidget(self.cancelButton)
         
         self.contentLayout.addLayout(buttonLayout)
         self.verticalLayout.addLayout(self.contentLayout)
     
+    def center_on_screen(self):
+        """Đặt cửa sổ vào giữa màn hình"""
+        screen = QtWidgets.QApplication.primaryScreen().geometry()
+        self.move((screen.width() - self.width()) // 2, (screen.height() - self.height()) // 2)
+        
     def setup_logo(self):
         """Thiết lập logo ứng dụng"""
         logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo.png")
@@ -488,64 +315,83 @@ class SplashScreen(QtWidgets.QWidget):
         if os.path.exists(logo_path):
             pixmap = QtGui.QPixmap(logo_path)
             self.logoLabel.setPixmap(pixmap)
+    
+    def add_cancel_button(self):
+        """Thêm nút hủy vào màn hình chào"""
+        # Kết nối sự kiện cho nút Cancel đã được tạo trong setup_ui_manually
+        self.cancelButton.clicked.connect(self.on_cancel_clicked)
+    
+    def add_network_info_label(self):
+        """Thêm label hiển thị thông tin tốc độ mạng"""
+        self.networkInfoLabel = QtWidgets.QLabel("", self)
+        self.networkInfoLabel.setStyleSheet("""
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            color: #7f8c8d;
+            background-color: transparent;
+        """)
         
+        # Thêm vào layout
+        self.contentLayout.addWidget(self.networkInfoLabel, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.networkInfoLabel.hide()  # Ẩn ban đầu
+    
     def setup_indicators(self):
         """Thiết lập các indicator trạng thái"""
         # Tạo hình ảnh cho các trạng thái
-        size = QtCore.QSize(32, 32)  # Tăng kích thước lên nữa
+        size = QtCore.QSize(32, 32)
         
         # Pending circle (empty circle)
         pending_img = QtGui.QPixmap(size)
-        pending_img.fill(Qt.transparent)
+        pending_img.fill(Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(pending_img)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setPen(QtGui.QPen(QtGui.QColor("#CBD5E1"), 2))
-        painter.setBrush(Qt.transparent)
-        painter.drawEllipse(4, 4, 24, 24)  # Điều chỉnh vị trí và kích thước
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(4, 4, 24, 24)
         painter.end()
         
         # Active circle (blue circle)
         active_img = QtGui.QPixmap(size)
-        active_img.fill(Qt.transparent)
+        active_img.fill(Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(active_img)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QtGui.QColor("#3498DB"))
-        painter.drawEllipse(4, 4, 24, 24)  # Điều chỉnh vị trí và kích thước
+        painter.drawEllipse(4, 4, 24, 24)
         painter.end()
         
         # Success circle (green circle with checkmark)
         success_img = QtGui.QPixmap(size)
-        success_img.fill(Qt.transparent)
+        success_img.fill(Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(success_img)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
             
         # Draw green circle
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QtGui.QColor("#2ECC71"))
-        painter.drawEllipse(4, 4, 24, 24)  # Điều chỉnh vị trí và kích thước
+        painter.drawEllipse(4, 4, 24, 24)
                 
-        # Draw checkmark (dấu tích lớn hơn và rõ ràng hơn)
-        painter.setPen(QtGui.QPen(Qt.white, 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        painter.drawLine(10, 16, 14, 22)  # Điều chỉnh vị trí đường vẽ dấu tích
-        painter.drawLine(14, 22, 22, 10)  # Điều chỉnh vị trí đường vẽ dấu tích
+        # Draw checkmark
+        painter.setPen(QtGui.QPen(Qt.GlobalColor.white, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.drawLine(10, 16, 14, 22)
+        painter.drawLine(14, 22, 22, 10)
         painter.end()
         
         # Error circle (red circle with X)
         error_img = QtGui.QPixmap(size)
-        error_img.fill(Qt.transparent)
+        error_img.fill(Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(error_img)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         
         # Draw red circle
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QtGui.QColor("#E74C3C"))
-        painter.drawEllipse(4, 4, 24, 24)  # Điều chỉnh vị trí và kích thước
+        painter.drawEllipse(4, 4, 24, 24)
             
         # Draw X
-        painter.setPen(QtGui.QPen(Qt.white, 3, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        painter.drawLine(10, 10, 22, 22)  # Điều chỉnh vị trí đường vẽ
-        painter.drawLine(10, 22, 22, 10)  # Điều chỉnh vị trí đường vẽ
+        painter.setPen(QtGui.QPen(Qt.GlobalColor.white, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.drawLine(10, 10, 22, 22)
+        painter.drawLine(10, 22, 22, 10)
         painter.end()
             
         # Lưu lại các pixmap
@@ -556,35 +402,41 @@ class SplashScreen(QtWidgets.QWidget):
             "error": error_img
         }
         
-        # Kiểm tra xem indicator_labels đã được khởi tạo và có phần tử chưa
-        if not hasattr(self, 'indicator_labels') or len(self.indicator_labels) == 0:
-            logger.warning("Không tìm thấy indicator_labels, có thể do UI không được tạo đúng cách")
-            
-            # Tìm lại các indicators từ UI trong trường hợp chưa được thu thập
-            self._collect_ui_components()
-            
-            # Nếu vẫn không có, tạo indicator mặc định
-            if len(self.indicator_labels) == 0:
-                logger.warning("Tạo indicator mặc định vì không tìm thấy trong UI")
-                for i in range(len(self.setup_items)):
-                    indicator = QtWidgets.QLabel(self)
-                    indicator.setMinimumSize(32, 32)  # Tăng kích thước lên nữa
-                    indicator.setMaximumSize(32, 32)  # Tăng kích thước lên nữa
-                    self.indicator_labels.append(indicator)
-                    
-                    if hasattr(self, 'verticalLayout_2'):
-                        # Thêm vào layout nếu có
-                        layout = QtWidgets.QHBoxLayout()
-                        layout.addWidget(indicator)
-                        self.verticalLayout_2.addLayout(layout)
-        
         # Thiết lập trạng thái ban đầu
         for i, indicator in enumerate(self.indicator_labels):
             if i == 0:
                 indicator.setPixmap(self.indicator_images["active"])
             else:
                 indicator.setPixmap(self.indicator_images["pending"])
-
+    
+    def on_cancel_clicked(self):
+        """Xử lý khi người dùng nhấn nút Hủy"""
+        # Hiển thị hộp thoại xác nhận
+        reply = QtWidgets.QMessageBox.question(
+            self, 
+            "Xác nhận hủy",
+            "Bạn có chắc muốn hủy cài đặt và thoát ứng dụng?",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No
+        )
+        
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            # Dừng các timer
+            if hasattr(self, 'process_timer') and self.process_timer.isActive():
+                self.process_timer.stop()
+                
+            if hasattr(self, 'ffmpeg_status_timer') and self.ffmpeg_status_timer.isActive():
+                self.ffmpeg_status_timer.stop()
+            
+            # Phát tín hiệu hủy
+            self.canceled.emit()
+            
+            # Đóng splash screen
+            self.close()
+            
+            # Thoát ứng dụng
+            QtCore.QCoreApplication.quit()
+    
     def update_indicator(self, index, status):
         """
         Cập nhật trạng thái indicator
@@ -614,24 +466,24 @@ class SplashScreen(QtWidgets.QWidget):
             # Force style update
             self.status_labels[index].style().unpolish(self.status_labels[index])
             self.status_labels[index].style().polish(self.status_labels[index])
-            
+    
     def update_progress(self, value):
         """Cập nhật giá trị thanh tiến trình"""
         self.progressBar.setValue(value)
-        
+    
     def calculate_overall_progress(self):
         """Tính toán phần trăm tiến trình tổng thể dựa trên các bước đã hoàn thành"""
         if self.current_step >= self.total_steps:
             return 100
         
-        # Mỗi bước chiếm 11.11% (100/9)
+        # Mỗi bước chiếm 10% (100/10)
         percent_per_step = 100 / self.total_steps
         
         # Tính toán phần trăm của các bước đã hoàn thành
         completed_steps_percent = self.current_step * percent_per_step
         
-        # Nếu đang ở bước tải FFmpeg (bước thứ 3) và đang tải
-        if self.current_step == 3 and self.ffmpeg_manager and self.ffmpeg_manager.is_downloading:
+        # Nếu đang ở bước tải FFmpeg (bước thứ 5) và đang tải
+        if self.current_step == 4 and self.ffmpeg_manager and self.ffmpeg_manager.is_downloading:
             # Tính phần trăm của bước hiện tại dựa trên tiến trình tải FFmpeg
             ffmpeg_progress_percent = (self.ffmpeg_manager.download_progress / 100) * percent_per_step
             
@@ -640,7 +492,7 @@ class SplashScreen(QtWidgets.QWidget):
         else:
             # Nếu không phải đang tải FFmpeg, tiến trình là phần trăm của các bước đã hoàn thành
             return int(completed_steps_percent)
-
+    
     def update_status(self, text):
         """Cập nhật text trạng thái hiện tại"""
         self.statusLabel.setText(text)
@@ -652,31 +504,66 @@ class SplashScreen(QtWidgets.QWidget):
             font-weight: bold;
             color: #2c3e50;
         """)
-        
-    def next_step(self):
-        """Chuyển sang bước tiếp theo trong tiến trình cài đặt"""
-        if self.current_step < self.total_steps:
-            # Đánh dấu bước hiện tại là hoàn thành
+    
+    def update_ffmpeg_download_status(self):
+        """Cập nhật thông tin tải FFmpeg từ FFmpegManager"""
+        if self.ffmpeg_manager and self.ffmpeg_manager.is_downloading:
+            status_text = self.ffmpeg_manager.download_status
+            
+            # Cập nhật trạng thái
+            self.update_status(status_text)
+            
+            # Cập nhật tiến trình dựa trên phần trăm tải FFmpeg
+            self.update_progress(self.calculate_overall_progress())
+            
+            # Hiển thị thông tin tốc độ mạng trong networkInfoLabel
+            if hasattr(self, 'networkInfoLabel'):
+                # Hiển thị label nếu đang ẩn
+                if self.networkInfoLabel.isHidden():
+                    self.networkInfoLabel.show()
+                
+                # Cập nhật thông tin mạng
+                if hasattr(self.ffmpeg_manager, 'download_speed') and self.ffmpeg_manager.download_speed > 0:
+                    info = f"Tốc độ mạng: {self._format_speed(self.ffmpeg_manager.download_speed)}"
+                    if hasattr(self.ffmpeg_manager, 'estimated_time'):
+                        info += f" | Thời gian còn lại: {self.ffmpeg_manager.estimated_time}"
+                    
+                    self.networkInfoLabel.setText(info)
+                else:
+                    self.networkInfoLabel.setText("Đang phân tích tốc độ mạng...")
+        elif self.ffmpeg_manager and self.ffmpeg_manager.is_available and self.current_step == 4:
+            # FFmpeg đã tải xong và sẵn sàng
+            self.ffmpeg_status_timer.stop()
+            
+            # Ẩn nhãn thông tin mạng
+            if hasattr(self, 'networkInfoLabel'):
+                self.networkInfoLabel.hide()
+                
+            # Đánh dấu bước 4 là hoàn thành và chuyển sang bước tiếp theo
+            self.update_status("Đã tải và cài đặt FFmpeg thành công")
             self.update_indicator(self.current_step, "success")
             
-            # Tăng bước hiện tại
-            self.current_step += 1
+            # Đảm bảo chỉ tăng current_step nếu chưa phát tín hiệu finished
+            if not self.has_emitted_finished:
+                self.current_step += 1
+                self.update_progress(self.calculate_overall_progress())
+        else:
+            # Nếu không còn tải nữa, dừng timer
+            self.ffmpeg_status_timer.stop()
             
-            # Cập nhật tiến trình
-            progress_value = int((self.current_step / self.total_steps) * 100)
-            self.update_progress(progress_value)
-            
-            # Nếu còn bước tiếp theo, đánh dấu là active
-            if self.current_step < self.total_steps:
-                self.update_indicator(self.current_step, "active")
-                self.update_status(f"Đang {self.setup_items[self.current_step].lower()}...")
-            else:
-                # Đã hoàn thành tất cả các bước
-                self.update_status("Đã hoàn tất cài đặt!")
-                
-                # Phát tín hiệu hoàn thành sau 1 giây
-                QtCore.QTimer.singleShot(1000, lambda: self.finished.emit(self.telegram_configured))
-                
+            # Ẩn nhãn thông tin mạng
+            if hasattr(self, 'networkInfoLabel'):
+                self.networkInfoLabel.hide()
+    
+    def _format_speed(self, speed_bytes):
+        """Định dạng tốc độ tải thành chuỗi dễ đọc"""
+        if speed_bytes < 1024:
+            return f"{speed_bytes:.1f} B/s"
+        elif speed_bytes < 1024 * 1024:
+            return f"{speed_bytes/1024:.1f} KB/s"
+        else:
+            return f"{speed_bytes/(1024*1024):.1f} MB/s"
+    
     def mark_step_error(self, index, error_message=None):
         """Đánh dấu một bước bị lỗi"""
         if 0 <= index < self.total_steps:
@@ -684,7 +571,7 @@ class SplashScreen(QtWidgets.QWidget):
             
             if error_message:
                 self.update_status(error_message)
-                
+    
     def start_setup_process(self, ffmpeg_manager=None):
         """
         Bắt đầu quy trình cài đặt
@@ -703,7 +590,190 @@ class SplashScreen(QtWidgets.QWidget):
         self.process_timer = QtCore.QTimer(self)
         self.process_timer.timeout.connect(self.process_next_step)
         self.process_timer.start(1000)  # 1 giây mỗi bước
+    
+    def check_internet_connection(self):
+        """Kiểm tra kết nối Internet"""
+        try:
+            urllib.request.urlopen('http://www.google.com', timeout=3)
+            return True
+        except:
+            return False
+    
+    def retry_connection_auto(self):
+        """Tự động thử lại kết nối Internet không cần người dùng tương tác"""
+        # Cập nhật trạng thái
+        self.update_status("Đang thử kết nối lại...")
+        self.update_indicator(0, "active")
         
+        # Kiểm tra lại kết nối
+        if self.check_internet_connection():
+            self.update_status("Kết nối Internet OK")
+            self.update_indicator(0, "success")
+            self.current_step += 1
+            self.update_progress(self.calculate_overall_progress())
+            # Tiếp tục quy trình
+            QtCore.QTimer.singleShot(500, self.process_next_step)
+        else:
+            # Vẫn không kết nối được
+            self.mark_step_error(0, "Không thể kết nối Internet. Vui lòng kiểm tra kết nối của bạn.")
+            # Lặp lại việc thử kết nối sau một khoảng thời gian
+            QtCore.QTimer.singleShot(5000, self.retry_connection_auto)
+    
+    def check_pip_installation(self):
+        """Kiểm tra cài đặt pip và các thư viện cần thiết"""
+        pip_available = False
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "--version"], 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                check=False
+            )
+            pip_available = True
+        except:
+            self.update_status("Không tìm thấy pip. Đang cài đặt...")
+            # Cố gắng cài đặt pip
+            try:
+                import ensurepip
+                ensurepip.bootstrap()
+                self.update_status("Đã cài đặt pip thành công")
+                pip_available = True
+            except:
+                self.mark_step_error(1, "Không thể cài đặt pip. Vui lòng cài đặt thủ công.")
+                
+                reply = QtWidgets.QMessageBox.critical(
+                    self,
+                    "Không tìm thấy pip",
+                    "Ứng dụng yêu cầu pip để cài đặt các thư viện.\n\nVui lòng cài đặt pip và khởi động lại ứng dụng.",
+                    QtWidgets.QMessageBox.StandardButton.Ok
+                )
+                return False
+
+        # Kiểm tra các thư viện cần thiết
+        required_modules = ["PyQt6", "requests", "configparser", "psutil"]
+        missing_modules = []
+        
+        for module in required_modules:
+            try:
+                __import__(module)
+            except ImportError:
+                missing_modules.append(module)
+        
+        if missing_modules and pip_available:
+            # Hỏi người dùng có muốn cài đặt các thư viện thiếu không
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Thiếu thư viện",
+                f"Ứng dụng cần các thư viện sau: {', '.join(missing_modules)}.\n\nBạn có muốn cài đặt ngay không?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.Yes
+            )
+            
+            if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                # Cài đặt các thư viện thiếu
+                self.update_status(f"Đang cài đặt: {', '.join(missing_modules)}...")
+                
+                # Tìm đường dẫn đến requirements.txt
+                app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                req_path = os.path.join(app_root, "requirements.txt")
+                
+                if os.path.exists(req_path):
+                    # Cài đặt từ requirements.txt
+                    try:
+                        process = subprocess.Popen(
+                            [sys.executable, "-m", "pip", "install", "-r", req_path],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True
+                        )
+                        
+                        # Theo dõi tiến trình
+                        while process.poll() is None:
+                            output = process.stdout.readline().strip()
+                            if output:
+                                self.update_status(f"Đang cài đặt: {output}")
+                            QtCore.QCoreApplication.processEvents()
+                        
+                        if process.returncode == 0:
+                            self.update_status("Đã cài đặt các thư viện thành công!")
+                            # Tái nhập các module sau khi cài đặt
+                            for module in missing_modules:
+                                try:
+                                    __import__(module)
+                                except ImportError:
+                                    # Vẫn không thể nhập sau khi cài đặt
+                                    self.mark_step_error(1, f"Không thể tải module: {module}")
+                                    return False
+                        else:
+                            error = process.stderr.read()
+                            self.mark_step_error(1, f"Lỗi cài đặt: {error}")
+                            return False
+                    except Exception as e:
+                        self.mark_step_error(1, f"Lỗi khi cài đặt thư viện: {str(e)}")
+                        return False
+                else:
+                    # Cài đặt từng module một
+                    for module in missing_modules:
+                        try:
+                            self.update_status(f"Đang cài đặt {module}...")
+                            subprocess.check_call([sys.executable, "-m", "pip", "install", module])
+                        except subprocess.CalledProcessError:
+                            self.mark_step_error(1, f"Không thể cài đặt {module}")
+                            return False
+                    
+                    self.update_status("Đã cài đặt các thư viện thành công!")
+                    
+                    # Tái nhập các module sau khi cài đặt
+                    for module in missing_modules:
+                        try:
+                            __import__(module)
+                        except ImportError:
+                            # Vẫn không thể nhập sau khi cài đặt
+                            self.mark_step_error(1, f"Không thể tải module: {module}")
+                            return False
+            else:
+                # Người dùng không muốn cài đặt
+                self.mark_step_error(1, f"Thiếu thư viện: {', '.join(missing_modules)}")
+                return False
+        elif missing_modules:
+            # Không có pip nhưng thiếu module
+            self.mark_step_error(1, f"Thiếu thư viện: {', '.join(missing_modules)}")
+            return False
+            
+        return True
+    
+    def is_admin(self):
+        """Kiểm tra xem ứng dụng có đang chạy với quyền admin không."""
+        try:
+            if platform.system() == "Windows":
+                return ctypes.windll.shell32.IsUserAnAdmin() != 0
+            else:
+                return os.geteuid() == 0
+        except:
+            return False
+    
+    def setup_ssl_automatically(self):
+        """Thiết lập SSL tự động."""
+        if platform.system() != "Windows":
+            self.update_status("Không cần cài đặt SSL trên hệ điều hành này")
+            return True
+            
+        # Thử cài đặt tự động
+        try:
+            # Import module cấu hình SSL
+            from utils.ssl_helper import setup_ssl
+            
+            # Thiết lập SSL
+            if setup_ssl():
+                self.update_status("SSL đã được cấu hình thành công")
+                return True
+            else:
+                self.update_status("Không thể cấu hình SSL tự động, Telethon có thể hoạt động chậm hơn")
+                return False
+        except Exception as e:
+            self.update_status(f"Lỗi khi thiết lập SSL: {str(e)}")
+            return False
+    
     def process_next_step(self):
         """Xử lý bước tiếp theo trong tiến trình cài đặt"""
         # Nếu đã hoàn thành hoặc có lỗi, dừng timer
@@ -800,11 +870,11 @@ class SplashScreen(QtWidgets.QWidget):
                             "Vấn đề với SSL",
                             "Không thể cài đặt SSL tự động. Điều này có thể ảnh hưởng đến tốc độ tải lên.\n\n"
                             "Bạn có muốn tiếp tục không? Chọn No sẽ hiển thị hướng dẫn cài đặt thủ công.",
-                            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                            QtWidgets.QMessageBox.Yes
+                            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                            QtWidgets.QMessageBox.StandardButton.Yes
                         )
                         
-                        if reply == QtWidgets.QMessageBox.No:
+                        if reply == QtWidgets.QMessageBox.StandardButton.No:
                             # Hiển thị hướng dẫn
                             QtWidgets.QMessageBox.information(
                                 self,
@@ -814,7 +884,7 @@ class SplashScreen(QtWidgets.QWidget):
                                 "3. Sao chép các file libssl*.dll và libcrypto*.dll từ thư mục bin của OpenSSL\n"
                                 "4. Dán các file này vào thư mục Python của bạn\n"
                                 "5. Khởi động lại ứng dụng",
-                                QtWidgets.QMessageBox.Ok
+                                QtWidgets.QMessageBox.StandardButton.Ok
                             )
                 else:
                     self.update_status("Không cần cài đặt SSL trên hệ điều hành này")
@@ -827,7 +897,7 @@ class SplashScreen(QtWidgets.QWidget):
                 self.mark_step_error(2, f"Lỗi kiểm tra SSL: {str(e)}")
                 self.current_step += 1
                 self.update_progress(self.calculate_overall_progress())
-        
+                
         elif self.current_step == 3:  # Khởi tạo tài nguyên ứng dụng
             try:
                 # Lấy đường dẫn tới thư mục gốc của dự án (parent của src)
@@ -871,7 +941,7 @@ class SplashScreen(QtWidgets.QWidget):
                 config_path = os.path.join(app_root, "config.ini")
                 if not os.path.exists(config_path):
                     # Tạo file config mẫu nếu chưa có
-                    import configparser  # Đảm bảo configparser được định nghĩa
+                    import configparser
                     config = configparser.ConfigParser()
                     config['APP'] = {
                         'first_run': 'true',
@@ -882,6 +952,18 @@ class SplashScreen(QtWidgets.QWidget):
                         'cache_dir': cache_dir,
                         'temp_dir': temp_dir,
                         'logs_dir': logs_dir
+                    }
+                    config['TELEGRAM'] = {
+                        'bot_token': '',
+                        'chat_id': '',
+                        'notification_chat_id': ''
+                    }
+                    config['TELETHON'] = {
+                        'api_id': '',
+                        'api_hash': '',
+                        'phone': '',
+                        'use_telethon': 'false',
+                        'otp_verified': 'false'
                     }
                     
                     try:
@@ -967,7 +1049,7 @@ class SplashScreen(QtWidgets.QWidget):
                         if not self.ffmpeg_status_timer.isActive():
                             self.ffmpeg_status_timer.start(500)
                     else:
-                        self.handle_connection_error("Đang tải FFmpeg...")
+                        self.mark_step_error(4, "Không thể kết nối Internet để tải FFmpeg")
                         return
             else:
                 # Không có ffmpeg_manager, bỏ qua
@@ -977,6 +1059,7 @@ class SplashScreen(QtWidgets.QWidget):
                 self.update_progress(self.calculate_overall_progress())
 
         elif self.current_step == 5:  # Kiểm tra kết nối Telegram
+            # Bước này sẽ được triển khai chi tiết sau, bây giờ chỉ là bước nháp
             # Kiểm tra cấu hình Telegram
             self.telegram_configured = False  # Mặc định là chưa cấu hình
             # Biến theo dõi trạng thái cấu hình đã hoàn thành hay chưa
@@ -1030,34 +1113,29 @@ class SplashScreen(QtWidgets.QWidget):
                             if hasattr(self, 'process_timer') and self.process_timer.isActive():
                                 was_timer_active = True
                                 self.process_timer.stop()
+                            
+                            # Hiển thị modal OTP 
+                            from ui.telegram.telegram_ui_otp_modal import OTPModal
+                            otp_modal = OTPModal(self, api_id=api_id, api_hash=api_hash, phone=config.get('TELETHON', 'phone', fallback=''))
+                            
+                            # Hiển thị modal
+                            result = otp_modal.exec()
+                            
+                            # Kiểm tra kết quả xác thực
+                            if result == QtWidgets.QDialog.DialogCode.Accepted:
+                                # Cập nhật trạng thái xác thực OTP trong config
+                                if not config.has_section('TELETHON'):
+                                    config.add_section('TELETHON')
+                                config['TELETHON']['otp_verified'] = 'true'
                                 
-                            # Hiển thị modal OTP
-                            try:
-                                from ui.telegram.telegram_ui_otp_modal import OTPModal
-                                otp_modal = OTPModal(self, api_id=api_id, api_hash=api_hash, phone=config.get('TELETHON', 'phone', fallback=''))
-                                
-                                # Hiển thị modal
-                                result = otp_modal.exec_()
-                                
-                                # Kiểm tra kết quả xác thực
-                                if result == QtWidgets.QDialog.Accepted:
-                                    # Cập nhật trạng thái xác thực OTP trong config
-                                    if not config.has_section('TELETHON'):
-                                        config.add_section('TELETHON')
-                                    config['TELETHON']['otp_verified'] = 'true'
+                                # Lưu cấu hình
+                                with open(config_path, 'w', encoding='utf-8') as f:
+                                    config.write(f)
                                     
-                                    # Lưu cấu hình
-                                    with open(config_path, 'w', encoding='utf-8') as f:
-                                        config.write(f)
-                                        
-                                    self.update_status("Xác thực Telethon API thành công")
-                                else:
-                                    # Không xác thực được
-                                    self.update_status("Xác thực Telethon API không thành công")
-                            except Exception as e:
-                                logger.error(f"Lỗi hiển thị modal OTP: {str(e)}")
-                                logger.error(traceback.format_exc())
-                                self.update_status(f"Lỗi xác thực Telethon: {str(e)}")
+                                self.update_status("Xác thực Telethon API thành công")
+                            else:
+                                # Không xác thực được
+                                self.update_status("Xác thực Telethon API không thành công")
                                 
                             # Khởi động lại timer nếu đã dừng
                             if was_timer_active:
@@ -1078,45 +1156,38 @@ class SplashScreen(QtWidgets.QWidget):
                     QtCore.QCoreApplication.processEvents()  # Cập nhật UI ngay lập tức
                     
                     # Import và hiển thị ConfigModal
-                    try:
-                        from ui.telegram.telegram_ui import ConfigModal
-                        # Để hệ thống tự chọn UI từ file Qt Designer nếu có thể
-                        config_modal = ConfigModal(self, app=self.app, force_manual_ui=False)
+                    from ui.telegram.telegram_ui import ConfigModal
+                    # Để hệ thống tự chọn UI từ file Qt Designer nếu có thể
+                    config_modal = ConfigModal(self, app=self.app, force_manual_ui=False)
+                    
+                    # Kết nối tín hiệu configSaved để biết khi nào cấu hình được lưu
+                    config_modal.configSaved.connect(self.on_config_saved)
+                    
+                    # Hiển thị modal
+                    config_modal.exec()
+                    
+                    # Kiểm tra lại cấu hình sau khi dialog đóng
+                    if hasattr(config_modal, 'telegram_connected') and config_modal.telegram_connected:
+                        self.telegram_configured = True
+                        self.config_completed = True
+                        self.update_status("Cấu hình Telegram đã sẵn sàng")
+                    elif hasattr(config_modal, 'telethon_connected') and config_modal.telethon_connected:
+                        self.telegram_configured = True
+                        self.config_completed = True
+                        self.update_status("Cấu hình Telethon đã sẵn sàng")
                         
-                        # Kết nối tín hiệu configSaved để biết khi nào cấu hình được lưu
-                        config_modal.configSaved.connect(self.on_config_saved)
+                        # Thêm cờ xác thực OTP
+                        if not config.has_section('TELETHON'):
+                            config.add_section('TELETHON')
+                        config['TELETHON']['otp_verified'] = 'true'
                         
-                        # Hiển thị modal
-                        config_modal.exec_()
-                        
-                        # Kiểm tra lại cấu hình sau khi dialog đóng
-                        if hasattr(config_modal, 'telegram_connected') and config_modal.telegram_connected:
-                            self.telegram_configured = True
-                            self.config_completed = True
-                            self.update_status("Cấu hình Telegram đã sẵn sàng")
-                        elif hasattr(config_modal, 'telethon_connected') and config_modal.telethon_connected:
-                            self.telegram_configured = True
-                            self.config_completed = True
-                            self.update_status("Cấu hình Telethon đã sẵn sàng")
-                            
-                            # Thêm cờ xác thực OTP
-                            if not config.has_section('TELETHON'):
-                                config.add_section('TELETHON')
-                            config['TELETHON']['otp_verified'] = 'true'
-                            
-                            # Lưu cấu hình
-                            with open(config_path, 'w', encoding='utf-8') as f:
-                                config.write(f)
-                        else:
-                            # Không cấu hình được, nhưng vẫn tiếp tục
-                            self.update_status("Cấu hình Telegram bị hủy. Một số tính năng có thể không hoạt động.")
-                            # Đánh dấu là đã hoàn thành quá trình cấu hình (dù thành công hay không)
-                            self.config_completed = True
-                    except Exception as e:
-                        logger.error(f"Lỗi khi hiển thị dialog cấu hình: {str(e)}")
-                        logger.error(traceback.format_exc())
-                        self.update_status("Không thể hiển thị dialog cấu hình")
-                        # Đánh dấu là đã hoàn thành quá trình cấu hình (do lỗi)
+                        # Lưu cấu hình
+                        with open(config_path, 'w', encoding='utf-8') as f:
+                            config.write(f)
+                    else:
+                        # Không cấu hình được, nhưng vẫn tiếp tục
+                        self.update_status("Cấu hình Telegram bị hủy. Một số tính năng có thể không hoạt động.")
+                        # Đánh dấu là đã hoàn thành quá trình cấu hình (dù thành công hay không)
                         self.config_completed = True
                     
                     # Khởi động lại timer nếu đã dừng
@@ -1142,51 +1213,295 @@ class SplashScreen(QtWidgets.QWidget):
                 self.update_progress(self.calculate_overall_progress())
         
         elif self.current_step == 6:  # Tải các thành phần giao diện
-            # Giả lập việc tải thành phần giao diện
-            self.update_status("Đang tải giao diện chính...")
-            
-            # Thêm một thời gian chờ ngắn để mô phỏng việc tải
-            QtCore.QTimer.singleShot(1000, lambda: self.complete_ui_loading())
+            try:
+                # Cập nhật trạng thái
+                self.update_status("Đang nạp các thành phần giao diện...")
+                
+                # Tải các module UI cần thiết - giả lập bằng một độ trễ
+                imported_count = 0
+                total_components = 5  # Giả sử có 5 thành phần cần nạp
+                
+                # Các thành phần UI cần nạp
+                ui_components = [
+                    "Main Window Components", 
+                    "Dialog Components",
+                    "Tab Components",
+                    "Custom Controls",
+                    "Icon Resources"
+                ]
+                
+                # Nạp từng thành phần và cập nhật trạng thái
+                for component in ui_components:
+                    # Giả lập việc nạp thành phần
+                    self.update_status(f"Đang nạp {component}...")
+                    
+                    # Thêm độ trễ để người dùng thấy được tiến trình
+                    QtCore.QCoreApplication.processEvents()
+                    time.sleep(0.3)  # 300ms cho mỗi thành phần
+                    
+                    imported_count += 1
+                    
+                    # Cập nhật tiến trình
+                    component_progress = int((imported_count / total_components) * 10) + 60  # 60-70%
+                    self.update_progress(component_progress)
+                
+                # Nạp thành công
+                self.update_status("Đã nạp các thành phần giao diện")
+                self.update_indicator(self.current_step, "success")
+                self.current_step += 1
+                self.update_progress(self.calculate_overall_progress())
+            except Exception as e:
+                logger.error(f"Lỗi khi nạp thành phần giao diện: {str(e)}")
+                logger.error(traceback.format_exc())
+                self.mark_step_error(6, f"Lỗi khi nạp UI: {str(e)}")
+                
+                # Mặc dù có lỗi, vẫn tiếp tục bước tiếp theo
+                self.current_step += 1
+                self.update_progress(self.calculate_overall_progress())
         
         elif self.current_step == 7:  # Kiểm tra không gian lưu trữ
-            # Kiểm tra không gian lưu trữ
             try:
-                import psutil
+                from utils.disk_space_checker import DiskSpaceChecker
                 
-                # Lấy thông tin không gian đĩa
-                disk_usage = psutil.disk_usage('/')
-                free_space_gb = disk_usage.free / (1024 * 1024 * 1024)  # Chuyển thành GB
+                # Cập nhật trạng thái
+                self.update_status("Đang kiểm tra không gian lưu trữ...")
                 
-                self.update_status(f"Đang kiểm tra không gian lưu trữ: {free_space_gb:.2f} GB trống")
+                # Tạo đối tượng kiểm tra không gian
+                disk_checker = DiskSpaceChecker()
                 
-                # Kiểm tra nếu có đủ không gian (ít nhất 1GB)
-                if free_space_gb < 1:
-                    self.update_status(f"Cảnh báo: Ít không gian trống ({free_space_gb:.2f} GB)")
+                # Kiểm tra không gian
+                space_info = disk_checker.check_all()
+                
+                # Hiển thị thông tin không gian đĩa
+                disk_space = space_info['disk_space']
+                free_space_gb = disk_space['free'] / (1024 * 1024 * 1024)
+                
+                self.update_status(f"Không gian trống: {disk_space['formatted']['free']} ({disk_space['percent_free']}%)")
+                
+                # Kiểm tra nếu không gian không đủ
+                if not space_info['has_sufficient_space']:
+                    # Hiển thị cảnh báo không gian không đủ
+                    warning_msg = f"Cảnh báo: Không gian trống ({disk_space['formatted']['free']}) thấp hơn yêu cầu tối thiểu (1GB)"
+                    self.update_status(warning_msg)
                     
+                    # Hiển thị dialog cảnh báo
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Cảnh báo không gian lưu trữ",
+                        f"{warning_msg}\n\nỨng dụng có thể không hoạt động đúng cách.\nVui lòng giải phóng thêm không gian đĩa.",
+                        QtWidgets.QMessageBox.StandardButton.Ok
+                    )
+                
+                # Kiểm tra quyền ghi
+                if not space_info['write_permission']:
+                    # Hiển thị cảnh báo không có quyền ghi
+                    warning_msg = "Cảnh báo: Không có quyền ghi vào thư mục làm việc"
+                    self.update_status(warning_msg)
+                    
+                    # Hiển thị dialog cảnh báo
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Cảnh báo quyền ghi",
+                        f"{warning_msg}\n\nỨng dụng có thể không hoạt động đúng cách.\nVui lòng chạy ứng dụng với quyền admin hoặc kiểm tra lại quyền truy cập.",
+                        QtWidgets.QMessageBox.StandardButton.Ok
+                    )
+                
+                # Cập nhật UI với thông tin tốt đẹp
+                if space_info['has_sufficient_space'] and space_info['write_permission']:
+                    success_msg = f"Kiểm tra không gian lưu trữ OK: {disk_space['formatted']['free']} trống"
+                    self.update_status(success_msg)
+                
+                # Hoàn thành bước này
+                self.update_indicator(self.current_step, "success")
+                self.current_step += 1
+                self.update_progress(self.calculate_overall_progress())
+            except ImportError:
+                # Không tìm thấy module disk_space_checker
+                logger.warning("Module disk_space_checker không tìm thấy, bỏ qua kiểm tra không gian lưu trữ")
+                self.update_status("Bỏ qua kiểm tra không gian lưu trữ")
+                
+                # Đánh dấu bước này là thành công và chuyển sang bước tiếp theo
                 self.update_indicator(self.current_step, "success")
                 self.current_step += 1
                 self.update_progress(self.calculate_overall_progress())
             except Exception as e:
                 logger.error(f"Lỗi khi kiểm tra không gian lưu trữ: {str(e)}")
-                self.update_status("Bỏ qua kiểm tra không gian lưu trữ")
+                logger.error(traceback.format_exc())
+                
+                # Đánh dấu lỗi nhưng vẫn tiếp tục
+                self.mark_step_error(7, f"Lỗi kiểm tra không gian: {str(e)}")
+                self.current_step += 1
+                self.update_progress(self.calculate_overall_progress())
+        elif self.current_step == 8:  # Tìm kiếm cập nhật
+            try:
+                from utils.update_checker import UpdateChecker
+                
+                # Cập nhật trạng thái
+                self.update_status("Đang kiểm tra cập nhật...")
+                
+                # Tạo đối tượng kiểm tra cập nhật
+                update_checker = UpdateChecker()
+                
+                # Flag theo dõi trạng thái kiểm tra
+                self.update_check_complete = False
+                
+                # Hàm callback khi kiểm tra hoàn tất
+                def on_update_check_complete(result):
+                    try:
+                        # Cập nhật biến trạng thái
+                        self.update_check_complete = True
+                        
+                        # Kiểm tra kết quả
+                        if 'error' in result:
+                            # Hiển thị thông báo lỗi
+                            self.update_status(f"Lỗi kiểm tra cập nhật: {result['error']}")
+                            logger.error(f"Lỗi kiểm tra cập nhật: {result['error']}")
+                        else:
+                            # Kiểm tra xem có cập nhật không
+                            if result['has_update']:
+                                # Có cập nhật mới
+                                update_msg = f"Có phiên bản mới: {result['latest_version']} (hiện tại: {result['current_version']})"
+                                self.update_status(update_msg)
+                                
+                                # Hiển thị thông báo cập nhật
+                                reply = QtWidgets.QMessageBox.information(
+                                    self,
+                                    "Cập nhật mới",
+                                    f"{update_msg}\n\n{result.get('update_notes', '')}\n\nBạn có muốn tải cập nhật không?",
+                                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                                    QtWidgets.QMessageBox.StandardButton.No
+                                )
+                                
+                                if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                                    # Mở trang tải cập nhật
+                                    import webbrowser
+                                    webbrowser.open(result['update_url'])
+                                    
+                                    # Đánh dấu đã thông báo
+                                    update_checker.mark_as_notified()
+                            else:
+                                # Không có cập nhật
+                                self.update_status(f"Phần mềm đã cập nhật (phiên bản {result['current_version']})")
+                        
+                        # Hoàn thành bước này
+                        self.update_indicator(self.current_step, "success")
+                        self.current_step += 1
+                        self.update_progress(self.calculate_overall_progress())
+                        
+                        # Tiếp tục xử lý các bước tiếp theo
+                        self.process_next_step()
+                    except Exception as e:
+                        logger.error(f"Lỗi trong callback kiểm tra cập nhật: {str(e)}")
+                        logger.error(traceback.format_exc())
+                        
+                        # Đánh dấu bước này là thành công và chuyển sang bước tiếp theo
+                        self.update_indicator(self.current_step, "success")
+                        self.current_step += 1
+                        self.update_progress(self.calculate_overall_progress())
+                        
+                        # Tiếp tục xử lý các bước tiếp theo
+                        self.process_next_step()
+                
+                # Kiểm tra cập nhật bất đồng bộ
+                update_checker.check_for_updates_async(callback=on_update_check_complete)
+                
+                # QUAN TRỌNG: Dừng xử lý ở đây và đợi callback
+                return
+                
+            except ImportError:
+                # Không tìm thấy module update_checker
+                logger.warning("Module update_checker không tìm thấy, bỏ qua kiểm tra cập nhật")
+                self.update_status("Bỏ qua kiểm tra cập nhật")
+                
+                # Đánh dấu bước này là thành công và chuyển sang bước tiếp theo
                 self.update_indicator(self.current_step, "success")
                 self.current_step += 1
                 self.update_progress(self.calculate_overall_progress())
-        
-        elif self.current_step == 8:  # Tìm kiếm cập nhật
-            # Giả lập việc kiểm tra cập nhật
-            self.update_status("Đang kiểm tra cập nhật...")
-            
-            # Thêm thời gian chờ để mô phỏng kiểm tra
-            QtCore.QTimer.singleShot(1500, lambda: self.complete_update_check())
-        
+            except Exception as e:
+                logger.error(f"Lỗi khi kiểm tra cập nhật: {str(e)}")
+                logger.error(traceback.format_exc())
+                
+                # Đánh dấu lỗi nhưng vẫn tiếp tục
+                self.mark_step_error(8, f"Lỗi kiểm tra cập nhật: {str(e)}")
+                self.current_step += 1
+                self.update_progress(self.calculate_overall_progress())
         elif self.current_step == 9:  # Tối ưu hóa hiệu suất
-            # Giả lập việc tối ưu hóa
-            self.update_status("Đang tối ưu hóa hiệu suất...")
-            
-            # Thêm thời gian chờ để mô phỏng tối ưu hóa
-            QtCore.QTimer.singleShot(1000, lambda: self.complete_optimization())
-
+            try:
+                from utils.performance_optimizer import PerformanceOptimizer
+                
+                # Cập nhật trạng thái
+                self.update_status("Đang tối ưu hóa hiệu suất...")
+                
+                # Tạo đối tượng tối ưu hóa
+                optimizer = PerformanceOptimizer()
+                
+                # Flag theo dõi trạng thái tối ưu hóa
+                self.optimization_complete = False
+                
+                # Hàm callback khi tối ưu hóa hoàn tất
+                def on_optimization_complete(result):
+                    try:
+                        # Cập nhật biến trạng thái
+                        self.optimization_complete = True
+                        
+                        # Kiểm tra kết quả
+                        if result['success']:
+                            # Hiển thị thông tin tối ưu hóa
+                            self.update_status(result['message'])
+                            
+                            # Log thông tin chi tiết
+                            logger.info(f"Tối ưu hóa bộ nhớ: Giải phóng {result['memory']['freed']['formatted']}")
+                            logger.info(f"Dọn dẹp cache: {result['cache']['message']}")
+                            logger.info(f"Dọn dẹp logs: {result['logs']['message']}")
+                            logger.info(f"Dọn dẹp temp: {result['temp']['message']}")
+                        else:
+                            # Hiển thị thông báo lỗi
+                            self.update_status(f"Lỗi tối ưu hóa: {result.get('error', 'Unknown error')}")
+                            logger.error(f"Lỗi tối ưu hóa: {result.get('error', 'Unknown error')}")
+                        
+                        # Hoàn thành bước này
+                        self.update_indicator(self.current_step, "success")
+                        self.current_step += 1
+                        self.update_progress(self.calculate_overall_progress())
+                        
+                        # Tiếp tục xử lý các bước tiếp theo
+                        self.process_next_step()
+                    except Exception as e:
+                        logger.error(f"Lỗi trong callback tối ưu hóa: {str(e)}")
+                        logger.error(traceback.format_exc())
+                        
+                        # Đánh dấu bước này là thành công và chuyển sang bước tiếp theo
+                        self.update_indicator(self.current_step, "success")
+                        self.current_step += 1
+                        self.update_progress(self.calculate_overall_progress())
+                        
+                        # Tiếp tục xử lý các bước tiếp theo
+                        self.process_next_step()
+                
+                # Thực hiện tối ưu hóa bất đồng bộ
+                optimizer.optimize_async(callback=on_optimization_complete)
+                
+                # QUAN TRỌNG: Dừng xử lý ở đây và đợi callback
+                return
+                
+            except ImportError:
+                # Không tìm thấy module performance_optimizer
+                logger.warning("Module performance_optimizer không tìm thấy, bỏ qua tối ưu hóa hiệu suất")
+                self.update_status("Bỏ qua tối ưu hóa hiệu suất")
+                
+                # Đánh dấu bước này là thành công và chuyển sang bước tiếp theo
+                self.update_indicator(self.current_step, "success")
+                self.current_step += 1
+                self.update_progress(self.calculate_overall_progress())
+            except Exception as e:
+                logger.error(f"Lỗi khi tối ưu hóa hiệu suất: {str(e)}")
+                logger.error(traceback.format_exc())
+                
+                # Đánh dấu lỗi nhưng vẫn tiếp tục
+                self.mark_step_error(9, f"Lỗi tối ưu hóa: {str(e)}")
+                self.current_step += 1
+                self.update_progress(self.calculate_overall_progress())
+    
     def complete_ui_loading(self):
         """Hoàn tất việc tải giao diện"""
         self.update_status("Đã tải giao diện thành công")
@@ -1216,337 +1531,7 @@ class SplashScreen(QtWidgets.QWidget):
         
         # Không cần gọi process_next_step() vì đây là bước cuối cùng
         # Tiến trình sẽ phát tín hiệu finished trong lần gọi process_next_step tiếp theo
-
-    def check_pip_installation(self):
-        """Kiểm tra cài đặt pip và các thư viện cần thiết"""
-        pip_available = False
-        try:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "--version"], 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE,
-                check=False
-            )
-            pip_available = True
-        except:
-            self.update_status("Không tìm thấy pip. Đang cài đặt...")
-            # Cố gắng cài đặt pip
-            try:
-                import ensurepip
-                ensurepip.bootstrap()
-                self.update_status("Đã cài đặt pip thành công")
-                pip_available = True
-            except:
-                self.mark_step_error(0, "Không thể cài đặt pip. Vui lòng cài đặt thủ công.")
-                
-                reply = QtWidgets.QMessageBox.critical(
-                    self,
-                    "Không tìm thấy pip",
-                    "Ứng dụng yêu cầu pip để cài đặt các thư viện.\n\nVui lòng cài đặt pip và khởi động lại ứng dụng.",
-                    QtWidgets.QMessageBox.Ok
-                )
-                return False
-
-        # Kiểm tra các thư viện cần thiết
-        required_modules = ["PyQt5", "requests", "configparser", "psutil"]
-        missing_modules = []
-        
-        for module in required_modules:
-            try:
-                __import__(module)
-            except ImportError:
-                missing_modules.append(module)
-        
-        if missing_modules and pip_available:
-            # Hỏi người dùng có muốn cài đặt các thư viện thiếu không
-            reply = QtWidgets.QMessageBox.question(
-                self,
-                "Thiếu thư viện",
-                f"Ứng dụng cần các thư viện sau: {', '.join(missing_modules)}.\n\nBạn có muốn cài đặt ngay không?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                QtWidgets.QMessageBox.Yes
-            )
-            
-            if reply == QtWidgets.QMessageBox.Yes:
-                # Cài đặt các thư viện thiếu
-                self.update_status(f"Đang cài đặt: {', '.join(missing_modules)}...")
-                
-                # Tìm đường dẫn đến requirements.txt
-                app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                req_path = os.path.join(app_root, "requirements.txt")
-                
-                if os.path.exists(req_path):
-                    # Cài đặt từ requirements.txt
-                    try:
-                        process = subprocess.Popen(
-                            [sys.executable, "-m", "pip", "install", "-r", req_path],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True
-                        )
-                        
-                        # Theo dõi tiến trình
-                        while process.poll() is None:
-                            output = process.stdout.readline().strip()
-                            if output:
-                                self.update_status(f"Đang cài đặt: {output}")
-                            QtCore.QCoreApplication.processEvents()
-                        
-                        if process.returncode == 0:
-                            self.update_status("Đã cài đặt các thư viện thành công!")
-                            # Tái nhập các module sau khi cài đặt
-                            for module in missing_modules:
-                                try:
-                                    __import__(module)
-                                except ImportError:
-                                    # Vẫn không thể nhập sau khi cài đặt
-                                    self.mark_step_error(0, f"Không thể tải module: {module}")
-                                    return False
-                        else:
-                            error = process.stderr.read()
-                            self.mark_step_error(0, f"Lỗi cài đặt: {error}")
-                            return False
-                    except Exception as e:
-                        self.mark_step_error(0, f"Lỗi khi cài đặt thư viện: {str(e)}")
-                        return False
-                else:
-                    # Cài đặt từng module một
-                    for module in missing_modules:
-                        try:
-                            self.update_status(f"Đang cài đặt {module}...")
-                            subprocess.check_call([sys.executable, "-m", "pip", "install", module])
-                        except subprocess.CalledProcessError:
-                            self.mark_step_error(0, f"Không thể cài đặt {module}")
-                            return False
-                    
-                    self.update_status("Đã cài đặt các thư viện thành công!")
-                    
-                    # Tái nhập các module sau khi cài đặt
-                    for module in missing_modules:
-                        try:
-                            __import__(module)
-                        except ImportError:
-                            # Vẫn không thể nhập sau khi cài đặt
-                            self.mark_step_error(0, f"Không thể tải module: {module}")
-                            return False
-            else:
-                # Người dùng không muốn cài đặt
-                self.mark_step_error(0, f"Thiếu thư viện: {', '.join(missing_modules)}")
-                return False
-        elif missing_modules:
-            # Không có pip nhưng thiếu module
-            self.mark_step_error(0, f"Thiếu thư viện: {', '.join(missing_modules)}")
-            return False
-            
-        return True
-
-    def check_internet_connection(self):
-        """Kiểm tra kết nối Internet"""
-        try:
-            urllib.request.urlopen('http://www.google.com', timeout=3)
-            return True
-        except:
-            return False
-            
-    def handle_connection_error(self, step_message):
-        """Xử lý lỗi kết nối"""
-        self.mark_step_error(0, "Không thể kết nối Internet. Vui lòng kiểm tra kết nối của bạn.")
     
-    def retry_connection_auto(self):
-        """Tự động thử lại kết nối Internet không cần người dùng tương tác"""
-        # Cập nhật trạng thái
-        self.update_status("Đang thử kết nối lại...")
-        self.update_indicator(0, "active")
-        
-        # Kiểm tra lại kết nối
-        if self.check_internet_connection():
-            self.update_status("Kết nối Internet OK")
-            self.update_indicator(0, "success")
-            self.current_step += 1
-            self.update_progress(self.calculate_overall_progress())
-            # Tiếp tục quy trình
-            QtCore.QTimer.singleShot(500, self.process_next_step)
-        else:
-            # Vẫn không kết nối được
-            self.mark_step_error(0, "Không thể kết nối Internet. Vui lòng kiểm tra kết nối của bạn.")
-            # Lặp lại việc thử kết nối sau một khoảng thời gian
-            QtCore.QTimer.singleShot(5000, self.retry_connection_auto)
-
-    # Các hàm kiểm tra và cài đặt SSL
-    def is_admin(self):
-        """Kiểm tra xem ứng dụng có đang chạy với quyền admin không."""
-        try:
-            if platform.system() == "Windows":
-                return ctypes.windll.shell32.IsUserAnAdmin() != 0
-            else:
-                return os.geteuid() == 0
-        except:
-            return False
-            
-    def check_ssl(self):
-        """Kiểm tra xem SSL có hoạt động không."""
-        try:
-            import ssl
-            self.update_status(f"SSL đã được cài đặt: {ssl.OPENSSL_VERSION}")
-            return True
-        except ImportError:
-            self.update_status("Không thể import module ssl")
-            return False
-        except Exception as e:
-            self.update_status(f"Lỗi SSL: {str(e)}")
-            return False
-            
-    def find_ssl_libraries(self):
-        """Tìm thư viện SSL hiện có trên hệ thống."""
-        ssl_paths = []
-        search_paths = [
-            "C:\\Program Files\\OpenSSL-Win64",
-            "C:\\Program Files\\OpenSSL",
-            "C:\\Program Files (x86)\\OpenSSL-Win32",
-            "C:\\OpenSSL-Win64",
-            "C:\\OpenSSL-Win32"
-        ]
-        
-        for path in search_paths:
-            if os.path.exists(path):
-                ssl_paths.append(path)
-                
-        return ssl_paths
-        
-    def install_ssl_automatic(self):
-        """Cài đặt SSL tự động."""
-        try:
-            self.update_status("Đang cài đặt OpenSSL...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyopenssl", "cryptography"])
-            self.update_status("Đã cài đặt thành công các gói Python cho OpenSSL")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.update_status(f"Lỗi khi cài đặt OpenSSL: {str(e)}")
-            return False
-            
-    def open_ssl_website(self):
-        """Mở trang web tải OpenSSL."""
-        try:
-            webbrowser.open("https://slproweb.com/products/Win32OpenSSL.html")
-            self.update_status("Đã mở trang web tải OpenSSL. Hãy tải và cài đặt phiên bản phù hợp")
-        except Exception as e:
-            self.update_status(f"Không thể mở trang web: {str(e)}")
-            
-    def copy_ssl_libraries(self, source_path):
-        """Sao chép thư viện SSL vào thư mục Python."""
-        try:
-            # Thư mục đích
-            python_path = os.path.dirname(sys.executable)
-            
-            # Tìm các file DLL cần thiết
-            libssl_paths = []
-            libcrypto_paths = []
-            
-            for root, _, files in os.walk(source_path):
-                for file in files:
-                    lower_file = file.lower()
-                    if lower_file.startswith('libssl') and lower_file.endswith('.dll'):
-                        libssl_paths.append(os.path.join(root, file))
-                    elif lower_file.startswith('libcrypto') and lower_file.endswith('.dll'):
-                        libcrypto_paths.append(os.path.join(root, file))
-            
-            if not libssl_paths or not libcrypto_paths:
-                self.update_status(f"Không tìm thấy thư viện SSL cần thiết trong {source_path}")
-                return False
-            
-            # Sao chép các thư viện
-            for src_path in libssl_paths + libcrypto_paths:
-                filename = os.path.basename(src_path)
-                dst_path = os.path.join(python_path, filename)
-                self.update_status(f"Đang sao chép {filename}...")
-                
-                # Tạo bản sao lưu nếu đã tồn tại
-                if os.path.exists(dst_path):
-                    backup_path = dst_path + ".bak"
-                    os.rename(dst_path, backup_path)
-                    
-                # Sao chép file
-                with open(src_path, 'rb') as fsrc:
-                    with open(dst_path, 'wb') as fdst:
-                        fdst.write(fsrc.read())
-            
-            self.update_status(f"Đã sao chép thành công thư viện SSL vào Python")
-            return True
-        except Exception as e:
-            self.update_status(f"Lỗi khi sao chép thư viện SSL: {str(e)}")
-            return False
-            
-    def setup_ssl_automatically(self):
-        """Thiết lập SSL tự động."""
-        if platform.system() != "Windows":
-            self.update_status("Không cần cài đặt SSL trên hệ điều hành này")
-            return True
-            
-        # Kiểm tra xem SSL đã hoạt động chưa
-        if self.check_ssl():
-            self.update_status("SSL đã được cài đặt và hoạt động bình thường")
-            return True
-            
-        # Thử cài đặt tự động
-        if self.install_ssl_automatic():
-            # Kiểm tra lại
-            if self.check_ssl():
-                return True
-                
-        # Nếu cài đặt không thành công, thử tìm và sao chép thư viện SSL
-        ssl_paths = self.find_ssl_libraries()
-        if ssl_paths:
-            # Hiển thị hộp thoại chọn
-            items = []
-            for path in ssl_paths:
-                items.append(os.path.basename(path))
-                
-            item, ok = QtWidgets.QInputDialog.getItem(
-                self, 
-                "Chọn thư viện SSL", 
-                "Chọn thư viện OpenSSL để sao chép:", 
-                items, 
-                0, 
-                False
-            )
-            
-            if ok and item:
-                index = items.index(item)
-                if self.copy_ssl_libraries(ssl_paths[index]):
-                    # Kiểm tra lại
-                    time.sleep(1)
-                    return self.check_ssl()
-        else:
-            # Không tìm thấy OpenSSL, hỏi người dùng có muốn tải không
-            reply = QtWidgets.QMessageBox.question(
-                self,
-                "Thiếu thư viện SSL",
-                "Không tìm thấy thư viện OpenSSL trên hệ thống.\nBạn có muốn tải về không?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                QtWidgets.QMessageBox.Yes
-            )
-            
-            if reply == QtWidgets.QMessageBox.Yes:
-                self.open_ssl_website()
-                
-                # Hiển thị hộp thoại chờ
-                ok = QtWidgets.QMessageBox.information(
-                    self,
-                    "Cài đặt OpenSSL",
-                    "Sau khi cài đặt xong, nhấn OK để tiếp tục.",
-                    QtWidgets.QMessageBox.Ok
-                )
-                
-                if ok:
-                    # Thử tìm lại
-                    ssl_paths = self.find_ssl_libraries()
-                    if ssl_paths:
-                        return self.copy_ssl_libraries(ssl_paths[0])
-        
-        # Nếu tất cả các cách đều thất bại
-        return False
-
     def on_config_saved(self, success):
         """
         Xử lý sự kiện khi cấu hình Telegram được lưu
@@ -1562,6 +1547,7 @@ class SplashScreen(QtWidgets.QWidget):
             self.update_status("Cấu hình Telegram không thành công")
             # Đánh dấu là đã hoàn thành quá trình cấu hình (dù thành công hay không)
             self.config_completed = True
+
 
 def show_splash_screen(app, ffmpeg_manager=None):
     """
@@ -1580,6 +1566,8 @@ def show_splash_screen(app, ffmpeg_manager=None):
         
         # Đảm bảo splash screen được hiển thị trên cùng
         splash.raise_()
+        splash.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+        splash.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         splash.activateWindow()
         
         # Xử lý sự kiện và đảm bảo UI được cập nhật
@@ -1597,16 +1585,3 @@ def show_splash_screen(app, ffmpeg_manager=None):
         simple_splash.show()
         QtCore.QTimer.singleShot(3000, simple_splash.close)
         return simple_splash
-
-if __name__ == "__main__":
-    # Test splash screen
-    app = QtWidgets.QApplication(sys.argv)
-    splash = SplashScreen()
-    splash.show()
-    
-    # Mô phỏng xử lý
-    timer = QtCore.QTimer()
-    timer.timeout.connect(splash.next_step)
-    timer.start(300)
-    
-    sys.exit(app.exec_())

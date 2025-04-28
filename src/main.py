@@ -22,7 +22,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Try to apply Telethon patches if needed
 try:
-    from patches.telethon_patches import apply_patches
+    from utils.telethon_patch import apply_patches
     apply_patches()
     logger.info("Telethon patches applied")
 except ImportError:
@@ -38,8 +38,8 @@ def main():
     from app import TelegramUploaderApp
     
     try:
-        # Tạo ứng dụng PyQt5
-        from PyQt5 import QtWidgets
+        # Tạo ứng dụng PyQt6 (đã cập nhật từ PyQt5)
+        from PyQt6 import QtWidgets
         
         # Tạo đối tượng ứng dụng
         app = TelegramUploaderApp()
@@ -54,7 +54,7 @@ def main():
         
         # Hiển thị thông báo lỗi
         try:
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(
                 None,
                 "Lỗi nghiêm trọng",
